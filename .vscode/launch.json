@@ -1,0 +1,42 @@
+{
+        "version": "0.2.0",
+        "configurations": [
+                {
+                        "name": "attach",
+                        "type": "go",
+                        "request": "attach",
+                        "mode": "local",
+                        "processId": "${command:pickGoProcess}"
+                },
+                {
+                        "name": "start server",
+                        "type": "go",
+                        "request": "launch",
+                        "mode": "auto",
+                        "program": "${workspaceFolder}",
+                        "args": [
+                                "start",
+                                "server",
+                                "--db-url=postgres://service:service123@localhost:5432/service"
+                        ]
+                },
+                {
+                        "name": "setup",
+                        "type": "debugpy",
+                        "request": "launch",
+                        "program": "${workspaceFolder}/dev.py",
+                        "args": [
+                                "setup",
+                        ]
+                },
+                {
+                        "name": "deploy",
+                        "type": "debugpy",
+                        "request": "launch",
+                        "program": "${workspaceFolder}/dev.py",
+                        "args": [
+                                "deploy",
+                        ]
+                }
+        ]
+}
