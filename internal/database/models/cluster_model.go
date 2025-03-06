@@ -12,15 +12,10 @@ implied. See the License for the specific language governing permissions and lim
 License.
 */
 
-package dao
+package models
 
-import (
-	"log/slog"
-
-	"github.com/jackc/pgx/v5/pgxpool"
-)
-
-type baseDAO struct {
-	logger *slog.Logger
-	pool   *pgxpool.Pool
+type Cluster struct {
+	ID         string
+	APIURL     string
+	ConsoleURL string
 }

@@ -23,11 +23,15 @@ import (
 )
 
 type Set interface {
-	ClusterTemplate() ClusterTemplate
+	ClusterTemplates() ClusterTemplatesDAO
+	ClusterOrders() ClusterOrdersDAO
+	Clusters() ClustersDAO
 }
 
 type set struct {
-	clusterTemplate ClusterTemplate
+	clusterTemplates ClusterTemplatesDAO
+	clusterOrders    ClusterOrdersDAO
+	clusters         ClustersDAO
 }
 
 type SetBuilder struct {
@@ -61,22 +65,48 @@ func (b *SetBuilder) Build() (result Set, err error) {
 	}
 
 	// Create the individual DAOs:
-	clusterTemplate, err := NewClusterTemplate().
+	clusterTemplatesDAO, err := NewClusterTemplatesDAO().
 		SetLogger(b.logger).
 		SetPool(b.pool).
 		Build()
 	if err != nil {
-		err = fmt.Errorf("failed to create cluter templates DAO: %w", err)
+		err = fmt.Errorf("failed to create cluster templates DAO: %w", err)
+		return
+	}
+	clusterOrdersDAO, err := NewClusterOrdersDAO().
+		SetLogger(b.logger).
+		SetPool(b.pool).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create cluster orders DAO: %w", err)
+		return
+	}
+	clustersDAO, err := NewClustersDAO().
+		SetLogger(b.logger).
+		SetPool(b.pool).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create cluster DAO: %w", err)
 		return
 	}
 
 	// Create and populate the result:
 	result = &set{
-		clusterTemplate: clusterTemplate,
+		clusterTemplates: clusterTemplatesDAO,
+		clusterOrders:    clusterOrdersDAO,
+		clusters:         clustersDAO,
 	}
 	return
 }
 
-func (s *set) ClusterTemplate() ClusterTemplate {
-	return s.clusterTemplate
+func (s *set) ClusterTemplates() ClusterTemplatesDAO {
+	return s.clusterTemplates
+}
+
+func (s *set) ClusterOrders() ClusterOrdersDAO {
+	return s.clusterOrders
+}
+
+func (s *set) Clusters() ClustersDAO {
+	return s.clusters
 }

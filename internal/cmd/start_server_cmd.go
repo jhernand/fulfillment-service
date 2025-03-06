@@ -118,7 +118,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	c.logger.Info("Registering gRPC reflection server")
 	reflection.Register(grpcServer)
 
-	// Create the servers:
+	// Create the cluster templates server:
 	c.logger.Info("Creating cluster templates server")
 	clusterTemplatesServer, err := servers.NewClusterTemplatesServer().
 		SetLogger(c.logger).
@@ -126,9 +126,33 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		SetDAOs(daos).
 		Build()
 	if err != nil {
-		return errors.Wrapf(err, "Failed to create cluster templates server")
+		return errors.Wrapf(err, "failed to create cluster templates server")
 	}
 	api.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
+
+	// Create the cluster orders server:
+	c.logger.Info("Creating cluster orders server")
+	clusterOrdersServer, err := servers.NewClusterOrdersServer().
+		SetLogger(c.logger).
+		SetFlags(c.flags).
+		SetDAOs(daos).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create cluster orders server")
+	}
+	api.RegisterClusterOrdersServer(grpcServer, clusterOrdersServer)
+
+	// Create the clusters server:
+	c.logger.Info("Creating clusters server")
+	clustersServer, err := servers.NewClustersServer().
+		SetLogger(c.logger).
+		SetFlags(c.flags).
+		SetDAOs(daos).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create clusters server")
+	}
+	api.RegisterClustersServer(grpcServer, clustersServer)
 
 	// Start serving:
 	c.logger.InfoContext(

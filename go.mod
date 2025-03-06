@@ -3,6 +3,7 @@ module github.com/innabox/fulfillment-service
 go 1.22.9
 
 require (
+	github.com/google/uuid v1.6.0
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.4
 )

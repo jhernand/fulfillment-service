@@ -26,35 +26,35 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database/models"
 )
 
-type ClusterTemplate interface {
+type ClusterTemplatesDAO interface {
 	List(ctx context.Context) (items []*models.ClusterTemplate, err error)
 	Get(ctx context.Context, id string) (item *models.ClusterTemplate, err error)
 }
 
-type ClusterTemplateBuilder struct {
+type ClusterTemplatesDAOBuilder struct {
 	logger *slog.Logger
 	pool   *pgxpool.Pool
 }
 
-type clusterTemplate struct {
-	base
+type clusterTemplatesDAO struct {
+	baseDAO
 }
 
-func NewClusterTemplate() *ClusterTemplateBuilder {
-	return &ClusterTemplateBuilder{}
+func NewClusterTemplatesDAO() *ClusterTemplatesDAOBuilder {
+	return &ClusterTemplatesDAOBuilder{}
 }
 
-func (b *ClusterTemplateBuilder) SetLogger(value *slog.Logger) *ClusterTemplateBuilder {
+func (b *ClusterTemplatesDAOBuilder) SetLogger(value *slog.Logger) *ClusterTemplatesDAOBuilder {
 	b.logger = value
 	return b
 }
 
-func (b *ClusterTemplateBuilder) SetPool(value *pgxpool.Pool) *ClusterTemplateBuilder {
+func (b *ClusterTemplatesDAOBuilder) SetPool(value *pgxpool.Pool) *ClusterTemplatesDAOBuilder {
 	b.pool = value
 	return b
 }
 
-func (b *ClusterTemplateBuilder) Build() (result ClusterTemplate, err error) {
+func (b *ClusterTemplatesDAOBuilder) Build() (result ClusterTemplatesDAO, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = fmt.Errorf("logger is mandatory")
@@ -66,8 +66,8 @@ func (b *ClusterTemplateBuilder) Build() (result ClusterTemplate, err error) {
 	}
 
 	// Create and populate the object:
-	result = &clusterTemplate{
-		base: base{
+	result = &clusterTemplatesDAO{
+		baseDAO: baseDAO{
 			logger: b.logger,
 			pool:   b.pool,
 		},
@@ -75,7 +75,7 @@ func (b *ClusterTemplateBuilder) Build() (result ClusterTemplate, err error) {
 	return
 }
 
-func (d *clusterTemplate) List(ctx context.Context) (items []*models.ClusterTemplate, err error) {
+func (d *clusterTemplatesDAO) List(ctx context.Context) (items []*models.ClusterTemplate, err error) {
 	// Start a transaction:
 	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
 		AccessMode: pgx.ReadOnly,
@@ -119,13 +119,11 @@ func (d *clusterTemplate) List(ctx context.Context) (items []*models.ClusterTemp
 			Description: description,
 		})
 	}
-
-	// Return the result:
 	items = tmp
 	return
 }
 
-func (d *clusterTemplate) Get(ctx context.Context, id string) (item *models.ClusterTemplate, err error) {
+func (d *clusterTemplatesDAO) Get(ctx context.Context, id string) (item *models.ClusterTemplate, err error) {
 	// Start a transaction:
 	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
 		AccessMode: pgx.ReadOnly,
@@ -148,15 +146,21 @@ func (d *clusterTemplate) Get(ctx context.Context, id string) (item *models.Clus
 	row := tx.QueryRow(
 		ctx,
 		"select title, description from cluster_templates where id = $1",
+		id,
 	)
-	tmp := &models.ClusterTemplate{
-		ID: id,
-	}
-	err = row.Scan(&tmp.Title, &tmp.Description)
+	var (
+		title       string
+		description string
+	)
+	err = row.Scan(&title, &description)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 		return
 	}
-	item = tmp
+	item = &models.ClusterTemplate{
+		ID:          id,
+		Title:       title,
+		Description: description,
+	}
 	return
 }

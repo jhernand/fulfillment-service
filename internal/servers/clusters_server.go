@@ -26,41 +26,41 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type ClusterTemplatesServerBuilder struct {
+type ClustersServerBuilder struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	daos   dao.Set
 }
 
-var _ api.ClusterTemplatesServer = (*ClusterTemplatesServer)(nil)
+var _ api.ClustersServer = (*ClustersServer)(nil)
 
-type ClusterTemplatesServer struct {
-	api.UnimplementedClusterTemplatesServer
+type ClustersServer struct {
+	api.UnimplementedClustersServer
 
 	logger *slog.Logger
 	daos   dao.Set
 }
 
-func NewClusterTemplatesServer() *ClusterTemplatesServerBuilder {
-	return &ClusterTemplatesServerBuilder{}
+func NewClustersServer() *ClustersServerBuilder {
+	return &ClustersServerBuilder{}
 }
 
-func (b *ClusterTemplatesServerBuilder) SetLogger(value *slog.Logger) *ClusterTemplatesServerBuilder {
+func (b *ClustersServerBuilder) SetLogger(value *slog.Logger) *ClustersServerBuilder {
 	b.logger = value
 	return b
 }
 
-func (b *ClusterTemplatesServerBuilder) SetDAOs(value dao.Set) *ClusterTemplatesServerBuilder {
+func (b *ClustersServerBuilder) SetDAOs(value dao.Set) *ClustersServerBuilder {
 	b.daos = value
 	return b
 }
 
-func (b *ClusterTemplatesServerBuilder) SetFlags(value *pflag.FlagSet) *ClusterTemplatesServerBuilder {
+func (b *ClustersServerBuilder) SetFlags(value *pflag.FlagSet) *ClustersServerBuilder {
 	b.flags = value
 	return b
 }
 
-func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer, err error) {
+func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -72,28 +72,28 @@ func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer,
 	}
 
 	// Create and populate the object:
-	result = &ClusterTemplatesServer{
+	result = &ClustersServer{
 		logger: b.logger,
 		daos:   b.daos,
 	}
 	return
 }
 
-func (d *ClusterTemplatesServer) List(ctx context.Context,
-	request *api.ClusterTemplatesListRequest) (response *api.ClusterTemplatesListResponse, err error) {
-	models, err := d.daos.ClusterTemplates().List(ctx)
+func (d *ClustersServer) List(ctx context.Context,
+	request *api.ClustersListRequest) (response *api.ClustersListResponse, err error) {
+	models, err := d.daos.Clusters().List(ctx)
 	if err != nil {
 		return
 	}
-	items := make([]*api.ClusterTemplate, len(models))
+	items := make([]*api.Cluster, len(models))
 	for i, model := range models {
-		items[i] = &api.ClusterTemplate{}
+		items[i] = &api.Cluster{}
 		err = d.mapOutbound(model, items[i])
 		if err != nil {
 			return
 		}
 	}
-	response = &api.ClusterTemplatesListResponse{
+	response = &api.ClustersListResponse{
 		Size:  proto.Int32(int32(len(items))),
 		Total: proto.Int32(int32(len(items))),
 		Items: items,
@@ -101,29 +101,29 @@ func (d *ClusterTemplatesServer) List(ctx context.Context,
 	return
 }
 
-func (d *ClusterTemplatesServer) Get(ctx context.Context,
-	request *api.ClusterTemplatesGetRequest) (response *api.ClusterTemplatesGetResponse, err error) {
-	model, err := d.daos.ClusterTemplates().Get(ctx, request.TemplateId)
+func (d *ClustersServer) Get(ctx context.Context,
+	request *api.ClustersGetRequest) (response *api.ClustersGetResponse, err error) {
+	model, err := d.daos.Clusters().Get(ctx, request.ClusterId)
 	if err != nil {
 		return
 	}
 	if model == nil {
 		return
 	}
-	item := &api.ClusterTemplate{}
+	item := &api.Cluster{}
 	err = d.mapOutbound(model, item)
 	if err != nil {
 		return
 	}
-	response = &api.ClusterTemplatesGetResponse{
-		Template: item,
+	response = &api.ClustersGetResponse{
+		Cluster: item,
 	}
 	return
 }
 
-func (d *ClusterTemplatesServer) mapOutbound(from *models.ClusterTemplate, to *api.ClusterTemplate) error {
+func (d *ClustersServer) mapOutbound(from *models.Cluster, to *api.Cluster) error {
 	to.Id = from.ID
-	to.Title = from.Title
-	to.Description = from.Description
+	to.ApiUrl = from.APIURL
+	to.ConsoleUrl = from.ConsoleURL
 	return nil
 }
