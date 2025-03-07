@@ -20,6 +20,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // InterceptorBuilder contains the data and logic needed to build an interceptor that checks authentication. Don't
@@ -70,6 +71,11 @@ func (b *InterceptorBuilder) Build() (result *Interceptor, err error) {
 func (i *Interceptor) UnaryServer(ctx context.Context, request any, info *grpc.UnaryServerInfo,
 	handler grpc.UnaryHandler) (response any, err error) {
 	// TODO: Implement this.
+
+	// Add the guest subject to the context:
+	ctx = ContextWithSubject(ctx, Guest)
+
+	// Call the next handler:
 	response, err = handler(ctx, request)
 	return
 }
@@ -77,6 +83,39 @@ func (i *Interceptor) UnaryServer(ctx context.Context, request any, info *grpc.U
 // StreamServer is the stream server interceptor function.
 func (i *Interceptor) StreamServer(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo,
 	handler grpc.StreamHandler) error {
-	// TODO: Implement this.
+	stream = &interceptorStream{
+		logger: i.logger,
+		stream: stream,
+	}
 	return handler(server, stream)
+}
+
+type interceptorStream struct {
+	logger *slog.Logger
+	stream grpc.ServerStream
+}
+
+func (s *interceptorStream) Context() context.Context {
+	return s.stream.Context()
+}
+
+func (s *interceptorStream) RecvMsg(message any) error {
+	// TODO: Implement this.
+	return s.stream.RecvMsg(message)
+}
+
+func (s *interceptorStream) SendHeader(md metadata.MD) error {
+	return s.stream.SendHeader(md)
+}
+
+func (s *interceptorStream) SendMsg(message any) error {
+	return s.stream.SendMsg(message)
+}
+
+func (s *interceptorStream) SetHeader(md metadata.MD) error {
+	return s.stream.SendHeader(md)
+}
+
+func (s *interceptorStream) SetTrailer(md metadata.MD) {
+	s.stream.SetTrailer(md)
 }

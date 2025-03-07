@@ -293,7 +293,7 @@ func (b *LoggerBuilder) customFields() (result []any, err error) {
 }
 
 func (b *LoggerBuilder) customField(name string, value any) (result any, err error) {
-	switch name {
+	switch value {
 	case pidLogFieldValue:
 		result = os.Getpid()
 	default:
