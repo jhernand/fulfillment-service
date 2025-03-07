@@ -52,7 +52,7 @@ def grpc() -> None:
         tar_name = f"v{defaults.API_VERSION}.tar.gz"
         tar_url = (
             "https://github.com"
-            f"/jhernand/fulfillment-api/archive/refs/tags"
+            f"/innabox/fulfillment-api/archive/refs/tags"
             f"/{tar_name}"
         )
         tar_file = tmp_dir / tar_name
