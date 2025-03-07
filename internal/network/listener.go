@@ -1,15 +1,14 @@
 /*
 Copyright 2025 Red Hat Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
 
   http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
 */
 
 package network
@@ -24,8 +23,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// ListenerBuilder contains the data and logic needed to create a network listener. Don't create
-// instances of this object directly, use the NewListener function instead.
+// ListenerBuilder contains the data and logic needed to create a network listener. Don't create instances of this
+// object directly, use the NewListener function instead.
 type ListenerBuilder struct {
 	logger       *slog.Logger
 	network      string
@@ -42,8 +41,7 @@ func NewListener() *ListenerBuilder {
 	}
 }
 
-// SetLogger sets the logger that the listener will use to send messages to the log. This is
-// mandatory.
+// SetLogger sets the logger that the listener will use to send messages to the log. This is mandatory.
 func (b *ListenerBuilder) SetLogger(value *slog.Logger) *ListenerBuilder {
 	b.logger = value
 	return b
@@ -51,8 +49,8 @@ func (b *ListenerBuilder) SetLogger(value *slog.Logger) *ListenerBuilder {
 
 // SetFlags sets the command line flags that should be used to configure the listener.
 //
-// The name is used to select the options when there are multiple listeners. For example, if it
-// is 'API' then it will only take into accounts the flags starting with '--api'.
+// The name is used to select the options when there are multiple listeners. For example, if it is 'API' then it will
+// only take into accounts the flags starting with '--api'.
 //
 // This is optional.
 func (b *ListenerBuilder) SetFlags(flags *pflag.FlagSet, name string) *ListenerBuilder {

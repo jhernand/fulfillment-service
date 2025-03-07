@@ -1,3 +1,16 @@
+/*
+Copyright 2025 Red Hat Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+*/
+
 package database
 
 import (
@@ -108,9 +121,8 @@ func (b *ToolBuilder) Build() (result Tool, err error) {
 
 // Wait waits for the database to be available.
 func (t *tool) Wait(ctx context.Context) error {
-	// If the database IP address or host name have not been created yet then the connection
-	// will take a long time to fail, approximately five minutes. To avoid that we need to
-	// explicitly set a shorter timeout.
+	// If the database IP address or host name have not been created yet then the connection will take a long time
+	// to fail, approximately five minutes. To avoid that we need to explicitly set a shorter timeout.
 	parsed, err := url.Parse(t.url)
 	if err != nil {
 		return err
@@ -237,8 +249,8 @@ func (t *tool) Pool(ctx context.Context) (result *pgxpool.Pool, err error) {
 	return
 }
 
-// migrationsLogger is an adapter to implement the logging interface of the underlying migrations
-// library using our logging library.
+// migrationsLogger is an adapter to implement the logging interface of the underlying migrations library using our
+// logging library.
 type migrationsLogger struct {
 	ctx    context.Context
 	logger *slog.Logger

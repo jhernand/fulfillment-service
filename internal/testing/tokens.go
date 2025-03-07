@@ -1,15 +1,14 @@
 /*
-Copyright 2023 Red Hat Inc.
+Copyright 2025 Red Hat Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
 
   http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
 */
 
 package testing
@@ -26,8 +25,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// MakeTokenObject generates a token with the claims resulting from merging the default claims and
-// the claims explicitly given.
+// MakeTokenObject generates a token with the claims resulting from merging the default claims and the claims explicitly
+// given.
 func MakeTokenObject(claims jwt.MapClaims) *jwt.Token {
 	merged := jwt.MapClaims{}
 	for name, value := range MakeClaims() {
@@ -61,10 +60,9 @@ func MakeClaims() jwt.MapClaims {
 	}
 }
 
-// MakeTokenString generates a token issued by the default OpenID server and with the given type and
-// with the given life. If the life is zero the token will never expire. If the life is positive the
-// token will be valid, and expire after that time. If the life is negative the token will be
-// already expired that time ago.
+// MakeTokenString generates a token issued by the default OpenID server and with the given type and with the given
+// life. If the life is zero the token will never expire. If the life is positive the token will be valid, and expire
+// after that time. If the life is negative the token will be already expired that time ago.
 func MakeTokenString(typ string, life time.Duration) string {
 	claims := jwt.MapClaims{}
 	claims["typ"] = typ

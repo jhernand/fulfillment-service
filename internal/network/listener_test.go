@@ -1,15 +1,14 @@
 /*
 Copyright (c) 2025 Red Hat, Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
 
   http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
 */
 
 package network
@@ -171,9 +170,9 @@ var _ = Describe("Listener", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		// serve waits for a connection, closes it and returns. Note that in order to
-		// complete the TLS handshake we need to _try_ to read something, even if the client
-		// isn't going to send anything inside of the TLS envelope.
+		// serve waits for a connection, closes it and returns. Note that in order to complete the TLS handshake
+		// we need to _try_ to read something, even if the client isn't going to send anything inside of the TLS
+		// envelope.
 		serve := func(listener net.Listener) {
 			conn, err := listener.Accept()
 			Expect(err).ToNot(HaveOccurred())
@@ -182,8 +181,7 @@ var _ = Describe("Listener", func() {
 			Expect(err).To(Or(Not(HaveOccurred()), Equal(io.EOF)))
 		}
 
-		// check opens a connection to the given listener and verifies that it uses the
-		// given certificate.
+		// check opens a connection to the given listener and verifies that it uses the given certificate.
 		check := func(listener net.Listener, crt []byte) {
 			cas := x509.NewCertPool()
 			ok := cas.AppendCertsFromPEM(crtPEM)
@@ -223,8 +221,8 @@ var _ = Describe("Listener", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}()
 
-			// Start listening and serve only the first connection request, as that is
-			// all we need to perform the verification.
+			// Start listening and serve only the first connection request, as that is all we need to
+			// perform the verification.
 			go func() {
 				defer GinkgoRecover()
 				serve(listener)

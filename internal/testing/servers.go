@@ -1,15 +1,14 @@
 /*
-Copyright 2023 Red Hat Inc.
+Copyright 2025 Red Hat Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
 
   http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
 */
 
 package testing
@@ -34,8 +33,8 @@ import (
 	"github.com/onsi/gomega/ghttp"
 )
 
-// MakeTCPServer creates a test server that listens in a TCP socket and configured so that it
-// sends log messages to the Ginkgo writer.
+// MakeTCPServer creates a test server that listens in a TCP socket and configured so that it sends log messages to the
+// Ginkgo writer.
 func MakeTCPServer() *ghttp.Server {
 	server := ghttp.NewUnstartedServer()
 	server.Writer = GinkgoWriter
@@ -45,10 +44,10 @@ func MakeTCPServer() *ghttp.Server {
 	return server
 }
 
-// MakeTCPTLSServer creates a test server configured so that it sends log messages to the Ginkgo
-// writer. It returns the created server and the name of a temporary file that contains the CA
-// certificate that the client should trust in order to connect to the server. It is the
-// responsibility of the caller to delete this temporary file when it is no longer needed.
+// MakeTCPTLSServer creates a test server configured so that it sends log messages to the Ginkgo writer. It returns the
+// created server and the name of a temporary file that contains the CA certificate that the client should trust in
+// order to connect to the server. It is the responsibility of the caller to delete this temporary file when it is no
+// longer needed.
 func MakeTCPTLSServer() (server *ghttp.Server, ca string) {
 	// Create and configure the server:
 	server = ghttp.NewUnstartedServer()
@@ -65,10 +64,9 @@ func MakeTCPTLSServer() (server *ghttp.Server, ca string) {
 	return
 }
 
-// fetchCACertificates connects to the given network address and extracts the CA certificate from
-// the TLS handshake. It returns the path of a temporary file containing that CA certificate encoded
-// in PEM format. It is the responsibility of the caller to delete that file when it is no longer
-// needed.
+// fetchCACertificates connects to the given network address and extracts the CA certificate from the TLS handshake. It
+// returns the path of a temporary file containing that CA certificate encoded in PEM format. It is the responsibility
+// of the caller to delete that file when it is no longer needed.
 func fetchCACertificate(network, address string) string {
 	// Connect to the server and do the TLS handshake to obtain the certificate chain:
 	conn, err := tls.Dial(network, address, &tls.Config{
@@ -131,8 +129,8 @@ func RespondWithObject(object any) http.HandlerFunc {
 	return ghttp.RespondWithJSONEncoded(http.StatusOK, object)
 }
 
-// LocalhostCertificate returns a self signed TLS certificate valid for the name `localhost` DNS
-// name, for the `127.0.0.1` IPv4 address and for the `::1` IPv6 address.
+// LocalhostCertificate returns a self signed TLS certificate valid for the name `localhost` DNS name, for the
+// `127.0.0.1` IPv4 address and for the `::1` IPv6 address.
 //
 // A similar certificate can be generated with the following command:
 //

@@ -1,15 +1,14 @@
 /*
 Copyright 2025 Red Hat Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
 
   http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
 */
 
 package internal
@@ -28,8 +27,8 @@ import (
 	"github.com/innabox/fulfillment-service/internal/logging"
 )
 
-// ToolBuilder contains the data and logic needed to create an instance of the command line
-// tool. Don't create instances of this directly, use the NewTool function instead.
+// ToolBuilder contains the data and logic needed to create an instance of the command line tool. Don't create instances
+// of this directly, use the NewTool function instead.
 type ToolBuilder struct {
 	logger *slog.Logger
 	sub    []func() *cobra.Command
@@ -39,8 +38,8 @@ type ToolBuilder struct {
 	err    io.Writer
 }
 
-// Tool is an instance of the command line tool. Don't create instances of this directly, use the
-// NewTool function instead.
+// Tool is an instance of the command line tool. Don't create instances of this directly, use the NewTool function
+// instead.
 type Tool struct {
 	logger      *slog.Logger
 	loggerOwned bool
@@ -52,15 +51,13 @@ type Tool struct {
 	err         io.Writer
 }
 
-// NewTool creates a builder that can then be used to configure and create an instance of the
-// command line tool.
+// NewTool creates a builder that can then be used to configure and create an instance of the command line tool.
 func NewTool() *ToolBuilder {
 	return &ToolBuilder{}
 }
 
-// SetLogger sets the logger that the tool will use to write messages to the log. This is optional,
-// and if not specified a new one will be created that writes JSON messages to a file `o2ims.log`
-// file inside the tool cache directory.
+// SetLogger sets the logger that the tool will use to write messages to the log. This is optional, and if not specified
+// a new one will be created that writes JSON messages to a file `o2ims.log` file inside the tool cache directory.
 func (b *ToolBuilder) SetLogger(value *slog.Logger) *ToolBuilder {
 	b.logger = value
 	return b
@@ -157,8 +154,8 @@ func (t *Tool) Run(ctx context.Context) error {
 		return err
 	}
 
-	// Create a default logger that we can use while we haven't yet parsed the command line
-	// flags that contain the logging configuration.
+	// Create a default logger that we can use while we haven't yet parsed the command line flags that contain the
+	// logging configuration.
 	if t.logger == nil {
 		t.logger, err = t.createDefaultLogger()
 		if err != nil {
