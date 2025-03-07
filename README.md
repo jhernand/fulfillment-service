@@ -4,7 +4,7 @@ This project contains the code for the fulfillment service.
 
 ## Recommended development setup
 
-This is an oppinionated setup, the one used by the person that initially wrote this document. You can find other ways
+This is an opinionated setup, the one used by the person that initially wrote this document. You can find other ways
 to prepare your environment. As long as the resulting code works fine you are good.
 
 ### Make sure that you have a version 3.12 or newer of Python available
@@ -88,7 +88,7 @@ projects.
 
 ### Prepare the project directory
 
-Create a directory where you will have the files fo the project, for example `~/fulfillment-service`. Note that this is
+Create a directory where you will have the files for the project, for example `~/fulfillment-service`. Note that this is
 not where you will check-out the source code of the project: that will go into a `repository` sub-directory. But before
 that create a `.envrc` file in that directory similar to this:
 
@@ -160,19 +160,19 @@ Verify that you can connect to the database:
 
 Clone the git repository into the `repository` sub-directory:
 
-    $ cd ~/fufillment-service
+    $ cd ~/fulfillment-service
     $ git clone git@github.com:innabox/fulfillment-service.git repository
 
 ### Install the Python packages required by the `dev.py` tool
 
 The `dev.py` tool requires some Python packages that are listed in the `requirements.txt` file, so install them:
 
-    $ cd ~/fufillment-service
+    $ cd ~/fulfillment-service
     $ pip install -r repository/requirements.txt
 
 ### Use the `dev.py setup` command to install the rest of the development tools
 
-For different developement tasks the following tools are used, for example:
+For different development tasks the following tools are used, for example:
 
 - [`buf`](https://buf.build) - Used go generate Go code from gRPC specifications.
 - [`ginkgo`](https://onsi.github.io/ginkgo) - Used run Go unit tests.
@@ -181,7 +181,7 @@ For different developement tasks the following tools are used, for example:
 The recommended way to install them is to use the `dev.py setup` command, which will download and install the right
 versions to the `~/fulfillment-service/.local` directory:
 
-    $ cd ~/fufillment-service
+    $ cd ~/fulfillment-service
     $ ./dev.py setup
 
 ## Development
