@@ -20,11 +20,14 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/spf13/pflag"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/database/models"
-	"github.com/spf13/pflag"
-	"google.golang.org/protobuf/proto"
 )
 
 type ClusterOrdersServerBuilder struct {
@@ -80,79 +83,120 @@ func (b *ClusterOrdersServerBuilder) Build() (result *ClusterOrdersServer, err e
 	return
 }
 
-func (d *ClusterOrdersServer) List(ctx context.Context,
+func (s *ClusterOrdersServer) List(ctx context.Context,
 	request *api.ClusterOrdersListRequest) (response *api.ClusterOrdersListResponse, err error) {
-	models, err := d.daos.ClusterOrders().List(ctx)
+	orders, err := s.daos.ClusterOrders().List(ctx)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to list cluster orders",
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list cluster orders")
 		return
 	}
-	items := make([]*api.ClusterOrder, len(models))
-	for i, model := range models {
-		items[i] = &api.ClusterOrder{}
-		err = d.mapOutbound(model, items[i])
+	results := make([]*api.ClusterOrder, len(orders))
+	for i, order := range orders {
+		results[i] = &api.ClusterOrder{}
+		err = s.mapOutbound(order, results[i])
 		if err != nil {
+			s.logger.ErrorContext(
+				ctx,
+				"Failed to map outbound cluster order",
+				slog.String("error", err.Error()),
+			)
+			err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster order")
 			return
 		}
 	}
 	response = &api.ClusterOrdersListResponse{
-		Size:  proto.Int32(int32(len(items))),
-		Total: proto.Int32(int32(len(items))),
-		Items: items,
+		Size:  proto.Int32(int32(len(results))),
+		Total: proto.Int32(int32(len(results))),
+		Items: results,
 	}
 	return
 }
 
-func (d *ClusterOrdersServer) Get(ctx context.Context,
+func (s *ClusterOrdersServer) Get(ctx context.Context,
 	request *api.ClusterOrdersGetRequest) (response *api.ClusterOrdersGetResponse, err error) {
-	model, err := d.daos.ClusterOrders().Get(ctx, request.OrderId)
+	order, err := s.daos.ClusterOrders().Get(ctx, request.OrderId)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get cluster order",
+			slog.String("order_id", request.OrderId),
+		)
+		err = grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to get cluster order with identifier '%s'",
+			request.OrderId,
+		)
 		return
 	}
-	if model == nil {
+	if order == nil {
+		err = grpcstatus.Errorf(
+			grpccodes.NotFound,
+			"cluster order with identifier '%s' not found",
+			request.OrderId,
+		)
 		return
 	}
-	item := &api.ClusterOrder{}
-	err = d.mapOutbound(model, item)
+	result := &api.ClusterOrder{}
+	err = s.mapOutbound(order, result)
 	if err != nil {
 		return
 	}
 	response = &api.ClusterOrdersGetResponse{
-		Order: item,
+		Order: result,
 	}
 	return
 }
 
-func (d *ClusterOrdersServer) Place(ctx context.Context,
+func (s *ClusterOrdersServer) Place(ctx context.Context,
 	request *api.ClusterOrdersPlaceRequest) (response *api.ClusterOrdersPlaceResponse, err error) {
 	// Validate the request:
 	if request.Order == nil {
-		err = fmt.Errorf("order is mandatory")
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "order is required")
 		return
 	}
 	if request.Order.Id != "" {
-		err = fmt.Errorf("order identifier isn't allowed")
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "order identifier is required")
 		return
 	}
 	if request.Order.TemplateId == "" {
-		err = fmt.Errorf("template identifier is mandatory")
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "template identifier is required")
 		return
 	}
 	if request.Order.State != api.ClusterOrder_UNSPECIFIED {
-		err = fmt.Errorf("state isn't allowed")
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "state isn't allowed")
 		return
 	}
 	if request.Order.ClusterId != "" {
-		err = fmt.Errorf("cluster identifier isn't allowed")
+		err = grpcstatus.Errorf(grpccodes.InvalidArgument, "cluster identifier isn't allowed")
 		return
 	}
 
 	// Check that the requested template exists:
-	template, err := d.daos.ClusterTemplates().Get(ctx, request.Order.TemplateId)
+	template, err := s.daos.ClusterTemplates().Get(ctx, request.Order.TemplateId)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get cluster template",
+			slog.String("template_id", request.Order.TemplateId),
+		)
+		err = grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to get cluster template with identifier '%s'",
+			request.Order.TemplateId,
+		)
 		return
 	}
 	if template == nil {
-		err = fmt.Errorf("template with identifier '%s' doesn't exist", request.Order.TemplateId)
+		err = grpcstatus.Errorf(
+			grpccodes.Internal,
+			"cluster template with identifier '%s' doesn't exist",
+			request.Order.TemplateId,
+		)
 		return
 	}
 
@@ -160,19 +204,37 @@ func (d *ClusterOrdersServer) Place(ctx context.Context,
 	order := &models.ClusterOrder{
 		TemplateID: request.Order.TemplateId,
 	}
-	id, err := d.daos.ClusterOrders().Insert(ctx, order)
+	id, err := s.daos.ClusterOrders().Insert(ctx, order)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to insert cluster order",
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to create order")
 		return
 	}
 
 	// Fetch the result:
-	order, err = d.daos.ClusterOrders().Get(ctx, id)
+	order, err = s.daos.ClusterOrders().Get(ctx, id)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get cluster order",
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster order with identifier '%s'", id)
 		return
 	}
 	item := &api.ClusterOrder{}
-	err = d.mapOutbound(order, item)
+	err = s.mapOutbound(order, item)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map outbound cluster order",
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster")
 		return
 	}
 	response = &api.ClusterOrdersPlaceResponse{
@@ -181,28 +243,54 @@ func (d *ClusterOrdersServer) Place(ctx context.Context,
 	return
 }
 
-func (d *ClusterOrdersServer) Cancel(ctx context.Context,
+func (s *ClusterOrdersServer) Cancel(ctx context.Context,
 	request *api.ClusterOrdersCancelRequest) (response *api.ClusterOrdersCancelResponse, err error) {
 	// Check that the requested order exists:
-	ok, err := d.daos.ClusterOrders().Exists(ctx, request.OrderId)
+	ok, err := s.daos.ClusterOrders().Exists(ctx, request.OrderId)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to check if cluster order exists",
+			slog.String("order_id", request.OrderId),
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to check if cluster order '%s' exists",
+			request.OrderId,
+		)
 		return
 	}
 	if !ok {
-		err = fmt.Errorf("order with identifier '%s' doesn't exist", request.OrderId)
+		err = grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"cluster order with identifier '%s' doesn't exist",
+			request.OrderId,
+		)
 		return
 	}
 
 	// Update the state:
-	err = d.daos.ClusterOrders().UpdateState(ctx, request.OrderId, models.ClusterOrderStateCanceled)
+	err = s.daos.ClusterOrders().UpdateState(ctx, request.OrderId, models.ClusterOrderStateCanceled)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to update cluster order state",
+			slog.String("order_id", request.OrderId),
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to update state for cluster order with identifier '%s'",
+			request.OrderId,
+		)
 		return
 	}
 	response = &api.ClusterOrdersCancelResponse{}
 	return
 }
 
-func (d *ClusterOrdersServer) mapOutbound(from *models.ClusterOrder, to *api.ClusterOrder) error {
+func (s *ClusterOrdersServer) mapOutbound(from *models.ClusterOrder, to *api.ClusterOrder) error {
 	to.Id = from.ID
 	to.TemplateId = from.TemplateID
 	switch from.State {

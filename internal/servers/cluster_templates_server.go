@@ -19,11 +19,14 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/spf13/pflag"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/database/models"
-	"github.com/spf13/pflag"
-	"google.golang.org/protobuf/proto"
 )
 
 type ClusterTemplatesServerBuilder struct {
@@ -79,49 +82,82 @@ func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer,
 	return
 }
 
-func (d *ClusterTemplatesServer) List(ctx context.Context,
+func (s *ClusterTemplatesServer) List(ctx context.Context,
 	request *api.ClusterTemplatesListRequest) (response *api.ClusterTemplatesListResponse, err error) {
-	models, err := d.daos.ClusterTemplates().List(ctx)
+	templates, err := s.daos.ClusterTemplates().List(ctx)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to list cluster templates",
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list cluster templates")
 		return
 	}
-	items := make([]*api.ClusterTemplate, len(models))
-	for i, model := range models {
-		items[i] = &api.ClusterTemplate{}
-		err = d.mapOutbound(model, items[i])
+	results := make([]*api.ClusterTemplate, len(templates))
+	for i, template := range templates {
+		results[i] = &api.ClusterTemplate{}
+		err = s.mapOutbound(template, results[i])
 		if err != nil {
+			s.logger.ErrorContext(
+				ctx,
+				"Failed to map outbound cluster template",
+				slog.String("error", err.Error()),
+			)
 			return
 		}
 	}
 	response = &api.ClusterTemplatesListResponse{
-		Size:  proto.Int32(int32(len(items))),
-		Total: proto.Int32(int32(len(items))),
-		Items: items,
+		Size:  proto.Int32(int32(len(results))),
+		Total: proto.Int32(int32(len(results))),
+		Items: results,
 	}
 	return
 }
 
-func (d *ClusterTemplatesServer) Get(ctx context.Context,
+func (s *ClusterTemplatesServer) Get(ctx context.Context,
 	request *api.ClusterTemplatesGetRequest) (response *api.ClusterTemplatesGetResponse, err error) {
-	model, err := d.daos.ClusterTemplates().Get(ctx, request.TemplateId)
+	template, err := s.daos.ClusterTemplates().Get(ctx, request.TemplateId)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get cluster template",
+			slog.String("template_id", request.TemplateId),
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(
+			grpccodes.Internal,
+			"failed to get cluster template with identifier '%s'",
+			request.TemplateId,
+		)
 		return
 	}
-	if model == nil {
+	if template == nil {
+		err = grpcstatus.Errorf(
+			grpccodes.NotFound,
+			"cluster template with identifier '%s' not found",
+			request.TemplateId,
+		)
 		return
 	}
-	item := &api.ClusterTemplate{}
-	err = d.mapOutbound(model, item)
+	result := &api.ClusterTemplate{}
+	err = s.mapOutbound(template, result)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map outbound cluster template",
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound template")
 		return
 	}
 	response = &api.ClusterTemplatesGetResponse{
-		Template: item,
+		Template: result,
 	}
 	return
 }
 
-func (d *ClusterTemplatesServer) mapOutbound(from *models.ClusterTemplate, to *api.ClusterTemplate) error {
+func (s *ClusterTemplatesServer) mapOutbound(from *models.ClusterTemplate, to *api.ClusterTemplate) error {
 	to.Id = from.ID
 	to.Title = from.Title
 	to.Description = from.Description

@@ -17,6 +17,9 @@
                         "args": [
                                 "start",
                                 "server",
+                                "--log-level=debug",
+                                "--log-headers=true",
+                                "--log-bodies=true",
                                 "--db-url=postgres://service:service123@localhost:5432/service"
                         ]
                 },

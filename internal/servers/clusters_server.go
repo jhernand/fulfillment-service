@@ -23,6 +23,8 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/database/models"
 	"github.com/spf13/pflag"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -79,49 +81,74 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	return
 }
 
-func (d *ClustersServer) List(ctx context.Context,
+func (s *ClustersServer) List(ctx context.Context,
 	request *api.ClustersListRequest) (response *api.ClustersListResponse, err error) {
-	models, err := d.daos.Clusters().List(ctx)
+	clusters, err := s.daos.Clusters().List(ctx)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to list clusters",
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to list clusters")
 		return
 	}
-	items := make([]*api.Cluster, len(models))
-	for i, model := range models {
-		items[i] = &api.Cluster{}
-		err = d.mapOutbound(model, items[i])
+	results := make([]*api.Cluster, len(clusters))
+	for i, model := range clusters {
+		results[i] = &api.Cluster{}
+		err = s.mapOutbound(model, results[i])
 		if err != nil {
+			s.logger.ErrorContext(
+				ctx,
+				"Failed to map outbound cluster",
+				slog.String("error", err.Error()),
+			)
+			err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster")
 			return
 		}
 	}
 	response = &api.ClustersListResponse{
-		Size:  proto.Int32(int32(len(items))),
-		Total: proto.Int32(int32(len(items))),
-		Items: items,
+		Size:  proto.Int32(int32(len(results))),
+		Total: proto.Int32(int32(len(results))),
+		Items: results,
 	}
 	return
 }
 
-func (d *ClustersServer) Get(ctx context.Context,
+func (s *ClustersServer) Get(ctx context.Context,
 	request *api.ClustersGetRequest) (response *api.ClustersGetResponse, err error) {
-	model, err := d.daos.Clusters().Get(ctx, request.ClusterId)
+	cluster, err := s.daos.Clusters().Get(ctx, request.ClusterId)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to get cluster",
+			slog.String("cluster_id", request.ClusterId),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to get cluster with id '%s'", request.ClusterId)
 		return
 	}
-	if model == nil {
+	if cluster == nil {
+		err = grpcstatus.Errorf(grpccodes.NotFound, "cluster with id '%s' not found", request.ClusterId)
 		return
 	}
-	item := &api.Cluster{}
-	err = d.mapOutbound(model, item)
+	result := &api.Cluster{}
+	err = s.mapOutbound(cluster, result)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map outbound cluster",
+			slog.String("error", err.Error()),
+		)
+		err = grpcstatus.Errorf(grpccodes.Internal, "failed to map outbound cluster")
 		return
 	}
 	response = &api.ClustersGetResponse{
-		Cluster: item,
+		Cluster: result,
 	}
 	return
 }
 
-func (d *ClustersServer) mapOutbound(from *models.Cluster, to *api.Cluster) error {
+func (s *ClustersServer) mapOutbound(from *models.Cluster, to *api.Cluster) error {
 	to.Id = from.ID
 	to.ApiUrl = from.APIURL
 	to.ConsoleUrl = from.ConsoleURL

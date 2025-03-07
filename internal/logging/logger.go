@@ -1,15 +1,14 @@
 /*
 Copyright 2025 Red Hat Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
 
   http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
 */
 
 package logging
@@ -26,8 +25,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// LoggerBuilder contains the data and logic needed to create a logger. Don't create instances of
-// this directly, use the NewLogger function instead.
+// LoggerBuilder contains the data and logic needed to create a logger. Don't create instances of this directly, use the
+// NewLogger function instead.
 type LoggerBuilder struct {
 	writer io.Writer
 	out    io.Writer
@@ -45,29 +44,26 @@ func NewLogger() *LoggerBuilder {
 	}
 }
 
-// SetWriter sets the writer that the logger will write to. This is optional, and if not specified
-// the the logger will write to the standard output stream of the process.
+// SetWriter sets the writer that the logger will write to. This is optional, and if not specified the the logger will
+// write to the standard output stream of the process.
 func (b *LoggerBuilder) SetWriter(value io.Writer) *LoggerBuilder {
 	b.writer = value
 	return b
 }
 
-// SetOut sets the standard output stream. This is optional and will only be used then the log file
-// is 'stdout'.
+// SetOut sets the standard output stream. This is optional and will only be used then the log file is 'stdout'.
 func (b *LoggerBuilder) SetOut(value io.Writer) *LoggerBuilder {
 	b.out = value
 	return b
 }
 
-// SetErr sets the standard error output stream. This is optional and will only be used when the log
-// file is 'stderr'.
+// SetErr sets the standard error output stream. This is optional and will only be used when the log file is 'stderr'.
 func (b *LoggerBuilder) SetErr(value io.Writer) *LoggerBuilder {
 	b.err = value
 	return b
 }
 
-// AddField adds a field that will be added to all the log messages. The following field values have
-// special meanings:
+// AddField adds a field that will be added to all the log messages. The following field values have special meanings:
 //
 // - %p: Is replaced by the process identifier.
 //
@@ -80,8 +76,8 @@ func (b *LoggerBuilder) AddField(name string, value any) *LoggerBuilder {
 	return b
 }
 
-// AddFields adds a set of fields that will be added to all the log messages. See the AddField
-// method for the meanings of values.
+// AddFields adds a set of fields that will be added to all the log messages. See the AddField method for the meanings
+// of values.
 func (b *LoggerBuilder) AddFields(values map[string]any) *LoggerBuilder {
 	if b.fields == nil {
 		b.fields = maps.Clone(values)
@@ -91,9 +87,9 @@ func (b *LoggerBuilder) AddFields(values map[string]any) *LoggerBuilder {
 	return b
 }
 
-// SetFields sets the fields tht will be added to all the log messages. See the AddField method for
-// the meanings of values. Note that this replaces any previously configured fields. If you want to
-// preserve them use the AddFields method.
+// SetFields sets the fields tht will be added to all the log messages. See the AddField method for the meanings of
+// values. Note that this replaces any previously configured fields. If you want to preserve them use the AddFields
+// method.
 func (b *LoggerBuilder) SetFields(values map[string]any) *LoggerBuilder {
 	b.fields = maps.Clone(values)
 	return b
@@ -105,17 +101,16 @@ func (b *LoggerBuilder) SetLevel(value string) *LoggerBuilder {
 	return b
 }
 
-// SetFile sets the file that the logger will write to. This is optional, and if not specified
-// the the logger will write to the standard output stream of the process.
+// SetFile sets the file that the logger will write to. This is optional, and if not specified the the logger will write
+// to the standard output stream of the process.
 func (b *LoggerBuilder) SetFile(value string) *LoggerBuilder {
 	b.file = value
 	return b
 }
 
-// Set redact sets the flag that indicates if security sensitive data should be removed from the
-// log. These fields are indicated by adding an exlamation mark in front of the field name. For
-// example, to write a message with a `public` field that isn't sensitive and another `private`
-// field that is:
+// Set redact sets the flag that indicates if security sensitive data should be removed from the log. These fields are
+// indicated by adding an exlamation mark in front of the field name. For example, to write a message with a `public`
+// field that isn't sensitive and another `private` field that is:
 //
 //	logger.Info(
 //		"SSH keys",
@@ -123,8 +118,8 @@ func (b *LoggerBuilder) SetFile(value string) *LoggerBuilder {
 //		"!public", privateKey,
 //	)
 //
-// When redacting is enabled the value of the sensitive field will be replaced be `***`, so in the
-// example above the resulting message will be like this:
+// When redacting is enabled the value of the sensitive field will be replaced be `***`, so in the example above the
+// resulting message will be like this:
 //
 //	{
 //		"msg": "SSHKeys",
@@ -138,8 +133,7 @@ func (b *LoggerBuilder) SetRedact(value bool) *LoggerBuilder {
 	return b
 }
 
-// SetFlags sets the command line flags that should be used to configure the logger. This is
-// optional.
+// SetFlags sets the command line flags that should be used to configure the logger. This is optional.
 func (b *LoggerBuilder) SetFlags(flags *pflag.FlagSet) *LoggerBuilder {
 	if flags != nil {
 		if flags.Changed(levelFlagName) {
@@ -228,7 +222,7 @@ func (b *LoggerBuilder) Build() (result *slog.Logger, err error) {
 
 	// Create the handler:
 	replacers := make([]func([]string, slog.Attr) slog.Attr, 0, 2)
-	replacers = append(replacers, replaceTime)
+	replacers = append(replacers, replaceTime, replaceDuration)
 	if b.redact {
 		replacers = append(replacers, replaceRedacted)
 	} else {
@@ -299,7 +293,7 @@ func (b *LoggerBuilder) customFields() (result []any, err error) {
 }
 
 func (b *LoggerBuilder) customField(name string, value any) (result any, err error) {
-	switch value {
+	switch name {
 	case pidLogFieldValue:
 		result = os.Getpid()
 	default:
@@ -324,10 +318,17 @@ func replaceTime(groups []string, a slog.Attr) slog.Attr {
 	}
 	return a
 }
+func replaceDuration(groups []string, a slog.Attr) slog.Attr {
+	if a.Value.Kind() == slog.KindDuration {
+		value := a.Value.Duration().String()
+		a = slog.String(a.Key, value)
+	}
+	return a
+}
 
 func replaceRedacted(groups []string, a slog.Attr) slog.Attr {
 	if strings.HasPrefix(a.Key, "!") {
-		a = slog.String(a.Key[1:], "***")
+		a = slog.String(a.Key[1:], redactMark)
 	}
 	return a
 }
@@ -337,9 +338,11 @@ func preserveRedacted(groups []string, a slog.Attr) slog.Attr {
 	return a
 }
 
-// Values of log fields with special meanings. For example '%p' will be replaced with the identifier
-// of the process.
+// Values of log fields with special meanings. For example '%p' will be replaced with the identifier of the process.
 const (
 	pidLogFieldName  = "pid"
 	pidLogFieldValue = "%p"
 )
+
+// Mark that replaces redacted fields.
+const redactMark = "***"

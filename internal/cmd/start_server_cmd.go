@@ -25,8 +25,10 @@ import (
 
 	"github.com/innabox/fulfillment-service/internal"
 	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
+	"github.com/innabox/fulfillment-service/internal/logging"
 	"github.com/innabox/fulfillment-service/internal/network"
 	"github.com/innabox/fulfillment-service/internal/servers"
 )
@@ -71,28 +73,28 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	if err != nil {
 		return err
 	}
-	c.logger.Info("Waiting for database")
+	c.logger.InfoContext(ctx, "Waiting for database")
 	err = dbTool.Wait(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Run the migrations:
-	c.logger.Info("Running database migrations")
+	c.logger.InfoContext(ctx, "Running database migrations")
 	err = dbTool.Migrate(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Create the database connection pool:
-	c.logger.Info("Creating database connection pool")
+	c.logger.InfoContext(ctx, "Creating database connection pool")
 	dbPool, err := dbTool.Pool(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Create the data access objects:
-	c.logger.Info("Creating data access objects")
+	c.logger.InfoContext(ctx, "Creating data access objects")
 	daos, err := dao.NewSet().
 		SetLogger(c.logger).
 		SetPool(dbPool).
@@ -110,16 +112,45 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return err
 	}
 
+	// Prepare the logging interceptor:
+	c.logger.InfoContext(ctx, "Creating logging interceptor")
+	loggingInterceptor, err := logging.NewInterceptor().
+		SetLogger(c.logger).
+		SetFlags(c.flags).
+		Build()
+	if err != nil {
+		return err
+	}
+
+	// Prepare the authentication interceptor:
+	c.logger.InfoContext(ctx, "Creating authentication interceptor")
+	authInterceptor, err := auth.NewInterceptor().
+		SetLogger(c.logger).
+		SetFlags(c.flags).
+		Build()
+	if err != nil {
+		return err
+	}
+
 	// Create the gRPC server:
-	c.logger.Info("Creating gRPC server")
-	grpcServer := grpc.NewServer()
+	c.logger.InfoContext(ctx, "Creating gRPC server")
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			loggingInterceptor.UnaryServer,
+			authInterceptor.UnaryServer,
+		),
+		grpc.ChainStreamInterceptor(
+			loggingInterceptor.StreamServer,
+			authInterceptor.StreamServer,
+		),
+	)
 
 	// Register the reflection server:
-	c.logger.Info("Registering gRPC reflection server")
+	c.logger.InfoContext(ctx, "Registering gRPC reflection server")
 	reflection.Register(grpcServer)
 
 	// Create the cluster templates server:
-	c.logger.Info("Creating cluster templates server")
+	c.logger.InfoContext(ctx, "Creating cluster templates server")
 	clusterTemplatesServer, err := servers.NewClusterTemplatesServer().
 		SetLogger(c.logger).
 		SetFlags(c.flags).
@@ -131,7 +162,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	api.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
 
 	// Create the cluster orders server:
-	c.logger.Info("Creating cluster orders server")
+	c.logger.InfoContext(ctx, "Creating cluster orders server")
 	clusterOrdersServer, err := servers.NewClusterOrdersServer().
 		SetLogger(c.logger).
 		SetFlags(c.flags).
@@ -143,7 +174,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	api.RegisterClusterOrdersServer(grpcServer, clusterOrdersServer)
 
 	// Create the clusters server:
-	c.logger.Info("Creating clusters server")
+	c.logger.InfoContext(ctx, "Creating clusters server")
 	clustersServer, err := servers.NewClustersServer().
 		SetLogger(c.logger).
 		SetFlags(c.flags).
