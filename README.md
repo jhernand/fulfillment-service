@@ -167,8 +167,8 @@ Clone the git repository into the `repository` sub-directory:
 
 The `dev.py` tool requires some Python packages that are listed in the `requirements.txt` file, so install them:
 
-    $ cd ~/fulfillment-service
-    $ pip install -r repository/requirements.txt
+    $ cd ~/fulfillment-service/repository
+    $ pip install -r requirements.txt
 
 ### Use the `dev.py setup` command to install the rest of the development tools
 
@@ -181,7 +181,7 @@ For different development tasks the following tools are used, for example:
 The recommended way to install them is to use the `dev.py setup` command, which will download and install the right
 versions to the `~/fulfillment-service/.local` directory:
 
-    $ cd ~/fulfillment-service
+    $ cd ~/fulfillment-service/repository
     $ ./dev.py setup
 
 ## Development
