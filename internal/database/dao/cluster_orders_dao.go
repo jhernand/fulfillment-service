@@ -104,16 +104,12 @@ func (d *clusterOrdersDAO) List(ctx context.Context) (items []*models.ClusterOrd
 		ctx,
 		`
 		select
-			o.id,
-			o.template_id,
-			o.state,
-			f.cluster_id
+			id,
+			template_id,
+			state,
+			cluster_id
 		from
-			cluster_orders as o
-		left outer join
-			fulfilled_cluster_orders as f
-		on
-			o.id = f.order_id
+			cluster_orders
 		`,
 	)
 	if err != nil {
@@ -200,17 +196,13 @@ func (d *clusterOrdersDAO) Get(ctx context.Context, id string) (item *models.Clu
 		ctx,
 		`
 		select
-			o.template_id,
-			o.state,
-			f.cluster_id
+			template_id,
+			state,
+			cluster_id
 		from
-			cluster_orders as o
-		left outer join
-			fulfilled_cluster_orders as f
-		on
-			o.id = f.order_id
+			cluster_orders
 		where
-			o.id = $1
+			id = $1
 		`,
 		id,
 	)
