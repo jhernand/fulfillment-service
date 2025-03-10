@@ -43,6 +43,9 @@ type Tool interface {
 
 	// Pool returns the pool of database connections.
 	Pool(ctx context.Context) (result *pgxpool.Pool, err error)
+
+	// URL returns the database connection URL.
+	URL() string
 }
 
 type ToolBuilder struct {
@@ -241,6 +244,11 @@ func (t *tool) Migrate(ctx context.Context) error {
 	)
 
 	return nil
+}
+
+// URL returns the database connection URL.
+func (t *tool) URL() string {
+	return t.url
 }
 
 // Pool returns the pool of database connections.
