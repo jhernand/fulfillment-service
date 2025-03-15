@@ -465,7 +465,7 @@ func (f *grpcJwksAuthnFunc) checkAuth(ctx context.Context, auth string) (token *
 
 	// The library that we use considers tokens valid if the claims that it checks don't exist, but we want to
 	// reject those tokens, so we need to do some additional validations:
-	err = f.checkClaims(ctx, token.Claims.(jwt.MapClaims))
+	err = f.checkClaims(token.Claims.(jwt.MapClaims))
 	if err != nil {
 		return
 	}
@@ -781,7 +781,7 @@ func (f *grpcJwksAuthnFunc) checkToken(ctx context.Context, bearer string) (toke
 }
 
 // checkClaims checks that the required claims are present and that they have valid values.
-func (f *grpcJwksAuthnFunc) checkClaims(ctx context.Context, claims jwt.MapClaims) error {
+func (f *grpcJwksAuthnFunc) checkClaims(claims jwt.MapClaims) error {
 	// The `typ` claim is optional, but if it exists the value must be `Bearer`:
 	value, ok := claims["typ"]
 	if ok {
@@ -803,17 +803,17 @@ func (f *grpcJwksAuthnFunc) checkClaims(ctx context.Context, claims jwt.MapClaim
 	}
 
 	// Check the format of the `sub` claim:
-	_, err := f.checkStringClaim(ctx, claims, "sub")
+	_, err := f.checkStringClaim(claims, "sub")
 	if err != nil {
 		return err
 	}
 
 	// Check the format of the issue and expiration date claims:
-	_, err = f.checkTimeClaim(ctx, claims, "iat")
+	_, err = f.checkTimeClaim(claims, "iat")
 	if err != nil {
 		return err
 	}
-	_, err = f.checkTimeClaim(ctx, claims, "exp")
+	_, err = f.checkTimeClaim(claims, "exp")
 	if err != nil {
 		return err
 	}
@@ -822,9 +822,8 @@ func (f *grpcJwksAuthnFunc) checkClaims(ctx context.Context, claims jwt.MapClaim
 }
 
 // checkStringClaim checks that the given claim exists and that the value is a string. If it exist it returns the value.
-func (f *grpcJwksAuthnFunc) checkStringClaim(ctx context.Context, claims jwt.MapClaims,
-	name string) (result string, err error) {
-	value, err := f.checkClaim(ctx, claims, name)
+func (f *grpcJwksAuthnFunc) checkStringClaim(claims jwt.MapClaims, name string) (result string, err error) {
+	value, err := f.checkClaim(claims, name)
 	if err != nil {
 		return
 	}
@@ -842,9 +841,9 @@ func (f *grpcJwksAuthnFunc) checkStringClaim(ctx context.Context, claims jwt.Map
 }
 
 // checkTimeClaim checks that the given claim exists and that the value is a time. If it exists it returns the value.
-func (f *grpcJwksAuthnFunc) checkTimeClaim(ctx context.Context, claims jwt.MapClaims, name string) (result time.Time,
+func (f *grpcJwksAuthnFunc) checkTimeClaim(claims jwt.MapClaims, name string) (result time.Time,
 	err error) {
-	value, err := f.checkClaim(ctx, claims, name)
+	value, err := f.checkClaim(claims, name)
 	if err != nil {
 		return
 	}
@@ -862,7 +861,7 @@ func (f *grpcJwksAuthnFunc) checkTimeClaim(ctx context.Context, claims jwt.MapCl
 }
 
 // checkClaim checks that the given claim exists. If it exists it returns the value.
-func (f *grpcJwksAuthnFunc) checkClaim(ctx context.Context, claims jwt.MapClaims, name string) (result any, err error) {
+func (f *grpcJwksAuthnFunc) checkClaim(claims jwt.MapClaims, name string) (result any, err error) {
 	value, ok := claims[name]
 	if !ok {
 		err = grpcstatus.Errorf(
@@ -873,37 +872,6 @@ func (f *grpcJwksAuthnFunc) checkClaim(ctx context.Context, claims jwt.MapClaims
 		return
 	}
 	result = value
-	return
-}
-
-// tokenRemaining determines if the given token will eventually expire (offile access tokens and opaque tokens, for
-// example, never expire) and the time till it expires. That time will be positive if the token isn't expired, and
-// negative if the token has already expired.
-//
-// For tokens that don't have the `exp` claim, or that have it with value zero (typical for offline access tokens) the
-// result will always be `false` and zero.
-func (f *grpcJwksAuthnFunc) tokenRemaining(token *jwt.Token, now time.Time) (expires bool, duration time.Duration,
-	err error) {
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		err = fmt.Errorf("expected map claims but got %T", claims)
-		return
-	}
-	var exp float64
-	claim, ok := claims["exp"]
-	if !ok {
-		return
-	}
-	exp, ok = claim.(float64)
-	if !ok {
-		err = fmt.Errorf("expected floating point 'exp' but got %T", claim)
-		return
-	}
-	if exp == 0 {
-		return
-	}
-	duration = time.Unix(int64(exp), 0).Sub(now)
-	expires = true
 	return
 }
 
