@@ -23,7 +23,6 @@ resources:
 - namespace.yaml
 - database
 - service
-- publisher
 
 generatorOptions:
   disableNameSuffixHash: true

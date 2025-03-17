@@ -25,7 +25,6 @@ func Start() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	result.AddCommand(NewStartGatewayCommand())
-	result.AddCommand(NewStartPublisherCommand())
 	result.AddCommand(NewStartServerCommand())
 	return result
 }
