@@ -357,9 +357,8 @@ func (d *GenericDAO[M]) Update(ctx context.Context, id string, object M) (err er
 	row := tx.QueryRow(ctx, query, id)
 	var data []byte
 	err = row.Scan(&data)
-	if errors.Is(err, pgx.ErrNoRows) {
-		err = nil
-		return
+	if err != nil {
+		return err
 	}
 	current := d.reflectMsg.New().Interface().(M)
 	err = protojson.Unmarshal(data, current)
