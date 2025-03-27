@@ -20,8 +20,8 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
+	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -31,7 +31,6 @@ import (
 type GenericDAOBuilder[M proto.Message] struct {
 	logger *slog.Logger
 	table  string
-	pool   *pgxpool.Pool
 }
 
 // GenericDAO provides generic data access operations for protocol buffers messages. It assumes that objects will be
@@ -44,7 +43,6 @@ type GenericDAOBuilder[M proto.Message] struct {
 type GenericDAO[M proto.Message] struct {
 	logger     *slog.Logger
 	table      string
-	pool       *pgxpool.Pool
 	reflectMsg protoreflect.Message
 	reflectId  protoreflect.FieldDescriptor
 }
@@ -60,12 +58,6 @@ func (b *GenericDAOBuilder[M]) SetLogger(value *slog.Logger) *GenericDAOBuilder[
 	return b
 }
 
-// SetPool sets the database connection pool. This is mandatory.
-func (b *GenericDAOBuilder[M]) SetPool(value *pgxpool.Pool) *GenericDAOBuilder[M] {
-	b.pool = value
-	return b
-}
-
 // SetTable sets the table name. This is mandatory.
 func (b *GenericDAOBuilder[M]) SetTable(value string) *GenericDAOBuilder[M] {
 	b.table = value
@@ -77,10 +69,6 @@ func (b *GenericDAOBuilder[M]) Build() (result *GenericDAO[M], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
-		return
-	}
-	if b.pool == nil {
-		err = errors.New("database connection pool is mandatory")
 		return
 	}
 	if b.table == "" {
@@ -103,7 +91,6 @@ func (b *GenericDAOBuilder[M]) Build() (result *GenericDAO[M], err error) {
 	result = &GenericDAO[M]{
 		logger:     b.logger,
 		table:      b.table,
-		pool:       b.pool,
 		reflectMsg: reflectMsg,
 		reflectId:  reflectId,
 	}
@@ -113,22 +100,11 @@ func (b *GenericDAOBuilder[M]) Build() (result *GenericDAO[M], err error) {
 // List retrieves all rows from the table and deserializes them into a slice of messages.
 func (d *GenericDAO[M]) List(ctx context.Context) (results []M, err error) {
 	// Start a transaction:
-	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
-		AccessMode: pgx.ReadOnly,
-	})
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to rollback transaction",
-				slog.String("error", err.Error()),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Fetch the results:
 	query := fmt.Sprintf("select data from %s", d.table)
@@ -162,22 +138,11 @@ func (d *GenericDAO[M]) List(ctx context.Context) (results []M, err error) {
 // is no row with the given identifier.
 func (d *GenericDAO[M]) Get(ctx context.Context, id string) (result M, err error) {
 	// Start a transaction:
-	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
-		AccessMode: pgx.ReadOnly,
-	})
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to rollback transaction",
-				slog.String("error", err.Error()),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Fetch the results:
 	query := fmt.Sprintf("select data from %s where id = $1", d.table)
@@ -201,22 +166,11 @@ func (d *GenericDAO[M]) Get(ctx context.Context, id string) (result M, err error
 // given identifier.
 func (d *GenericDAO[M]) Exists(ctx context.Context, id string) (ok bool, err error) {
 	// Start a transaction:
-	tx, err := d.pool.BeginTx(ctx, pgx.TxOptions{
-		AccessMode: pgx.ReadOnly,
-	})
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Rollback(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to rollback transaction",
-				slog.String("error", err.Error()),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Check if the row exists:
 	query := fmt.Sprintf("select count(*) from %s where id = $1", d.table)
@@ -233,20 +187,11 @@ func (d *GenericDAO[M]) Exists(ctx context.Context, id string) (ok bool, err err
 // Insert adds a new row to the table with a generated identifier and serialized data.
 func (d *GenericDAO[M]) Insert(ctx context.Context, object M) (id string, err error) {
 	// Start a transaction:
-	tx, err := d.pool.Begin(ctx)
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
-	defer func() {
-		err := tx.Commit(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to commit transaction",
-				slog.String("error", err.Error()),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Generate a new identifier:
 	tmp := uuid.NewString()
@@ -267,22 +212,13 @@ func (d *GenericDAO[M]) Insert(ctx context.Context, object M) (id string, err er
 }
 
 // Update modifies an existing row in the table by its identifier with the result of serializing the provided object.
-func (d *GenericDAO[M]) Update(ctx context.Context, id string, object M) error {
+func (d *GenericDAO[M]) Update(ctx context.Context, id string, object M) (err error) {
 	// Start a transaction:
-	tx, err := d.pool.Begin(ctx)
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		err := tx.Commit(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to commit transaction",
-				slog.String("error", err.Error()),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Update the row:
 	data, err := protojson.Marshal(object)
@@ -291,26 +227,17 @@ func (d *GenericDAO[M]) Update(ctx context.Context, id string, object M) error {
 	}
 	query := fmt.Sprintf("update %s set data = $1 where id = $2", d.table)
 	_, err = tx.Exec(ctx, query, data, id)
-	return err
+	return
 }
 
 // Delete removes a row from the table by its identifier.
-func (d *GenericDAO[M]) Delete(ctx context.Context, id string) error {
+func (d *GenericDAO[M]) Delete(ctx context.Context, id string) (err error) {
 	// Start a transaction:
-	tx, err := d.pool.Begin(ctx)
+	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		err := tx.Commit(ctx)
-		if err != nil {
-			d.logger.ErrorContext(
-				ctx,
-				"Failed to commit transaction",
-				slog.String("error", err.Error()),
-			)
-		}
-	}()
+	defer tx.ReportError(&err)
 
 	// Delete the row:
 	query := fmt.Sprintf("delete from %s where id = $1", d.table)
