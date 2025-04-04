@@ -16,6 +16,7 @@ package clusterorder
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
@@ -24,17 +25,17 @@ import (
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/imdario/mergo"
 	adminv1 "github.com/innabox/fulfillment-service/internal/api/admin/v1"
 	fulfillmentv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+// objectPrefix is the prefix that will be used in the `generateName` field of the resources created in the hub.
+const objectPrefix = "order-"
 
 // FunctionBuilder contains the data and logic needed to build a function that reconciles cluster orders.
 type FunctionBuilder struct {
@@ -196,40 +197,73 @@ func (t *task) run(ctx context.Context) error {
 		slog.String("id", t.hub.Id),
 	)
 
-	// Create the K8S object:
+	// Create or update the K8S object:
 	client, err := t.r.getKubeClient(ctx, t.hub)
 	if err != nil {
 		return err
 	}
-	object := &unstructured.Unstructured{}
-	object.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "cloudkit.openshift.io",
-		Version: "v1alpha1",
-		Kind:    "ClusterOrder",
-	})
-	object.SetNamespace(t.hub.Namespace)
-	object.SetName(t.object.Id)
-	result, err := controllerutil.CreateOrPatch(ctx, client, object, func() error {
-		return mergo.Merge(
-			&object.Object,
-			map[string]any{
-				"spec": map[string]any{
-					"templateID": t.object.Spec.TemplateId,
-				},
-			},
-			mergo.WithOverride,
-		)
-	})
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(ListGvk)
+	err = client.List(
+		ctx, list,
+		clnt.InNamespace(t.hub.Namespace),
+		clnt.MatchingLabels{
+			idLabel: t.object.Id,
+		},
+	)
 	if err != nil {
 		return err
 	}
-	t.r.logger.DebugContext(
-		ctx,
-		"Created cluster order",
-		slog.String("namespace", object.GetNamespace()),
-		slog.String("name", object.GetName()),
-		slog.String("result", string(result)),
-	)
+	items := list.Items
+	if len(items) > 1 {
+		return fmt.Errorf(
+			"expected at most one cluster order with identifier '%s' but found %d", t.object.Id,
+			len(items),
+		)
+	}
+	spec := map[string]any{
+		"templateID": t.object.Spec.TemplateId,
+	}
+	if len(items) == 0 {
+		object := &unstructured.Unstructured{}
+		object.SetGroupVersionKind(ObjectGvk)
+		object.SetNamespace(t.hub.Namespace)
+		object.SetGenerateName(objectPrefix)
+		object.SetLabels(map[string]string{
+			idLabel: t.object.Id,
+		})
+		err = unstructured.SetNestedField(object.Object, spec, "spec")
+		if err != nil {
+			return err
+		}
+		err = client.Create(ctx, object)
+		if err != nil {
+			return err
+		}
+		t.r.logger.DebugContext(
+			ctx,
+			"Created cluster order",
+			slog.String("namespace", object.GetNamespace()),
+			slog.String("name", object.GetName()),
+		)
+	} else {
+		object := &list.Items[0]
+		update := object.DeepCopy()
+		err = unstructured.SetNestedField(update.Object, spec, "spec")
+		if err != nil {
+			return err
+		}
+		err = client.Patch(ctx, update, clnt.MergeFrom(object))
+		if err != nil {
+			return err
+		}
+		t.r.logger.DebugContext(
+			ctx,
+			"Updated cluster order",
+			slog.String("namespace", object.GetNamespace()),
+			slog.String("name", object.GetName()),
+		)
+	}
 
 	return err
 }

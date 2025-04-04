@@ -148,7 +148,7 @@ func (c *createCommandRunner) run(cmd *cobra.Command, argv []string) error {
 	c.logger.InfoContext(
 		ctx,
 		"Got admin Kubeconfig",
-		slog.String("length", len(kubeconfig)),
+		slog.Int("length", len(kubeconfig)),
 	)
 
 	return nil
