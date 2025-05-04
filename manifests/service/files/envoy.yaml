@@ -51,7 +51,7 @@ static_resources:
                   - safe_regex:
                       regex: ".*"
                   allow_methods: "POST"
-                  allow_headers: "Content-Type, X-User-Agent, X-Grpc-Web"
+                  allow_headers: "Authorization, Content-Type, X-User-Agent, X-Grpc-Web"
                   allow_credentials: true
                   max_age: "86400"
               routes:
