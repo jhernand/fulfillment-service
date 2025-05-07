@@ -7,5 +7,4 @@ labels:
 
 resources:
 - sa.yaml
-- sa-token.yaml
 - deployment.yaml
