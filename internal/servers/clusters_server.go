@@ -217,7 +217,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 	}
 
 	// Get the private data of the cluster:
-	cluster, err := s.privateClustersDao.Get(ctx, clusterId)
+	getClusterResponse, err := s.privateClustersDao.Get().SetID(clusterId).Send(ctx)
 	if err != nil {
 		logger.ErrorContext(
 			ctx,
@@ -227,7 +227,10 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		err = internalErr
 		return
 	}
-	if cluster == nil || cluster.HubId == "" {
+	cluster := getClusterResponse.GetObject()
+	hubId := cluster.GetHubId()
+	orderId := cluster.GetOrderId()
+	if hubId == "" {
 		err = grpcstatus.Errorf(
 			grpccodes.NotFound,
 			"kubeconfig for cluster cluster with identifier '%s' isn't available yet",
@@ -236,12 +239,12 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		return
 	}
 	logger = logger.With(
-		slog.String("hub_id", cluster.HubId),
-		slog.String("order_id", cluster.OrderId),
+		slog.String("hub_id", hubId),
+		slog.String("order_id", orderId),
 	)
 
 	// Get the data of the hub:
-	hub, err := s.privateHubsDao.Get(ctx, cluster.HubId)
+	getHubResponse, err := s.privateHubsDao.Get().SetID(hubId).Send(ctx)
 	if err != nil {
 		logger.ErrorContext(
 			ctx,
@@ -251,13 +254,15 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		err = internalErr
 		return
 	}
+	hub := getHubResponse.GetObject()
 	if hub == nil {
 		logger.ErrorContext(ctx, "Hub doesn't exist")
 		err = internalErr
 		return
 	}
+	hubNamespace := hub.GetNamespace()
 	logger = logger.With(
-		slog.String("hub_ns", hub.Namespace),
+		slog.String("hub_ns", hubNamespace),
 	)
 	logger.DebugContext(ctx, "Got hub")
 
@@ -275,7 +280,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 	logger.DebugContext(ctx, "Got hub client")
 
 	// Get the cluster order from the hub:
-	order, err := s.getKubeClusterOrder(ctx, hubClient, hub.Namespace, cluster.OrderId)
+	order, err := s.getKubeClusterOrder(ctx, hubClient, hubNamespace, orderId)
 	if err != nil {
 		logger.ErrorContext(
 			ctx,
@@ -285,9 +290,11 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		err = internalErr
 		return
 	}
+	orderNamespace := order.GetNamespace()
+	orderName := order.GetName()
 	logger = logger.With(
-		slog.String("co_namespace", order.GetNamespace()),
-		slog.String("co_name", order.GetName()),
+		slog.String("co_namespace", orderNamespace),
+		slog.String("co_name", orderName),
 	)
 	logger.DebugContext(ctx, "Got cluster order from hub")
 

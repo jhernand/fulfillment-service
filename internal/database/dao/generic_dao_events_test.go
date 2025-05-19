@@ -90,10 +90,9 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Create(ctx, &api.Cluster{})
+			_, err = generic.Create().Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
 		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(err).ToNot(HaveOccurred())
 		Expect(event).ToNot(BeNil())
 		Expect(event.Table).To(Equal("clusters"))
 		Expect(event.Type).To(Equal(EventTypeCreated))
@@ -113,19 +112,24 @@ var _ = Describe("Generic DAO events", func() {
 
 		var object *api.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &api.Cluster{})
+			response, err := generic.Create().Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = response.GetObject()
 		})
-		Expect(err).ToNot(HaveOccurred())
 
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Update(ctx, &api.Cluster{
-				Id: object.Id,
-				Status: &api.ClusterStatus{
-					ApiUrl: "https://api.example.com",
-				},
-			})
+			_, err = generic.Update().
+				SetObject(
+					api.Cluster_builder{
+						Id: object.Id,
+						Status: api.ClusterStatus_builder{
+							ApiUrl: "https://api.example.com",
+						}.Build(),
+					}.Build(),
+				).
+				Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
 		})
-		Expect(err).ToNot(HaveOccurred())
 		Expect(event).ToNot(BeNil())
 		Expect(event.Table).To(Equal("clusters"))
 		Expect(event.Type).To(Equal(EventTypeUpdated))
@@ -145,13 +149,14 @@ var _ = Describe("Generic DAO events", func() {
 
 		var object *api.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &api.Cluster{})
+			response, err := generic.Create().Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = response.GetObject()
 		})
-		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
-			err = generic.Delete(ctx, object.GetId())
+			_, err = generic.Delete().SetObject(object).Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
 		})
-		Expect(err).ToNot(HaveOccurred())
 		Expect(event).ToNot(BeNil())
 		Expect(event.Table).To(Equal("clusters"))
 		Expect(event.Type).To(Equal(EventTypeDeleted))
@@ -166,12 +171,10 @@ var _ = Describe("Generic DAO events", func() {
 			}).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
-		var object *api.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &api.Cluster{})
+			_, err := generic.Create().Send(ctx)
+			Expect(err).To(MatchError("my error"))
 		})
-		Expect(err).To(MatchError("my error"))
-		Expect(object).To(BeNil())
 		row := pool.QueryRow(ctx, "select count(*) from clusters")
 		var count int
 		err = row.Scan(&count)
@@ -188,9 +191,10 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 		var object *api.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &api.Cluster{})
+			response, err := generic.Create().Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = response.GetObject()
 		})
-		Expect(err).ToNot(HaveOccurred())
 
 		// Create the DAO again, this time with the callback, to do the delete:
 		generic, err = NewGenericDAO[*api.Cluster]().
@@ -202,9 +206,9 @@ var _ = Describe("Generic DAO events", func() {
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
-			err = generic.Delete(ctx, object.GetId())
+			_, err := generic.Delete().SetObject(object).Send(ctx)
+			Expect(err).To(MatchError("my error"))
 		})
-		Expect(err).To(MatchError("my error"))
 
 		// Check that the object is still there:
 		var exists bool
@@ -233,15 +237,16 @@ var _ = Describe("Generic DAO events", func() {
 		// Create the object:
 		var object *api.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &api.Cluster{})
+			response, err := generic.Create().Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = response.GetObject()
 		})
-		Expect(err).ToNot(HaveOccurred())
 
 		// Update without changes and verify the result:
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Update(ctx, object)
+			_, err = generic.Update().SetObject(object).Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
 		})
-		Expect(err).ToNot(HaveOccurred())
 		Expect(called).To(BeFalse())
 	})
 
@@ -254,13 +259,18 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 		var object *api.Cluster
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Create(ctx, &api.Cluster{
-				Status: &api.ClusterStatus{
-					ApiUrl: "https://my.api",
-				},
-			})
+			response, err := generic.Create().
+				SetObject(
+					api.Cluster_builder{
+						Status: api.ClusterStatus_builder{
+							ApiUrl: "https://my.api",
+						}.Build(),
+					}.Build(),
+				).
+				Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = response.GetObject()
 		})
-		Expect(err).ToNot(HaveOccurred())
 
 		// Create the DAO again, this time with the callback, to do the update:
 		generic, err = NewGenericDAO[*api.Cluster]().
@@ -272,20 +282,25 @@ var _ = Describe("Generic DAO events", func() {
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Update(ctx, &api.Cluster{
-				Id: object.GetId(),
-				Status: &api.ClusterStatus{
-					ApiUrl: "https://your.api",
-				},
-			})
+			_, err = generic.Update().
+				SetObject(
+					api.Cluster_builder{
+						Id: object.GetId(),
+						Status: api.ClusterStatus_builder{
+							ApiUrl: "https://your.api",
+						}.Build(),
+					}.Build(),
+				).
+				Send(ctx)
+			Expect(err).To(MatchError("my error"))
 		})
-		Expect(err).To(MatchError("my error"))
 
 		// Check that the object hasn't been updated:
 		runWithTx(func(ctx context.Context) {
-			object, err = generic.Get(ctx, object.GetId())
+			response, err := generic.Get().SetID(object.GetId()).Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			object = response.GetObject()
 		})
-		Expect(err).ToNot(HaveOccurred())
 		Expect(object).ToNot(BeNil())
 		Expect(object.Status).ToNot(BeNil())
 		Expect(object.Status.ApiUrl).To(Equal("https://my.api"))
@@ -309,9 +324,9 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Create(ctx, &api.Cluster{})
+			_, err = generic.Create().Send(ctx)
+			Expect(err).ToNot(HaveOccurred())
 		})
-		Expect(err).ToNot(HaveOccurred())
 		Expect(called1).To(BeTrue())
 		Expect(called2).To(BeTrue())
 	})
@@ -334,9 +349,9 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Create(ctx, &api.Cluster{})
+			_, err = generic.Create().Send(ctx)
+			Expect(err).To(MatchError("my error 1"))
 		})
-		Expect(err).To(MatchError("my error 1"))
 		Expect(called1).To(BeTrue())
 		Expect(called2).To(BeFalse())
 	})

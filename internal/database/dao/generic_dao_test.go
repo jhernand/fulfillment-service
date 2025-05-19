@@ -189,82 +189,77 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Creates object", func() {
-			object := &testsv1.Object{}
-			created, err := generic.Create(ctx, object)
+			createResponse, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			result, err := generic.Get(ctx, created.GetId())
+			object := createResponse.GetObject()
+			getResponse, err := generic.Get().SetID(object.GetId()).Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
+			Expect(getResponse).ToNot(BeNil())
+			Expect(getResponse.GetObject()).ToNot(BeNil())
 		})
 
 		It("Sets metadata when creating", func() {
-			object := &testsv1.Object{}
-			result, err := generic.Create(ctx, object)
+			response, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Metadata).ToNot(BeNil())
+			object := response.GetObject()
+			Expect(object.HasMetadata()).To(BeTrue())
 		})
 
 		It("Sets creation timestamp when creating", func() {
-			object := &testsv1.Object{}
-			result, err := generic.Create(ctx, object)
+			response, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
-			Expect(result.Metadata).ToNot(BeNil())
-			Expect(result.Metadata.CreationTimestamp).ToNot(BeNil())
-			Expect(result.Metadata.CreationTimestamp.AsTime()).ToNot(BeZero())
+			Expect(response.GetObject().GetMetadata().GetCreationTimestamp().AsTime()).ToNot(BeZero())
 		})
 
 		It("Doesn't set deletion timestamp when creating", func() {
-			object, err := generic.Create(ctx, &testsv1.Object{})
+			response, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(object).ToNot(BeNil())
-			Expect(object.Metadata).ToNot(BeNil())
-			Expect(object.Metadata.DeletionTimestamp).To(BeNil())
+			Expect(response.GetObject().GetMetadata().HasDeletionTimestamp()).To(BeFalse())
 		})
 
 		It("Generates non empty identifiers", func() {
-			object, err := generic.Create(ctx, &testsv1.Object{})
+			response, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(object).ToNot(BeNil())
-			Expect(object.GetId()).ToNot(BeEmpty())
+			Expect(response.GetObject().GetId()).ToNot(BeEmpty())
 		})
 
 		It("Doesn't put the generated identifier inside the input object", func() {
 			object := &testsv1.Object{}
-			_, err := generic.Create(ctx, object)
+			_, err := generic.Create().SetObject(object).Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(object.GetId()).To(BeEmpty())
 		})
 
 		It("Doesn't put the generated metadata inside the input object", func() {
 			object := &testsv1.Object{}
-			_, err := generic.Create(ctx, object)
+			_, err := generic.Create().SetObject(object).Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(object.Metadata).To(BeNil())
 		})
 
 		It("Gets object", func() {
-			object, err := generic.Create(ctx, &testsv1.Object{})
+			createResponse, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			result, err := generic.Get(ctx, object.GetId())
+			object := createResponse.GetObject()
+			getResponse, err := generic.Get().SetID(object.GetId()).Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
+			Expect(getResponse.HasObject()).To(BeTrue())
 		})
 
 		It("Lists objects", func() {
 			// Insert a couple of rows:
 			const count = 2
 			for range count {
-				_, err := generic.Create(ctx, &testsv1.Object{})
+				_, err := generic.Create().Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
 			}
 
 			// Try to list:
-			request, err := generic.List(ctx, ListRequest{})
+			response, err := generic.List().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(request.Items).To(HaveLen(count))
-			for _, item := range request.Items {
+			items := response.GetItems()
+			Expect(items).To(HaveLen(count))
+			for _, item := range items {
 				Expect(item).ToNot(BeNil())
 			}
 		})
@@ -281,110 +276,113 @@ var _ = Describe("Generic DAO", func() {
 					objects[i] = &testsv1.Object{
 						Id: uuid.NewString(),
 					}
-					_, err := generic.Create(ctx, objects[i])
+					_, err := generic.Create().SetObject(objects[i]).Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
 				sort(objects)
 			})
 
 			It("Uses zero as default offset", func() {
-				response, err := generic.List(ctx, ListRequest{
-					Limit: 1,
-				})
+				response, err := generic.List().SetLimit(1).Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.Items[0].Id).To(Equal(objects[0].Id))
+				items := response.GetItems()
+				Expect(items[0].GetId()).To(Equal(objects[0].GetId()))
 			})
 
 			It("Honours valid offset", func() {
 				for i := range len(objects) {
-					response, err := generic.List(ctx, ListRequest{
-						Offset: int32(i),
-						Limit:  1,
-					})
+					response, err := generic.List().
+						SetOffset(i).
+						SetLimit(1).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(response.Items[0].Id).To(Equal(objects[i].Id))
+					items := response.GetItems()
+					Expect(items[0].GetId()).To(Equal(objects[i].GetId()))
 				}
 			})
 
 			It("Returns empty list if offset is greater or equal than available items", func() {
-				response, err := generic.List(ctx, ListRequest{
-					Offset: objectCount,
-					Limit:  1,
-				})
+				response, err := generic.List().
+					SetOffset(objectCount).
+					SetLimit(1).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.Items).To(BeEmpty())
+				items := response.GetItems()
+				Expect(items).To(BeEmpty())
 			})
 
 			It("Ignores negative offset", func() {
-				response, err := generic.List(ctx, ListRequest{
-					Offset: -123,
-					Limit:  1,
-				})
+				response, err := generic.List().
+					SetOffset(-123).
+					SetLimit(1).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.Items[0].Id).To(Equal(objects[0].Id))
+				items := response.GetItems()
+				Expect(items[0].GetId()).To(Equal(objects[0].GetId()))
 			})
 
 			It("Interprets negative limit as requesting zero items", func() {
-				response, err := generic.List(ctx, ListRequest{
-					Limit: -123,
-				})
+				response, err := generic.List().
+					SetLimit(-123).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.Size).To(BeZero())
-				Expect(response.Items).To(BeEmpty())
+				Expect(response.GetSize()).To(BeZero())
+				Expect(response.GetItems()).To(BeEmpty())
 			})
 
 			It("Interprets zero limit as requesting the default number of items", func() {
-				response, err := generic.List(ctx, ListRequest{
-					Limit: 0,
-				})
+				response, err := generic.List().
+					SetLimit(0).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.Size).To(BeNumerically("==", defaultLimit))
-				Expect(response.Items).To(HaveLen(defaultLimit))
+				Expect(response.GetSize()).To(BeNumerically("==", defaultLimit))
+				Expect(response.GetItems()).To(HaveLen(defaultLimit))
 			})
 
 			It("Truncates limit to the maximum", func() {
-				response, err := generic.List(ctx, ListRequest{
-					Limit: maxLimit + 1,
-				})
+				response, err := generic.List().
+					SetLimit(maxLimit + 1).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.Size).To(BeNumerically("==", maxLimit))
-				Expect(response.Items).To(HaveLen(maxLimit))
+				Expect(response.GetSize()).To(BeNumerically("==", maxLimit))
+				Expect(response.GetItems()).To(HaveLen(maxLimit))
 			})
 
 			It("Honours valid limit", func() {
 				for i := 1; i < maxLimit; i++ {
-					response, err := generic.List(ctx, ListRequest{
-						Limit: int32(i),
-					})
+					response, err := generic.List().
+						SetLimit(i).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(response.Size).To(BeNumerically("==", i))
-					Expect(response.Items).To(HaveLen(i))
+					Expect(response.GetSize()).To(BeNumerically("==", i))
+					Expect(response.GetItems()).To(HaveLen(i))
 				}
 			})
 
 			It("Returns less items than requested if there are not enough", func() {
-				response, err := generic.List(ctx, ListRequest{
-					Offset: objectCount - 2,
-					Limit:  10,
-				})
+				response, err := generic.List().
+					SetOffset(objectCount - 2).
+					SetLimit(10).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.Size).To(BeNumerically("==", 2))
-				Expect(response.Items).To(HaveLen(2))
+				Expect(response.GetSize()).To(BeNumerically("==", 2))
+				Expect(response.GetItems()).To(HaveLen(2))
 			})
 
 			It("Returns the total number of items", func() {
-				response, err := generic.List(ctx, ListRequest{
-					Limit: 1,
-				})
+				response, err := generic.List().
+					SetLimit(1).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response.Total).To(BeNumerically("==", objectCount))
+				Expect(response.GetTotal()).To(BeNumerically("==", objectCount))
 			})
 		})
 
 		Describe("Check if object exists", func() {
 			It("Returns true if the object exists", func() {
-				object, err := generic.Create(ctx, &testsv1.Object{})
+				createResponse, err := generic.Create().Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
+				object := createResponse.GetObject()
 				exists, err := generic.Exists(ctx, object.GetId())
 				Expect(err).ToNot(HaveOccurred())
 				Expect(exists).To(BeTrue())
@@ -398,13 +396,19 @@ var _ = Describe("Generic DAO", func() {
 		})
 
 		It("Updates object", func() {
-			object, err := generic.Create(ctx, &testsv1.Object{
-				MyString: "my_value",
-			})
+			createResponse, err := generic.Create().
+				SetObject(
+					testsv1.Object_builder{
+						MyString: "my_value",
+					}.Build(),
+				).
+				Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			object.MyString = "your_value"
-			object, err = generic.Update(ctx, object)
+			object := createResponse.GetObject()
+			object.SetMyString("your_value")
+			updateResponse, err := generic.Update().SetObject(object).Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
+			object = updateResponse.GetObject()
 			Expect(object).ToNot(BeNil())
 			Expect(object.GetMyString()).To(Equal("your_value"))
 		})
@@ -412,38 +416,40 @@ var _ = Describe("Generic DAO", func() {
 		Describe("Filtering", func() {
 			It("Filters by identifier", func() {
 				for i := range 10 {
-					_, err := generic.Create(
-						ctx,
-						testsv1.Object_builder{
-							Id: fmt.Sprintf("%d", i),
-						}.Build(),
-					)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Id: fmt.Sprintf("%d", i),
+							}.Build(),
+						).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.id == '5'",
-				})
+				response, err := generic.List().
+					SetFilter("this.id == '5'").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("5"))
 			})
 
 			It("Filters by identifier set", func() {
 				for i := range 10 {
-					_, err := generic.Create(
-						ctx,
-						testsv1.Object_builder{
-							Id: fmt.Sprintf("%d", i),
-						}.Build(),
-					)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Id: fmt.Sprintf("%d", i),
+							}.Build(),
+						).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.id in ['1', '3', '5', '7', '9']",
-				})
+				response, err := generic.List().
+					SetFilter("this.id in ['1', '3', '5', '7', '9']").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				sort(items)
 				Expect(items).To(HaveLen(5))
 				Expect(items[0].GetId()).To(Equal("1"))
@@ -455,39 +461,41 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by string JSON field", func() {
 				for i := range 10 {
-					_, err := generic.Create(
-						ctx,
-						testsv1.Object_builder{
-							MyString: fmt.Sprintf("my_value_%d", i),
-						}.Build(),
-					)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								MyString: fmt.Sprintf("my_value_%d", i),
+							}.Build(),
+						).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.my_string == 'my_value_5'",
-				})
+				response, err := generic.List().
+					SetFilter("this.my_string == 'my_value_5'").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetMyString()).To(Equal("my_value_5"))
 			})
 
 			It("Filters by identifier or JSON field", func() {
 				for i := range 10 {
-					_, err := generic.Create(
-						ctx,
-						testsv1.Object_builder{
-							Id:       fmt.Sprintf("%d", i),
-							MyString: fmt.Sprintf("my_value_%d", i),
-						}.Build(),
-					)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Id:       fmt.Sprintf("%d", i),
+								MyString: fmt.Sprintf("my_value_%d", i),
+							}.Build(),
+						).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.id == '1' || this.my_string == 'my_value_3'",
-				})
+				response, err := generic.List().
+					SetFilter("this.id == '1' || this.my_string == 'my_value_3'").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				sort(items)
 				Expect(items).To(HaveLen(2))
 				Expect(items[0].GetId()).To(Equal("1"))
@@ -498,20 +506,21 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by identifier and JSON field", func() {
 				for i := range 10 {
-					_, err := generic.Create(
-						ctx,
-						testsv1.Object_builder{
-							Id:       fmt.Sprintf("%d", i),
-							MyString: fmt.Sprintf("my_value_%d", i),
-						}.Build(),
-					)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Id:       fmt.Sprintf("%d", i),
+								MyString: fmt.Sprintf("my_value_%d", i),
+							}.Build(),
+						).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.id == '1' && this.my_string == 'my_value_1'",
-				})
+				response, err := generic.List().
+					SetFilter("this.id == '1' && this.my_string == 'my_value_1'").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("1"))
 				Expect(items[0].GetMyString()).To(Equal("my_value_1"))
@@ -519,106 +528,114 @@ var _ = Describe("Generic DAO", func() {
 
 			It("Filters by calculated value", func() {
 				for i := range 10 {
-					_, err := generic.Create(
-						ctx,
-						testsv1.Object_builder{
-							MyInt32: int32(i),
-						}.Build(),
-					)
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								MyInt32: int32(i),
+							}.Build(),
+						).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "(this.my_int32 + 1) == 2",
-				})
+				response, err := generic.List().
+					SetFilter("(this.my_int32 + 1) == 2").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetMyInt32()).To(BeNumerically("==", 1))
 			})
 
 			It("Filters by nested JSON string field", func() {
 				for i := range 10 {
-					_, err := generic.Create(
-						ctx,
-						testsv1.Object_builder{
-							Spec: testsv1.Spec_builder{
-								SpecString: fmt.Sprintf("my_value_%d", i),
+					_, err := generic.Create().
+						SetObject(
+							testsv1.Object_builder{
+								Spec: testsv1.Spec_builder{
+									SpecString: fmt.Sprintf("my_value_%d", i),
+								}.Build(),
 							}.Build(),
-						}.Build(),
-					)
+						).
+						Send(ctx)
 					Expect(err).ToNot(HaveOccurred())
 				}
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.spec.spec_string == 'my_value_5'",
-				})
+				response, err := generic.List().
+					SetFilter("this.spec.spec_string == 'my_value_5'").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetSpec().GetSpecString()).ToNot(BeNil())
 				Expect(items[0].GetSpec().GetSpecString()).To(Equal("my_value_5"))
 			})
 
 			It("Filters deleted", func() {
-				object, err := generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id: "0",
-					}.Build(),
-				)
+				createResponse, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "0",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				err = generic.Delete(ctx, object.GetId())
+				object := createResponse.GetObject()
+				_, err = generic.Delete().SetObject(object).Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.metadata.deletion_timestamp != null",
-				})
+				listResponse, err := generic.List().
+					SetFilter("this.metadata.deletion_timestamp != null").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := listResponse.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("0"))
 			})
 
 			It("Filters not deleted", func() {
-				object, err := generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id: "0",
-					}.Build(),
-				)
+				createResponse, err := generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "0",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				err = generic.Delete(ctx, object.GetId())
+				object := createResponse.GetObject()
+				_, err = generic.Delete().SetObject(object).Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.metadata.deletion_timestamp == null",
-				})
+				listResponse, err := generic.List().
+					SetFilter("this.metadata.deletion_timestamp == null").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := listResponse.GetItems()
 				Expect(items).To(HaveLen(0))
 			})
 
 			It("Filters by timestamp in the future", func() {
 				var err error
 				now := time.Now()
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:          "old",
-						MyTimestamp: timestamppb.New(now.Add(-time.Minute)),
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:          "old",
+							MyTimestamp: timestamppb.New(now.Add(-time.Minute)),
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:          "new",
-						MyTimestamp: timestamppb.New(now.Add(+time.Minute)),
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:          "new",
+							MyTimestamp: timestamppb.New(now.Add(+time.Minute)),
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.my_timestamp > now",
-				})
+				response, err := generic.List().
+					SetFilter("this.my_timestamp > now").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("new"))
 			})
@@ -626,274 +643,294 @@ var _ = Describe("Generic DAO", func() {
 			It("Filters by timestamp in the past", func() {
 				var err error
 				now := time.Now()
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:          "old",
-						MyTimestamp: timestamppb.New(now.Add(-time.Minute)),
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:          "old",
+							MyTimestamp: timestamppb.New(now.Add(-time.Minute)),
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:          "new",
-						MyTimestamp: timestamppb.New(now.Add(+time.Minute)),
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:          "new",
+							MyTimestamp: timestamppb.New(now.Add(+time.Minute)),
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.my_timestamp < now",
-				})
+				response, err := generic.List().
+					SetFilter("this.my_timestamp < now").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("old"))
 			})
 
 			It("Filters by presence of message field", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:   "good",
-						Spec: testsv1.Spec_builder{}.Build(),
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:   "good",
+							Spec: testsv1.Spec_builder{}.Build(),
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:   "bad",
-						Spec: nil,
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:   "bad",
+							Spec: nil,
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "has(this.spec)",
-				})
+				response, err := generic.List().
+					SetFilter("has(this.spec)").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})
 
 			It("Filters by presence of string field", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "good",
-						MyString: "my value",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "my value",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "bad",
-						MyString: "",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "has(this.my_string)",
-				})
+				response, err := generic.List().
+					SetFilter("has(this.my_string)").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})
 
 			It("Filters by presence of deletion timestamp", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id: "good",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "good",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id: "bad",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "bad",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				err = generic.Delete(ctx, "good")
+				_, err = generic.Delete().SetID("good").Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "has(this.metadata.deletion_timestamp)",
-				})
+				response, err := generic.List().
+					SetFilter("has(this.metadata.deletion_timestamp)").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})
 
 			It("Filters by absence of deletion timestamp", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id: "good",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "good",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id: "bad",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "bad",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				err = generic.Delete(ctx, "bad")
+				_, err = generic.Delete().SetID("bad").Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "!has(this.metadata.deletion_timestamp)",
-				})
+				response, err := generic.List().
+					SetFilter("!has(this.metadata.deletion_timestamp)").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})
 
 			It("Filters by presence of nested string field", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id: "good",
-						Spec: testsv1.Spec_builder{
-							SpecString: "my value",
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "good",
+							Spec: testsv1.Spec_builder{
+								SpecString: "my value",
+							}.Build(),
 						}.Build(),
-					}.Build(),
-				)
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id: "bad",
-						Spec: testsv1.Spec_builder{
-							SpecString: "",
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id: "bad",
+							Spec: testsv1.Spec_builder{
+								SpecString: "",
+							}.Build(),
 						}.Build(),
-					}.Build(),
-				)
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "has(this.spec.spec_string)",
-				})
+				response, err := generic.List().
+					SetFilter("has(this.spec.spec_string)").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})
 
 			It("Filters by string prefix", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "good",
-						MyString: "my value",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "my value",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "bad",
-						MyString: "your value",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "your value",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.my_string.startsWith('my')",
-				})
+				response, err := generic.List().
+					SetFilter("this.my_string.startsWith('my')").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})
 
 			It("Filters by string suffix", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "good",
-						MyString: "value my",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "value my",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "bad",
-						MyString: "value your",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "value your",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.my_string.endsWith('my')",
-				})
+				response, err := generic.List().
+					SetFilter("this.my_string.endsWith('my')").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})
 
 			It("Escapes percent in prefix", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "good",
-						MyString: "my% value",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "my% value",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "bad",
-						MyString: "my value",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "my value",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.my_string.startsWith('my%')",
-				})
+				response, err := generic.List().
+					SetFilter("this.my_string.startsWith('my%')").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})
 
 			It("Escapes underscore in prefix", func() {
 				var err error
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "good",
-						MyString: "my_ value",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "good",
+							MyString: "my_ value",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				_, err = generic.Create(
-					ctx,
-					testsv1.Object_builder{
-						Id:       "bad",
-						MyString: "my value",
-					}.Build(),
-				)
+				_, err = generic.Create().
+					SetObject(
+						testsv1.Object_builder{
+							Id:       "bad",
+							MyString: "my value",
+						}.Build(),
+					).
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				response, err := generic.List(ctx, ListRequest{
-					Filter: "this.my_string.startsWith('my_')",
-				})
+				response, err := generic.List().
+					SetFilter("this.my_string.startsWith('my_')").
+					Send(ctx)
 				Expect(err).ToNot(HaveOccurred())
-				items := response.Items
+				items := response.GetItems()
 				Expect(items).To(HaveLen(1))
 				Expect(items[0].GetId()).To(Equal("good"))
 			})

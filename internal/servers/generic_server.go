@@ -223,11 +223,11 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 		SetItems([]O)
 	}
 	requestMsg := request.(requestIface)
-	daoRequest := dao.ListRequest{}
-	daoRequest.Offset = requestMsg.GetOffset()
-	daoRequest.Limit = requestMsg.GetLimit()
-	daoRequest.Filter = requestMsg.GetFilter()
-	daoResponse, err := s.dao.List(ctx, daoRequest)
+	daoResponse, err := s.dao.List().
+		SetOffset(int(requestMsg.GetOffset())).
+		SetLimit(int(requestMsg.GetLimit())).
+		SetFilter(requestMsg.GetFilter()).
+		Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -237,9 +237,9 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to list")
 	}
 	responseMsg := proto.Clone(s.listResponse).(responseIface[O])
-	responseMsg.SetSize(daoResponse.Size)
-	responseMsg.SetTotal(daoResponse.Total)
-	responseMsg.SetItems(daoResponse.Items)
+	responseMsg.SetSize(int32(daoResponse.GetSize()))
+	responseMsg.SetTotal(int32(daoResponse.GetTotal()))
+	responseMsg.SetItems(daoResponse.GetItems())
 	s.setPointer(response, responseMsg)
 	return nil
 }
@@ -256,7 +256,7 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 	if id == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "identifier is mandatory")
 	}
-	object, err := s.dao.Get(ctx, id)
+	daoResponse, err := s.dao.Get().SetID(id).Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -266,11 +266,11 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to get object with identifier '%s'", id)
 	}
-	if s.isNil(object) {
+	if !daoResponse.HasObject() {
 		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' doesn't exist", id)
 	}
 	responseMsg := proto.Clone(s.getResponse).(responseIface[O])
-	responseMsg.SetObject(object)
+	responseMsg.SetObject(daoResponse.GetObject())
 	s.setPointer(response, responseMsg)
 	return nil
 }
@@ -287,7 +287,7 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 	if s.isNil(object) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	created, err := s.dao.Create(ctx, object)
+	daoResponse, err := s.dao.Create().SetObject(object).Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -297,7 +297,7 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to create object")
 	}
 	responseMsg := proto.Clone(s.createResponse).(responseIface[O])
-	responseMsg.SetObject(created)
+	responseMsg.SetObject(daoResponse.GetObject())
 	s.setPointer(response, responseMsg)
 	return nil
 }
@@ -339,7 +339,7 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 			id,
 		)
 	}
-	updated, err := s.dao.Update(ctx, object)
+	daoResponse, err := s.dao.Update().SetObject(object).Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -354,7 +354,7 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 		)
 	}
 	responseMsg := proto.Clone(s.updateResponse).(responseIface)
-	responseMsg.SetObject(updated)
+	responseMsg.SetObject(daoResponse.GetObject())
 	s.setPointer(response, responseMsg)
 	return nil
 }
@@ -370,7 +370,7 @@ func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any
 	if id == "" {
 		return grpcstatus.Errorf(grpccodes.Internal, "object identifier is mandatory")
 	}
-	err := s.dao.Delete(ctx, id)
+	_, err := s.dao.Delete().SetID(id).Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
