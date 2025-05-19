@@ -69,7 +69,8 @@ var _ = Describe("Cluster orders server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				public_data jsonb not null
+				public_data jsonb not null default '{}',
+				private_data jsonb not null default '{}'
 			)
 			`,
 		)
@@ -94,7 +95,8 @@ var _ = Describe("Cluster orders server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				public_data jsonb not null
+				public_data jsonb not null default '{}',
+				private_data jsonb not null default '{}'
 			)
 			`,
 		)
@@ -215,7 +217,7 @@ var _ = Describe("Cluster orders server", func() {
 		It("List objects with filter", func() {
 			// Create a few objects:
 			const count = 10
-			var objects []*ffv1.ClusterOrder
+			var ids []string
 			for range count {
 				response, err := server.Create(ctx, ffv1.ClusterOrdersCreateRequest_builder{
 					Object: ffv1.ClusterOrder_builder{
@@ -225,17 +227,17 @@ var _ = Describe("Cluster orders server", func() {
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
-				objects = append(objects, response.GetObject())
+				ids = append(ids, response.GetObject().GetId())
 			}
 
 			// List the objects:
-			for _, object := range objects {
+			for _, id := range ids {
 				response, err := server.List(ctx, ffv1.ClusterOrdersListRequest_builder{
-					Filter: proto.String(fmt.Sprintf("this.id == '%s'", object.GetId())),
+					Filter: proto.String(fmt.Sprintf("this.id == '%s'", id)),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetSize()).To(BeNumerically("==", 1))
-				Expect(response.GetItems()[0].GetId()).To(Equal(object.GetId()))
+				Expect(response.GetItems()[0].GetId()).To(Equal(id))
 			}
 		})
 

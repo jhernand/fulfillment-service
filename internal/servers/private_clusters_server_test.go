@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 	"google.golang.org/protobuf/proto"
 
+	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
@@ -71,7 +72,8 @@ var _ = Describe("Private clusters server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				public_data jsonb not null
+				public_data jsonb not null default '{}',
+				private_data jsonb not null default '{}'
 			);
 			`,
 		)
@@ -108,18 +110,21 @@ var _ = Describe("Private clusters server", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("Creates object", func() {
+		It("Create object", func() {
 			response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
-				Object: privatev1.Cluster_builder{
+				Private: privatev1.Cluster_builder{
 					OrderId: "my_order",
 					HubId:   "my_hub",
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
-			object := response.GetObject()
-			Expect(object).ToNot(BeNil())
-			Expect(object.GetId()).ToNot(BeEmpty())
+			public := response.GetPublic()
+			private := response.GetPrivate()
+			Expect(public).ToNot(BeNil())
+			Expect(public.GetId()).ToNot(BeEmpty())
+			Expect(private.GetOrderId()).To(Equal("my_order"))
+			Expect(private.GetHubId()).To(Equal("my_hub"))
 		})
 
 		It("List objects", func() {
@@ -127,7 +132,7 @@ var _ = Describe("Private clusters server", func() {
 			const count = 10
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
-					Object: privatev1.Cluster_builder{
+					Private: privatev1.Cluster_builder{
 						OrderId: fmt.Sprintf("my_order_%d", i),
 						HubId:   fmt.Sprintf("my_hub_%d", i),
 					}.Build(),
@@ -139,8 +144,17 @@ var _ = Describe("Private clusters server", func() {
 			response, err := server.List(ctx, privatev1.ClustersListRequest_builder{}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
-			items := response.GetItems()
-			Expect(items).To(HaveLen(count))
+			size := int(response.GetSize())
+			public := response.GetPublic()
+			private := response.GetPrivate()
+			Expect(size).To(BeNumerically("==", count))
+			Expect(public).To(HaveLen(size))
+			Expect(private).To(HaveLen(size))
+			for i := range size {
+				Expect(public[i].GetId()).ToNot(BeEmpty())
+				Expect(private[i].GetOrderId()).To(Equal(fmt.Sprintf("my_order_%d", i)))
+				Expect(private[i].GetHubId()).To(Equal(fmt.Sprintf("my_hub_%d", i)))
+			}
 		})
 
 		It("List objects with limit", func() {
@@ -148,7 +162,7 @@ var _ = Describe("Private clusters server", func() {
 			const count = 10
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
-					Object: privatev1.Cluster_builder{
+					Private: privatev1.Cluster_builder{
 						OrderId: fmt.Sprintf("my_order_%d", i),
 						HubId:   fmt.Sprintf("my_hub_%d", i),
 					}.Build(),
@@ -169,7 +183,7 @@ var _ = Describe("Private clusters server", func() {
 			const count = 10
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
-					Object: privatev1.Cluster_builder{
+					Private: privatev1.Cluster_builder{
 						OrderId: fmt.Sprintf("my_order_%d", i),
 						HubId:   fmt.Sprintf("my_hub_%d", i),
 					}.Build(),
@@ -188,33 +202,33 @@ var _ = Describe("Private clusters server", func() {
 		It("List objects with filter", func() {
 			// Create a few objects:
 			const count = 10
-			var objects []*privatev1.Cluster
+			var ids []string
 			for i := range count {
 				response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
-					Object: privatev1.Cluster_builder{
+					Private: privatev1.Cluster_builder{
 						OrderId: fmt.Sprintf("my_order_%d", i),
 						HubId:   fmt.Sprintf("my_hub_%d", i),
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
-				objects = append(objects, response.GetObject())
+				ids = append(ids, response.GetPublic().GetId())
 			}
 
 			// List the objects:
-			for _, object := range objects {
+			for _, id := range ids {
 				response, err := server.List(ctx, privatev1.ClustersListRequest_builder{
-					Filter: proto.String(fmt.Sprintf("this.id == '%s'", object.GetId())),
+					Filter: proto.String(fmt.Sprintf("this.id == '%s'", id)),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetSize()).To(BeNumerically("==", 1))
-				Expect(response.GetItems()[0].GetId()).To(Equal(object.GetId()))
+				Expect(response.GetPublic()[0].GetId()).To(Equal(id))
 			}
 		})
 
 		It("Get object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
-				Object: privatev1.Cluster_builder{
+				Private: privatev1.Cluster_builder{
 					OrderId: "my_order",
 					HubId:   "my_hub",
 				}.Build(),
@@ -223,67 +237,70 @@ var _ = Describe("Private clusters server", func() {
 
 			// Get it:
 			getResponse, err := server.Get(ctx, privatev1.ClustersGetRequest_builder{
-				Id: createResponse.GetObject().GetId(),
+				Id: createResponse.GetPublic().GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(proto.Equal(createResponse.GetObject(), getResponse.GetObject())).To(BeTrue())
+			Expect(proto.Equal(createResponse.GetPublic(), getResponse.GetPublic())).To(BeTrue())
+			Expect(proto.Equal(createResponse.GetPrivate(), getResponse.GetPrivate())).To(BeTrue())
 		})
 
 		It("Update object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
-				Object: privatev1.Cluster_builder{
+				Private: privatev1.Cluster_builder{
 					OrderId: "my_order",
 					HubId:   "my_hub",
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			object := createResponse.GetObject()
+			public := createResponse.GetPublic()
 
 			// Update the object:
 			updateResponse, err := server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-				Object: privatev1.Cluster_builder{
-					Id:      object.GetId(),
+				Public: ffv1.Cluster_builder{
+					Id: public.GetId(),
+				}.Build(),
+				Private: privatev1.Cluster_builder{
 					OrderId: "your_order",
 					HubId:   "your_hub",
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updateResponse.GetObject().GetOrderId()).To(Equal("your_order"))
-			Expect(updateResponse.GetObject().GetHubId()).To(Equal("your_hub"))
+			Expect(updateResponse.GetPrivate().GetOrderId()).To(Equal("your_order"))
+			Expect(updateResponse.GetPrivate().GetHubId()).To(Equal("your_hub"))
 
 			// Get and verify:
 			getResponse, err := server.Get(ctx, privatev1.ClustersGetRequest_builder{
-				Id: object.GetId(),
+				Id: public.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetOrderId()).To(Equal("your_order"))
-			Expect(getResponse.GetObject().GetHubId()).To(Equal("your_hub"))
+			Expect(getResponse.GetPrivate().GetOrderId()).To(Equal("your_order"))
+			Expect(getResponse.GetPrivate().GetHubId()).To(Equal("your_hub"))
 		})
 
 		It("Delete object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
-				Object: privatev1.Cluster_builder{
+				Private: privatev1.Cluster_builder{
 					OrderId: "my_order",
 					HubId:   "my_hub",
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			object := createResponse.GetObject()
+			public := createResponse.GetPublic()
 
 			// Delete the object:
 			_, err = server.Delete(ctx, privatev1.ClustersDeleteRequest_builder{
-				Id: object.GetId(),
+				Id: public.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 
 			// Get and verify:
 			getResponse, err := server.Get(ctx, privatev1.ClustersGetRequest_builder{
-				Id: object.GetId(),
+				Id: public.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
+			Expect(getResponse.GetPublic().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
 		})
 	})
 })

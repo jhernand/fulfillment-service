@@ -69,7 +69,8 @@ var _ = Describe("Cluster templates server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				public_data jsonb not null
+				public_data jsonb not null default '{}',
+				private_data jsonb not null default '{}'
 			)
 			`,
 		)
@@ -190,7 +191,7 @@ var _ = Describe("Cluster templates server", func() {
 		It("List objects with filter", func() {
 			// Create a few objects:
 			const count = 10
-			var objects []*ffv1.ClusterTemplate
+			var ids []string
 			for i := range count {
 				response, err := server.Create(ctx, ffv1.ClusterTemplatesCreateRequest_builder{
 					Object: ffv1.ClusterTemplate_builder{
@@ -200,17 +201,17 @@ var _ = Describe("Cluster templates server", func() {
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
-				objects = append(objects, response.GetObject())
+				ids = append(ids, response.GetObject().GetId())
 			}
 
 			// List the objects:
-			for _, object := range objects {
+			for _, id := range ids {
 				response, err := server.List(ctx, ffv1.ClusterTemplatesListRequest_builder{
-					Filter: proto.String(fmt.Sprintf("this.id == '%s'", object.GetId())),
+					Filter: proto.String(fmt.Sprintf("this.id == '%s'", id)),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetSize()).To(BeNumerically("==", 1))
-				Expect(response.GetItems()[0].GetId()).To(Equal(object.GetId()))
+				Expect(response.GetItems()[0].GetId()).To(Equal(id))
 			}
 		})
 

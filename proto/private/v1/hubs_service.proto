@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "private/v1/empty_type.proto";
 import "private/v1/hub_type.proto";
 
 message HubsListRequest {
@@ -26,7 +27,8 @@ message HubsListRequest {
 message HubsListResponse {
   optional int32 size = 1;
   optional int32 total = 2;
-  repeated Hub items = 3;
+  repeated Empty public = 3;
+  repeated Hub private = 4;
 }
 
 message HubsGetRequest {
@@ -34,15 +36,18 @@ message HubsGetRequest {
 }
 
 message HubsGetResponse {
-  Hub object = 1;
+  Empty public = 1;
+  Hub private = 2;
 }
 
 message HubsCreateRequest {
-  Hub object = 1;
+  Empty public = 1;
+  Hub private = 2;
 }
 
 message HubsCreateResponse {
-  Hub object = 1;
+  Empty public = 1;
+  Hub private = 2;
 }
 
 message HubsDeleteRequest {
@@ -52,11 +57,13 @@ message HubsDeleteRequest {
 message HubsDeleteResponse {}
 
 message HubsUpdateRequest {
-  Hub object = 1;
+  Empty public = 1;
+  Hub private = 2;
 }
 
 message HubsUpdateResponse {
-  Hub object = 1;
+  Empty public = 1;
+  Hub private = 2;
 }
 
 service Hubs {

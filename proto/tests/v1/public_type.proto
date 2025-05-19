@@ -19,7 +19,7 @@ import "google/protobuf/timestamp.proto";
 import "shared/v1/metadata_type.proto";
 
 // This is an object type used in unit tests.
-message Object {
+message Public {
   // Unique identifier of the object.
   string id = 1;
 
@@ -35,9 +35,9 @@ message Object {
   double my_double = 8;
   google.protobuf.Timestamp my_timestamp = 9;
   bytes my_bytes = 10;
-  Object my_msg = 11;
-  repeated Object my_repeated = 12;
-  map<string, Object> my_map = 13;
+  Public my_msg = 11;
+  repeated Public my_repeated = 12;
+  map<string, Public> my_map = 13;
 
   // Spec and status:
   Spec spec = 14;

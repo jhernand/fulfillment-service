@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
-	fulfillmentv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
@@ -46,16 +46,16 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger        *slog.Logger
-	publicClient  fulfillmentv1.ClusterOrdersClient
-	privateClient privatev1.ClusterOrdersClient
-	hubsClient    privatev1.HubsClient
-	hubCache      *controllers.HubCache
+	logger       *slog.Logger
+	publicClient ffv1.ClusterOrdersClient
+	ordersClient privatev1.ClusterOrdersClient
+	hubsClient   privatev1.HubsClient
+	hubCache     *controllers.HubCache
 }
 
 type task struct {
 	r            *function
-	public       *fulfillmentv1.ClusterOrder
+	public       *ffv1.ClusterOrder
 	private      *privatev1.ClusterOrder
 	hubId        string
 	hubNamespace string
@@ -86,7 +86,7 @@ func (b *FunctionBuilder) SetHubCache(value *controllers.HubCache) *FunctionBuil
 }
 
 // Build uses the information stored in the buidler to create a new cluster order reconciler.
-func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*fulfillmentv1.ClusterOrder], err error) {
+func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*ffv1.ClusterOrder], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -103,25 +103,25 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*fulfil
 
 	// Create and populate the object:
 	object := &function{
-		logger:        b.logger,
-		publicClient:  fulfillmentv1.NewClusterOrdersClient(b.connection),
-		privateClient: privatev1.NewClusterOrdersClient(b.connection),
-		hubsClient:    privatev1.NewHubsClient(b.connection),
-		hubCache:      b.hubCache,
+		logger:       b.logger,
+		publicClient: ffv1.NewClusterOrdersClient(b.connection),
+		ordersClient: privatev1.NewClusterOrdersClient(b.connection),
+		hubsClient:   privatev1.NewHubsClient(b.connection),
+		hubCache:     b.hubCache,
 	}
 	result = object.run
 	return
 }
 
-func (r *function) run(ctx context.Context, public *fulfillmentv1.ClusterOrder) error {
-	internal, err := r.fetchPrivate(ctx, public.Id)
+func (r *function) run(ctx context.Context, public *ffv1.ClusterOrder) error {
+	public, private, err := r.fetchOrder(ctx, public.Id)
 	if err != nil {
 		return err
 	}
 	t := task{
 		r:       r,
 		public:  public,
-		private: internal,
+		private: private,
 	}
 	if public.Metadata.DeletionTimestamp != nil {
 		err = t.delete(ctx)
@@ -131,26 +131,22 @@ func (r *function) run(ctx context.Context, public *fulfillmentv1.ClusterOrder) 
 	if err != nil {
 		return err
 	}
-	_, err = r.privateClient.Update(ctx, &privatev1.ClusterOrdersUpdateRequest{
-		Object: internal,
-	})
-	if err != nil {
-		return err
-	}
-	_, err = r.publicClient.Update(ctx, &fulfillmentv1.ClusterOrdersUpdateRequest{
-		Object: public,
-	})
+	_, err = r.ordersClient.Update(ctx, privatev1.ClusterOrdersUpdateRequest_builder{
+		Public:  public,
+		Private: private,
+	}.Build())
 	return err
 }
 
-func (r *function) fetchPrivate(ctx context.Context, id string) (result *privatev1.ClusterOrder, err error) {
-	request, err := r.privateClient.Get(ctx, &privatev1.ClusterOrdersGetRequest{
+func (r *function) fetchOrder(ctx context.Context, id string) (public *ffv1.ClusterOrder, private *privatev1.ClusterOrder, err error) {
+	request, err := r.ordersClient.Get(ctx, privatev1.ClusterOrdersGetRequest_builder{
 		Id: id,
-	})
+	}.Build())
 	if err != nil {
 		return
 	}
-	result = request.Object
+	public = request.Public
+	private = request.Private
 	return
 }
 
@@ -159,7 +155,7 @@ func (t *task) update(ctx context.Context) error {
 	t.setDefaults()
 
 	// Do nothing if the order isn't progressing:
-	if t.public.Status.State != fulfillmentv1.ClusterOrderState_CLUSTER_ORDER_STATE_PROGRESSING {
+	if t.public.Status.State != ffv1.ClusterOrderState_CLUSTER_ORDER_STATE_PROGRESSING {
 		return nil
 	}
 
@@ -294,19 +290,19 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 
 func (t *task) setDefaults() {
 	if t.public.Status == nil {
-		t.public.Status = &fulfillmentv1.ClusterOrderStatus{}
+		t.public.Status = &ffv1.ClusterOrderStatus{}
 	}
-	if t.public.Status.State == fulfillmentv1.ClusterOrderState_CLUSTER_ORDER_STATE_UNSPECIFIED {
-		t.public.Status.State = fulfillmentv1.ClusterOrderState_CLUSTER_ORDER_STATE_PROGRESSING
+	if t.public.Status.State == ffv1.ClusterOrderState_CLUSTER_ORDER_STATE_UNSPECIFIED {
+		t.public.Status.State = ffv1.ClusterOrderState_CLUSTER_ORDER_STATE_PROGRESSING
 	}
-	for value := range fulfillmentv1.ClusterOrderConditionType_name {
+	for value := range ffv1.ClusterOrderConditionType_name {
 		if value != 0 {
-			t.setConditionDefaults(fulfillmentv1.ClusterOrderConditionType(value))
+			t.setConditionDefaults(ffv1.ClusterOrderConditionType(value))
 		}
 	}
 }
 
-func (t *task) setConditionDefaults(value fulfillmentv1.ClusterOrderConditionType) {
+func (t *task) setConditionDefaults(value ffv1.ClusterOrderConditionType) {
 	exists := false
 	for _, current := range t.public.Status.Conditions {
 		if current.Type == value {
@@ -315,7 +311,7 @@ func (t *task) setConditionDefaults(value fulfillmentv1.ClusterOrderConditionTyp
 		}
 	}
 	if !exists {
-		t.public.Status.Conditions = append(t.public.Status.Conditions, &fulfillmentv1.ClusterOrderCondition{
+		t.public.Status.Conditions = append(t.public.Status.Conditions, &ffv1.ClusterOrderCondition{
 			Type:   value,
 			Status: sharedv1.ConditionStatus_CONDITION_STATUS_FALSE,
 		})
@@ -329,10 +325,11 @@ func (t *task) selectHub(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if len(response.Items) == 0 {
+		hubs := response.GetPublic()
+		if len(hubs) == 0 {
 			return errors.New("there are no hubs")
 		}
-		t.hubId = response.Items[rand.IntN(len(response.Items))].GetId()
+		t.hubId = hubs[rand.IntN(len(hubs))].GetId()
 	}
 	t.r.logger.DebugContext(
 		ctx,

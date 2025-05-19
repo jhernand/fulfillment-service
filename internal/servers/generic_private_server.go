@@ -33,16 +33,16 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
-// GenericServerBuilder contains the data and logic neede to create new generic servers.
-type GenericServerBuilder[Public dao.PublicData, Private dao.PrivateData] struct {
+// GenericPrivateServerBuilder contains the data and logic neede to create new generic servers.
+type GenericPrivateServerBuilder[Public dao.PublicData, Private dao.PrivateData] struct {
 	logger  *slog.Logger
 	service string
 	table   string
 }
 
-// GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
+// GenericPrivateServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
 // any object that has identifier and metadata fields.
-type GenericServer[Public dao.PublicData, Private dao.PrivateData] struct {
+type GenericPrivateServer[Public dao.PublicData, Private dao.PrivateData] struct {
 	logger         *slog.Logger
 	service        string
 	dao            *dao.GenericDAO[Public, Private]
@@ -60,30 +60,30 @@ type GenericServer[Public dao.PublicData, Private dao.PrivateData] struct {
 }
 
 // NewGeneric server creates a builder that can then be used to configure and create a new generic server.
-func NewGenericServer[Public dao.PublicData, Private dao.PrivateData]() *GenericServerBuilder[Public, Private] {
-	return &GenericServerBuilder[Public, Private]{}
+func NewGenericPrivateServer[Public dao.PublicData, Private dao.PrivateData]() *GenericPrivateServerBuilder[Public, Private] {
+	return &GenericPrivateServerBuilder[Public, Private]{}
 }
 
 // SetLogger sets the logger. This is mandatory.
-func (b *GenericServerBuilder[Public, Private]) SetLogger(value *slog.Logger) *GenericServerBuilder[Public, Private] {
+func (b *GenericPrivateServerBuilder[Public, Private]) SetLogger(value *slog.Logger) *GenericPrivateServerBuilder[Public, Private] {
 	b.logger = value
 	return b
 }
 
 // SetService sets the service description. This is mandatory.
-func (b *GenericServerBuilder[Public, Private]) SetService(value string) *GenericServerBuilder[Public, Private] {
+func (b *GenericPrivateServerBuilder[Public, Private]) SetService(value string) *GenericPrivateServerBuilder[Public, Private] {
 	b.service = value
 	return b
 }
 
 // SetTable sets the name of the table where the objects will be stored. This is mandatory.
-func (b *GenericServerBuilder[Public, Private]) SetTable(value string) *GenericServerBuilder[Public, Private] {
+func (b *GenericPrivateServerBuilder[Public, Private]) SetTable(value string) *GenericPrivateServerBuilder[Public, Private] {
 	b.table = value
 	return b
 }
 
 // Build uses the configuration stored in the builder to create and configure a new generic server.
-func (b *GenericServerBuilder[Public, Private]) Build() (result *GenericServer[Public, Private], err error) {
+func (b *GenericPrivateServerBuilder[Public, Private]) Build() (result *GenericPrivateServer[Public, Private], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -99,7 +99,7 @@ func (b *GenericServerBuilder[Public, Private]) Build() (result *GenericServer[P
 	}
 
 	// Create the object early so that we can use its methods as callbacks:
-	s := &GenericServer[Public, Private]{
+	s := &GenericPrivateServer[Public, Private]{
 		logger:  b.logger,
 		service: b.service,
 	}
@@ -158,7 +158,7 @@ func (b *GenericServerBuilder[Public, Private]) Build() (result *GenericServer[P
 	return
 }
 
-func (b *GenericServerBuilder[Public, Private]) findService() (result protoreflect.ServiceDescriptor, err error) {
+func (b *GenericPrivateServerBuilder[Public, Private]) findService() (result protoreflect.ServiceDescriptor, err error) {
 	serviceName := protoreflect.FullName(b.service)
 	packageName := serviceName.Parent()
 	protoregistry.GlobalFiles.RangeFilesByPackage(packageName, func(fileDesc protoreflect.FileDescriptor) bool {
@@ -179,7 +179,7 @@ func (b *GenericServerBuilder[Public, Private]) findService() (result protorefle
 	return
 }
 
-func (b *GenericServerBuilder[Public, Private]) findRequestAndResponse(serviceDesc protoreflect.ServiceDescriptor,
+func (b *GenericPrivateServerBuilder[Public, Private]) findRequestAndResponse(serviceDesc protoreflect.ServiceDescriptor,
 	methodName string) (request, response proto.Message, err error) {
 	methodDesc := serviceDesc.Methods().ByName(protoreflect.Name(methodName))
 	if methodDesc == nil {
@@ -211,7 +211,7 @@ func (b *GenericServerBuilder[Public, Private]) findRequestAndResponse(serviceDe
 	return
 }
 
-func (s *GenericServer[Public, Private]) List(ctx context.Context, request any, response any) error {
+func (s *GenericPrivateServer[Public, Private]) List(ctx context.Context, request any, response any) error {
 	type requestIface interface {
 		GetOffset() int32
 		GetLimit() int32
@@ -220,7 +220,8 @@ func (s *GenericServer[Public, Private]) List(ctx context.Context, request any, 
 	type responseIface interface {
 		SetSize(int32)
 		SetTotal(int32)
-		SetItems([]Public)
+		SetPublic([]Public)
+		SetPrivate([]Private)
 	}
 	requestMsg := request.(requestIface)
 	daoResponse, err := s.dao.List().
@@ -239,17 +240,19 @@ func (s *GenericServer[Public, Private]) List(ctx context.Context, request any, 
 	responseMsg := proto.Clone(s.listResponse).(responseIface)
 	responseMsg.SetSize(int32(daoResponse.GetSize()))
 	responseMsg.SetTotal(int32(daoResponse.GetTotal()))
-	responseMsg.SetItems(daoResponse.GetPublic())
+	responseMsg.SetPublic(daoResponse.GetPublic())
+	responseMsg.SetPrivate(daoResponse.GetPrivate())
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
-func (s *GenericServer[Public, Private]) Get(ctx context.Context, request any, response any) error {
+func (s *GenericPrivateServer[Public, Private]) Get(ctx context.Context, request any, response any) error {
 	type requestIface interface {
 		GetId() string
 	}
 	type responseIface interface {
-		SetObject(Public)
+		SetPublic(Public)
+		SetPrivate(Private)
 	}
 	requestMsg := request.(requestIface)
 	id := requestMsg.GetId()
@@ -270,24 +273,28 @@ func (s *GenericServer[Public, Private]) Get(ctx context.Context, request any, r
 		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' doesn't exist", id)
 	}
 	responseMsg := proto.Clone(s.getResponse).(responseIface)
-	responseMsg.SetObject(daoResponse.GetPublic())
+	responseMsg.SetPublic(daoResponse.GetPublic())
+	responseMsg.SetPrivate(daoResponse.GetPrivate())
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
-func (s *GenericServer[Public, Private]) Create(ctx context.Context, request any, response any) error {
+func (s *GenericPrivateServer[Public, Private]) Create(ctx context.Context, request any, response any) error {
 	type requestIface interface {
-		GetObject() Public
+		GetPublic() Public
+		GetPrivate() Private
 	}
 	type responseIface interface {
-		SetObject(Public)
+		SetPublic(Public)
+		SetPrivate(Private)
 	}
 	requestMsg := request.(requestIface)
-	object := requestMsg.GetObject()
-	if s.isNil(object) {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
-	}
-	daoResponse, err := s.dao.Create().SetPublic(object).Send(ctx)
+	public := requestMsg.GetPublic()
+	private := requestMsg.GetPrivate()
+	daoResponse, err := s.dao.Create().
+		SetPublic(public).
+		SetPrivate(private).
+		Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -297,24 +304,25 @@ func (s *GenericServer[Public, Private]) Create(ctx context.Context, request any
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to create object")
 	}
 	responseMsg := proto.Clone(s.createResponse).(responseIface)
-	responseMsg.SetObject(daoResponse.GetPublic())
+	responseMsg.SetPublic(daoResponse.GetPublic())
+	responseMsg.SetPrivate(daoResponse.GetPrivate())
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
-func (s *GenericServer[Public, Private]) Update(ctx context.Context, request any, response any) error {
+func (s *GenericPrivateServer[Public, Private]) Update(ctx context.Context, request any, response any) error {
 	type requestIface interface {
-		GetObject() Public
+		GetPublic() Public
+		GetPrivate() Private
 	}
 	type responseIface interface {
-		SetObject(Public)
+		SetPublic(Public)
+		SetPrivate(Private)
 	}
 	requestMsg := request.(requestIface)
-	object := requestMsg.GetObject()
-	if s.isNil(object) {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
-	}
-	id := object.GetId()
+	public := requestMsg.GetPublic()
+	private := requestMsg.GetPrivate()
+	id := public.GetId()
 	if id == "" {
 		return grpcstatus.Errorf(grpccodes.Internal, "object identifier is mandatory")
 	}
@@ -339,7 +347,10 @@ func (s *GenericServer[Public, Private]) Update(ctx context.Context, request any
 			id,
 		)
 	}
-	daoResponse, err := s.dao.Update().SetPublic(object).Send(ctx)
+	daoResponse, err := s.dao.Update().
+		SetPublic(public).
+		SetPrivate(private).
+		Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -354,12 +365,13 @@ func (s *GenericServer[Public, Private]) Update(ctx context.Context, request any
 		)
 	}
 	responseMsg := proto.Clone(s.updateResponse).(responseIface)
-	responseMsg.SetObject(daoResponse.GetPublic())
+	responseMsg.SetPublic(daoResponse.GetPublic())
+	responseMsg.SetPrivate(daoResponse.GetPrivate())
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
-func (s *GenericServer[Public, Private]) Delete(ctx context.Context, request any, response any) error {
+func (s *GenericPrivateServer[Public, Private]) Delete(ctx context.Context, request any, response any) error {
 	type requestIface interface {
 		GetId() string
 	}
@@ -386,7 +398,7 @@ func (s *GenericServer[Public, Private]) Delete(ctx context.Context, request any
 }
 
 // notifyEvent converts the DAO event into an API event and publishes it using the PostgreSQL NOTIFY command.
-func (s *GenericServer[Public, Private]) notifyEvent(ctx context.Context, e dao.Event) (err error) {
+func (s *GenericPrivateServer[Public, Private]) notifyEvent(ctx context.Context, e dao.Event) (err error) {
 	// TODO: This is the only part of the generic server that depends on specific object types. Is there a way
 	// to avoid that?
 	event := &eventsv1.Event{}
@@ -420,19 +432,6 @@ func (s *GenericServer[Public, Private]) notifyEvent(ctx context.Context, e dao.
 	return s.notifier.Notify(ctx, event)
 }
 
-func (s *GenericServer[Public, Private]) isNil(object Public) bool {
-	return reflect.ValueOf(object).IsNil()
-}
-
-func (s *GenericServer[Public, Private]) setPointer(pointer any, value any) {
+func (s *GenericPrivateServer[Public, Private]) setPointer(pointer any, value any) {
 	reflect.ValueOf(pointer).Elem().Set(reflect.ValueOf(value))
 }
-
-// Names of methods:
-const (
-	listMethod   = "List"
-	getMethod    = "Get"
-	createMethod = "Create"
-	updateMethod = "Update"
-	deleteMethod = "Delete"
-)

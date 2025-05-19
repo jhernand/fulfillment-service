@@ -45,14 +45,13 @@ var _ ffv1.ClustersServer = (*ClustersServer)(nil)
 type ClustersServer struct {
 	ffv1.UnimplementedClustersServer
 
-	logger             *slog.Logger
-	jqTool             *jq.Tool
-	clustersDao        *dao.GenericDAO[*ffv1.Cluster]
-	privateClustersDao *dao.GenericDAO[*privatev1.Cluster]
-	privateHubsDao     *dao.GenericDAO[*privatev1.Hub]
-	generic            *GenericServer[*ffv1.Cluster]
-	kubeClients        map[string]clnt.Client
-	kubeClientsLock    *sync.Mutex
+	logger          *slog.Logger
+	jqTool          *jq.Tool
+	clustersDao     *dao.GenericDAO[*ffv1.Cluster, *privatev1.Cluster]
+	hubsDao         *dao.GenericDAO[*privatev1.Empty, *privatev1.Hub]
+	generic         *GenericServer[*ffv1.Cluster, *privatev1.Cluster]
+	kubeClients     map[string]clnt.Client
+	kubeClientsLock *sync.Mutex
 }
 
 func NewClustersServer() *ClustersServerBuilder {
@@ -80,21 +79,14 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	}
 
 	// Create the DAOs:
-	clustersDao, err := dao.NewGenericDAO[*ffv1.Cluster]().
+	clustersDao, err := dao.NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 		SetLogger(b.logger).
 		SetTable("clusters").
 		Build()
 	if err != nil {
 		return
 	}
-	privateClustersDao, err := dao.NewGenericDAO[*privatev1.Cluster]().
-		SetLogger(b.logger).
-		SetTable("private.clusters").
-		Build()
-	if err != nil {
-		return
-	}
-	privateHubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
+	hubsDao, err := dao.NewGenericDAO[*privatev1.Empty, *privatev1.Hub]().
 		SetLogger(b.logger).
 		SetTable("private.hubs").
 		Build()
@@ -103,7 +95,7 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*ffv1.Cluster]().
+	generic, err := NewGenericServer[*ffv1.Cluster, *privatev1.Cluster]().
 		SetLogger(b.logger).
 		SetService(ffv1.Clusters_ServiceDesc.ServiceName).
 		SetTable("clusters").
@@ -114,14 +106,13 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 
 	// Create and populate the object:
 	result = &ClustersServer{
-		logger:             b.logger,
-		jqTool:             jqTool,
-		clustersDao:        clustersDao,
-		privateClustersDao: privateClustersDao,
-		privateHubsDao:     privateHubsDao,
-		generic:            generic,
-		kubeClients:        map[string]clnt.Client{},
-		kubeClientsLock:    &sync.Mutex{},
+		logger:          b.logger,
+		jqTool:          jqTool,
+		clustersDao:     clustersDao,
+		hubsDao:         hubsDao,
+		generic:         generic,
+		kubeClients:     map[string]clnt.Client{},
+		kubeClientsLock: &sync.Mutex{},
 	}
 	return
 }
@@ -216,18 +207,18 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		return
 	}
 
-	// Get the private data of the cluster:
-	getClusterResponse, err := s.privateClustersDao.Get().SetID(clusterId).Send(ctx)
+	// Get the data of the cluster:
+	getClusterResponse, err := s.clustersDao.Get().SetID(clusterId).Send(ctx)
 	if err != nil {
 		logger.ErrorContext(
 			ctx,
-			"Failed to get private cluster data",
+			"Failed to get cluster data",
 			slog.Any("error", err),
 		)
 		err = internalErr
 		return
 	}
-	cluster := getClusterResponse.GetPublic()
+	cluster := getClusterResponse.GetPrivate()
 	hubId := cluster.GetHubId()
 	orderId := cluster.GetOrderId()
 	if hubId == "" {
@@ -244,7 +235,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 	)
 
 	// Get the data of the hub:
-	getHubResponse, err := s.privateHubsDao.Get().SetID(hubId).Send(ctx)
+	getHubResponse, err := s.hubsDao.Get().SetID(hubId).Send(ctx)
 	if err != nil {
 		logger.ErrorContext(
 			ctx,
@@ -254,7 +245,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		err = internalErr
 		return
 	}
-	hub := getHubResponse.GetPublic()
+	hub := getHubResponse.GetPrivate()
 	if hub == nil {
 		logger.ErrorContext(ctx, "Hub doesn't exist")
 		err = internalErr
@@ -267,7 +258,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 	logger.DebugContext(ctx, "Got hub")
 
 	// Create a hubClient for the hub:
-	hubClient, err := s.getKubeClient(ctx, hub)
+	hubClient, err := s.getKubeClient(ctx, hubId, hub)
 	if err != nil {
 		logger.ErrorContext(
 			ctx,
@@ -394,10 +385,11 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 	return
 }
 
-func (s *ClustersServer) getKubeClient(ctx context.Context, hub *privatev1.Hub) (result clnt.Client, err error) {
+func (s *ClustersServer) getKubeClient(ctx context.Context, hubId string, hub *privatev1.Hub) (result clnt.Client,
+	err error) {
 	s.kubeClientsLock.Lock()
 	defer s.kubeClientsLock.Unlock()
-	result, ok := s.kubeClients[hub.Id]
+	result, ok := s.kubeClients[hubId]
 	if ok {
 		return
 	}
@@ -405,7 +397,7 @@ func (s *ClustersServer) getKubeClient(ctx context.Context, hub *privatev1.Hub) 
 	if err != nil {
 		return
 	}
-	s.kubeClients[hub.Id] = result
+	s.kubeClients[hubId] = result
 	return
 }
 

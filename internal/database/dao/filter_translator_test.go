@@ -26,7 +26,7 @@ import (
 var _ = Describe("Filter translator", func() {
 	var (
 		ctx        context.Context
-		translator *FilterTranslator[*testsv1.Object]
+		translator *FilterTranslator[*testsv1.Public]
 	)
 
 	BeforeEach(func() {
@@ -34,7 +34,7 @@ var _ = Describe("Filter translator", func() {
 
 		ctx = context.Background()
 
-		translator, err = NewFilterTranslator[*testsv1.Object]().
+		translator, err = NewFilterTranslator[*testsv1.Public]().
 			SetLogger(logger).
 			Build()
 		Expect(err).ToNot(HaveOccurred())

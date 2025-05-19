@@ -15,15 +15,6 @@ syntax = "proto3";
 
 package private.v1;
 
-import "private/v1/metadata_type.proto";
-
-// Contains the details of a hub.
-message Hub {
-  Metadata metadata = 1;
-
-  // The Kubeconfig containing the address and credentials that the fulfillment service will use to connect to the hub.
-  bytes kubeconfig = 2;
-
-  // Namespace where the cluster orders will be created.
-  string namespace = 3;
+// Contains the private metadata of objects.
+message Metadata {
 }

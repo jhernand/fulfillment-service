@@ -18,6 +18,7 @@ import (
 	"errors"
 	"log/slog"
 
+	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 )
 
@@ -30,7 +31,7 @@ var _ privatev1.ClustersServer = (*PrivateClustersServer)(nil)
 type PrivateClustersServer struct {
 	privatev1.UnimplementedClustersServer
 	logger  *slog.Logger
-	generic *GenericServer[*privatev1.Cluster]
+	generic *GenericPrivateServer[*ffv1.Cluster, *privatev1.Cluster]
 }
 
 func NewPrivateClustersServer() *PrivateClustersServerBuilder {
@@ -50,10 +51,10 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 	}
 
 	// Create the generic server:
-	generic, err := NewGenericServer[*privatev1.Cluster]().
+	generic, err := NewGenericPrivateServer[*ffv1.Cluster, *privatev1.Cluster]().
 		SetLogger(b.logger).
 		SetService(privatev1.Clusters_ServiceDesc.ServiceName).
-		SetTable("private.clusters").
+		SetTable("clusters").
 		Build()
 	if err != nil {
 		return

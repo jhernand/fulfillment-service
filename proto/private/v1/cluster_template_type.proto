@@ -17,13 +17,7 @@ package private.v1;
 
 import "private/v1/metadata_type.proto";
 
-// Contains the details of a hub.
-message Hub {
+// Contains the details about the template that are available only for the system.
+message ClusterTemplate {
   Metadata metadata = 1;
-
-  // The Kubeconfig containing the address and credentials that the fulfillment service will use to connect to the hub.
-  bytes kubeconfig = 2;
-
-  // Namespace where the cluster orders will be created.
-  string namespace = 3;
 }

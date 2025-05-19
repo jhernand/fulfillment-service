@@ -38,10 +38,9 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger        *slog.Logger
-	hubCache      *controllers.HubCache
-	publicClient  ffv1.ClustersClient
-	privateClient privatev1.ClustersClient
+	logger         *slog.Logger
+	hubCache       *controllers.HubCache
+	clustersClient privatev1.ClustersClient
 }
 
 type task struct {
@@ -94,17 +93,16 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*ffv1.C
 
 	// Create and populate the object:
 	object := &function{
-		logger:        b.logger,
-		publicClient:  ffv1.NewClustersClient(b.connection),
-		privateClient: privatev1.NewClustersClient(b.connection),
-		hubCache:      b.hubCache,
+		logger:         b.logger,
+		clustersClient: privatev1.NewClustersClient(b.connection),
+		hubCache:       b.hubCache,
 	}
 	result = object.run
 	return
 }
 
 func (r *function) run(ctx context.Context, public *ffv1.Cluster) error {
-	private, err := r.fetchPrivate(ctx, public.Id)
+	public, private, err := r.fetchCluster(ctx, public.Id)
 	if err != nil {
 		return err
 	}
@@ -121,26 +119,25 @@ func (r *function) run(ctx context.Context, public *ffv1.Cluster) error {
 	if err != nil {
 		return err
 	}
-	_, err = r.privateClient.Update(ctx, &privatev1.ClustersUpdateRequest{
-		Object: private,
-	})
+	_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+		Public:  public,
+		Private: private,
+	}.Build())
 	if err != nil {
 		return err
 	}
-	_, err = r.publicClient.Update(ctx, &ffv1.ClustersUpdateRequest{
-		Object: public,
-	})
 	return err
 }
 
-func (r *function) fetchPrivate(ctx context.Context, id string) (result *privatev1.Cluster, err error) {
-	request, err := r.privateClient.Get(ctx, &privatev1.ClustersGetRequest{
+func (r *function) fetchCluster(ctx context.Context, id string) (public *ffv1.Cluster, private *privatev1.Cluster, err error) {
+	response, err := r.clustersClient.Get(ctx, &privatev1.ClustersGetRequest{
 		Id: id,
 	})
 	if err != nil {
 		return
 	}
-	result = request.Object
+	public = response.Public
+	private = response.Private
 	return
 }
 

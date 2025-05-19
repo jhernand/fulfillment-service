@@ -106,7 +106,7 @@ func (r *HubCache) create(ctx context.Context, id string) (result *HubEntry, err
 	if err != nil {
 		return
 	}
-	hub := response.GetObject()
+	hub := response.GetPrivate()
 	config, err := clientcmd.RESTConfigFromKubeConfig(hub.GetKubeconfig())
 	if err != nil {
 		return

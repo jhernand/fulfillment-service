@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "fulfillment/v1/cluster_order_type.proto";
 import "private/v1/cluster_order_type.proto";
 
 message ClusterOrdersListRequest {
@@ -26,7 +27,8 @@ message ClusterOrdersListRequest {
 message ClusterOrdersListResponse {
   optional int32 size = 1;
   optional int32 total = 2;
-  repeated ClusterOrder items = 3;
+  repeated fulfillment.v1.ClusterOrder public = 3;
+  repeated ClusterOrder private = 4;
 }
 
 message ClusterOrdersGetRequest {
@@ -34,15 +36,18 @@ message ClusterOrdersGetRequest {
 }
 
 message ClusterOrdersGetResponse {
-  ClusterOrder object = 1;
+  fulfillment.v1.ClusterOrder public = 1;
+  ClusterOrder private = 2;
 }
 
 message ClusterOrdersCreateRequest {
-  ClusterOrder object = 1;
+  fulfillment.v1.ClusterOrder public = 1;
+  ClusterOrder private = 2;
 }
 
 message ClusterOrdersCreateResponse {
-  ClusterOrder object = 1;
+  fulfillment.v1.ClusterOrder public = 1;
+  ClusterOrder private = 2;
 }
 
 message ClusterOrdersDeleteRequest {
@@ -52,11 +57,13 @@ message ClusterOrdersDeleteRequest {
 message ClusterOrdersDeleteResponse {}
 
 message ClusterOrdersUpdateRequest {
-  ClusterOrder object = 1;
+  fulfillment.v1.ClusterOrder public = 1;
+  ClusterOrder private = 2;
 }
 
 message ClusterOrdersUpdateResponse {
-  ClusterOrder object = 1;
+  fulfillment.v1.ClusterOrder public = 1;
+  ClusterOrder private = 2;
 }
 
 service ClusterOrders {

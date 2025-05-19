@@ -71,7 +71,8 @@ var _ = Describe("Private hubs server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				public_data jsonb not null
+				public_data jsonb not null default '{}',
+				private_data jsonb not null default '{}'
 			);
 			`,
 		)
@@ -110,16 +111,19 @@ var _ = Describe("Private hubs server", func() {
 
 		It("Creates object", func() {
 			response, err := server.Create(ctx, privatev1.HubsCreateRequest_builder{
-				Object: privatev1.Hub_builder{
+				Private: privatev1.Hub_builder{
 					Kubeconfig: []byte("my_config"),
 					Namespace:  "my_ns",
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
-			object := response.GetObject()
-			Expect(object).ToNot(BeNil())
-			Expect(object.GetId()).ToNot(BeEmpty())
+			public := response.GetPublic()
+			private := response.GetPrivate()
+			Expect(public).ToNot(BeNil())
+			Expect(public.GetId()).ToNot(BeEmpty())
+			Expect(private.GetKubeconfig()).To(Equal([]byte("my_config")))
+			Expect(private.GetNamespace()).To(Equal("my_ns"))
 		})
 
 		It("List objects", func() {
@@ -127,8 +131,8 @@ var _ = Describe("Private hubs server", func() {
 			const count = 10
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.HubsCreateRequest_builder{
-					Object: privatev1.Hub_builder{
-						Kubeconfig: []byte(fmt.Sprintf("my_config_%d", i)),
+					Private: privatev1.Hub_builder{
+						Kubeconfig: fmt.Appendf(nil, "my_config_%d", i),
 						Namespace:  fmt.Sprintf("my_ns_%d", i),
 					}.Build(),
 				}.Build())
@@ -139,8 +143,15 @@ var _ = Describe("Private hubs server", func() {
 			response, err := server.List(ctx, privatev1.HubsListRequest_builder{}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
-			items := response.GetItems()
-			Expect(items).To(HaveLen(count))
+			size := int(response.GetSize())
+			public := response.GetPublic()
+			private := response.GetPrivate()
+			Expect(size).To(BeNumerically("==", count))
+			for i := range size {
+				Expect(public[i].GetId()).ToNot(BeEmpty())
+				Expect(private[i].GetKubeconfig()).To(Equal(fmt.Appendf(nil, "my_config_%d", i)))
+				Expect(private[i].GetNamespace()).To(Equal(fmt.Sprintf("my_ns_%d", i)))
+			}
 		})
 
 		It("List objects with limit", func() {
@@ -148,8 +159,8 @@ var _ = Describe("Private hubs server", func() {
 			const count = 10
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.HubsCreateRequest_builder{
-					Object: privatev1.Hub_builder{
-						Kubeconfig: []byte(fmt.Sprintf("my_config_%d", i)),
+					Private: privatev1.Hub_builder{
+						Kubeconfig: fmt.Appendf(nil, "my_config_%d", i),
 						Namespace:  fmt.Sprintf("my_ns_%d", i),
 					}.Build(),
 				}.Build())
@@ -169,8 +180,8 @@ var _ = Describe("Private hubs server", func() {
 			const count = 10
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.HubsCreateRequest_builder{
-					Object: privatev1.Hub_builder{
-						Kubeconfig: []byte(fmt.Sprintf("my_config_%d", i)),
+					Private: privatev1.Hub_builder{
+						Kubeconfig: fmt.Appendf(nil, "my_config_%d", i),
 						Namespace:  fmt.Sprintf("my_ns_%d", i),
 					}.Build(),
 				}.Build())
@@ -188,33 +199,33 @@ var _ = Describe("Private hubs server", func() {
 		It("List objects with filter", func() {
 			// Create a few objects:
 			const count = 10
-			var objects []*privatev1.Hub
+			var ids []string
 			for i := range count {
 				response, err := server.Create(ctx, privatev1.HubsCreateRequest_builder{
-					Object: privatev1.Hub_builder{
-						Kubeconfig: []byte(fmt.Sprintf("my_config_%d", i)),
+					Private: privatev1.Hub_builder{
+						Kubeconfig: fmt.Appendf(nil, "my_config_%d", i),
 						Namespace:  fmt.Sprintf("my_ns_%d", i),
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
-				objects = append(objects, response.GetObject())
+				ids = append(ids, response.GetPublic().GetId())
 			}
 
 			// List the objects:
-			for _, object := range objects {
+			for _, id := range ids {
 				response, err := server.List(ctx, privatev1.HubsListRequest_builder{
-					Filter: proto.String(fmt.Sprintf("this.id == '%s'", object.GetId())),
+					Filter: proto.String(fmt.Sprintf("this.id == '%s'", id)),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.GetSize()).To(BeNumerically("==", 1))
-				Expect(response.GetItems()[0].GetId()).To(Equal(object.GetId()))
+				Expect(response.GetPublic()[0].GetId()).To(Equal(id))
 			}
 		})
 
 		It("Get object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.HubsCreateRequest_builder{
-				Object: privatev1.Hub_builder{
+				Private: privatev1.Hub_builder{
 					Kubeconfig: []byte("my_config"),
 					Namespace:  "my_ns",
 				}.Build(),
@@ -223,67 +234,70 @@ var _ = Describe("Private hubs server", func() {
 
 			// Get it:
 			getResponse, err := server.Get(ctx, privatev1.HubsGetRequest_builder{
-				Id: createResponse.GetObject().GetId(),
+				Id: createResponse.GetPublic().GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(proto.Equal(createResponse.GetObject(), getResponse.GetObject())).To(BeTrue())
+			Expect(proto.Equal(createResponse.GetPublic(), getResponse.GetPublic())).To(BeTrue())
+			Expect(proto.Equal(createResponse.GetPrivate(), getResponse.GetPrivate())).To(BeTrue())
 		})
 
 		It("Update object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.HubsCreateRequest_builder{
-				Object: privatev1.Hub_builder{
+				Private: privatev1.Hub_builder{
 					Kubeconfig: []byte("my_config"),
 					Namespace:  "my_ns",
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			object := createResponse.GetObject()
+			public := createResponse.GetPublic()
 
 			// Update the object:
 			updateResponse, err := server.Update(ctx, privatev1.HubsUpdateRequest_builder{
-				Object: privatev1.Hub_builder{
-					Id:         object.GetId(),
+				Public: privatev1.Empty_builder{
+					Id: public.GetId(),
+				}.Build(),
+				Private: privatev1.Hub_builder{
 					Kubeconfig: []byte("your_config"),
 					Namespace:  "your_ns",
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updateResponse.GetObject().GetKubeconfig()).To(Equal([]byte("your_config")))
-			Expect(updateResponse.GetObject().GetNamespace()).To(Equal("your_ns"))
+			Expect(updateResponse.GetPrivate().GetKubeconfig()).To(Equal([]byte("your_config")))
+			Expect(updateResponse.GetPrivate().GetNamespace()).To(Equal("your_ns"))
 
 			// Get and verify:
 			getResponse, err := server.Get(ctx, privatev1.HubsGetRequest_builder{
-				Id: object.GetId(),
+				Id: public.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetKubeconfig()).To(Equal([]byte("your_config")))
-			Expect(getResponse.GetObject().GetNamespace()).To(Equal("your_ns"))
+			Expect(getResponse.GetPrivate().GetKubeconfig()).To(Equal([]byte("your_config")))
+			Expect(getResponse.GetPrivate().GetNamespace()).To(Equal("your_ns"))
 		})
 
 		It("Delete object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.HubsCreateRequest_builder{
-				Object: privatev1.Hub_builder{
+				Private: privatev1.Hub_builder{
 					Kubeconfig: []byte("your_config"),
 					Namespace:  "your_ns",
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			object := createResponse.GetObject()
+			public := createResponse.GetPublic()
 
 			// Delete the object:
 			_, err = server.Delete(ctx, privatev1.HubsDeleteRequest_builder{
-				Id: object.GetId(),
+				Id: public.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 
 			// Get and verify:
 			getResponse, err := server.Get(ctx, privatev1.HubsGetRequest_builder{
-				Id: object.GetId(),
+				Id: public.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
+			Expect(getResponse.GetPublic().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
 		})
 	})
 })

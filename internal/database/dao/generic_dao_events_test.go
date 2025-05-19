@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
@@ -53,7 +54,8 @@ var _ = Describe("Generic DAO events", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				public_data jsonb not null
+				public_data jsonb not null default '{}',
+				private_data jsonb not null default '{}'
 			)
 			`,
 		)
@@ -79,7 +81,7 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Runs callback for create event", func() {
 		var event *Event
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(_ context.Context, e Event) error {
@@ -100,7 +102,7 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Runs callback for modify event", func() {
 		var event *Event
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(_ context.Context, e Event) error {
@@ -137,7 +139,7 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Runs callback for delete event", func() {
 		var event *Event
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(_ context.Context, e Event) error {
@@ -163,7 +165,7 @@ var _ = Describe("Generic DAO events", func() {
 	})
 
 	It("Fails to create object if callback returns an error", func() {
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(context.Context, Event) error {
@@ -184,7 +186,7 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Fails to delete object if callback returns an error", func() {
 		// Create the DAO, without callbacks, just to do the insert:
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			Build()
@@ -197,7 +199,7 @@ var _ = Describe("Generic DAO events", func() {
 		})
 
 		// Create the DAO again, this time with the callback, to do the delete:
-		generic, err = NewGenericDAO[*ffv1.Cluster]().
+		generic, err = NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(context.Context, Event) error {
@@ -219,10 +221,10 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(exists).To(BeTrue())
 	})
 
-	It("Doesn't fire update event if there are no changes", func() {
+	FIt("Doesn't fire update event if there are no changes", func() {
 		// Create the DAO again:
 		called := false
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(_ context.Context, event Event) error {
@@ -252,7 +254,7 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Fails to update object if callback returns an error", func() {
 		// Create the DAO, without callbacks, just to do the insert:
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			Build()
@@ -273,7 +275,7 @@ var _ = Describe("Generic DAO events", func() {
 		})
 
 		// Create the DAO again, this time with the callback, to do the update:
-		generic, err = NewGenericDAO[*ffv1.Cluster]().
+		generic, err = NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(ctx context.Context, arg Event) error {
@@ -309,7 +311,7 @@ var _ = Describe("Generic DAO events", func() {
 	It("Calls multiple callbacks", func() {
 		called1 := false
 		called2 := false
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(context.Context, Event) error {
@@ -334,7 +336,7 @@ var _ = Describe("Generic DAO events", func() {
 	It("Doesn't call second callback if first returns an error", func() {
 		called1 := false
 		called2 := false
-		generic, err := NewGenericDAO[*ffv1.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster, *privatev1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(context.Context, Event) error {

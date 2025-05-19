@@ -15,7 +15,7 @@
 // versions:
 // 	protoc-gen-go v1.36.5
 // 	protoc        (unknown)
-// source: tests/v1/object_type.proto
+// source: tests/v1/public_type.proto
 
 //go:build !protoopaque
 
@@ -38,7 +38,7 @@ const (
 )
 
 // This is an object type used in unit tests.
-type Object struct {
+type Public struct {
 	state protoimpl.MessageState `protogen:"hybrid.v1"`
 	// Unique identifier of the object.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -53,9 +53,9 @@ type Object struct {
 	MyDouble    float64                `protobuf:"fixed64,8,opt,name=my_double,json=myDouble,proto3" json:"my_double,omitempty"`
 	MyTimestamp *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=my_timestamp,json=myTimestamp,proto3" json:"my_timestamp,omitempty"`
 	MyBytes     []byte                 `protobuf:"bytes,10,opt,name=my_bytes,json=myBytes,proto3" json:"my_bytes,omitempty"`
-	MyMsg       *Object                `protobuf:"bytes,11,opt,name=my_msg,json=myMsg,proto3" json:"my_msg,omitempty"`
-	MyRepeated  []*Object              `protobuf:"bytes,12,rep,name=my_repeated,json=myRepeated,proto3" json:"my_repeated,omitempty"`
-	MyMap       map[string]*Object     `protobuf:"bytes,13,rep,name=my_map,json=myMap,proto3" json:"my_map,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	MyMsg       *Public                `protobuf:"bytes,11,opt,name=my_msg,json=myMsg,proto3" json:"my_msg,omitempty"`
+	MyRepeated  []*Public              `protobuf:"bytes,12,rep,name=my_repeated,json=myRepeated,proto3" json:"my_repeated,omitempty"`
+	MyMap       map[string]*Public     `protobuf:"bytes,13,rep,name=my_map,json=myMap,proto3" json:"my_map,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Spec and status:
 	Spec          *Spec   `protobuf:"bytes,14,opt,name=spec,proto3" json:"spec,omitempty"`
 	Status        *Status `protobuf:"bytes,15,opt,name=status,proto3" json:"status,omitempty"`
@@ -63,21 +63,21 @@ type Object struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Object) Reset() {
-	*x = Object{}
-	mi := &file_tests_v1_object_type_proto_msgTypes[0]
+func (x *Public) Reset() {
+	*x = Public{}
+	mi := &file_tests_v1_public_type_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Object) String() string {
+func (x *Public) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Object) ProtoMessage() {}
+func (*Public) ProtoMessage() {}
 
-func (x *Object) ProtoReflect() protoreflect.Message {
-	mi := &file_tests_v1_object_type_proto_msgTypes[0]
+func (x *Public) ProtoReflect() protoreflect.Message {
+	mi := &file_tests_v1_public_type_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -88,230 +88,230 @@ func (x *Object) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-func (x *Object) GetId() string {
+func (x *Public) GetId() string {
 	if x != nil {
 		return x.Id
 	}
 	return ""
 }
 
-func (x *Object) GetMetadata() *v1.Metadata {
+func (x *Public) GetMetadata() *v1.Metadata {
 	if x != nil {
 		return x.Metadata
 	}
 	return nil
 }
 
-func (x *Object) GetMyBool() bool {
+func (x *Public) GetMyBool() bool {
 	if x != nil {
 		return x.MyBool
 	}
 	return false
 }
 
-func (x *Object) GetMyInt32() int32 {
+func (x *Public) GetMyInt32() int32 {
 	if x != nil {
 		return x.MyInt32
 	}
 	return 0
 }
 
-func (x *Object) GetMyInt64() int64 {
+func (x *Public) GetMyInt64() int64 {
 	if x != nil {
 		return x.MyInt64
 	}
 	return 0
 }
 
-func (x *Object) GetMyString() string {
+func (x *Public) GetMyString() string {
 	if x != nil {
 		return x.MyString
 	}
 	return ""
 }
 
-func (x *Object) GetMyFloat() float32 {
+func (x *Public) GetMyFloat() float32 {
 	if x != nil {
 		return x.MyFloat
 	}
 	return 0
 }
 
-func (x *Object) GetMyDouble() float64 {
+func (x *Public) GetMyDouble() float64 {
 	if x != nil {
 		return x.MyDouble
 	}
 	return 0
 }
 
-func (x *Object) GetMyTimestamp() *timestamppb.Timestamp {
+func (x *Public) GetMyTimestamp() *timestamppb.Timestamp {
 	if x != nil {
 		return x.MyTimestamp
 	}
 	return nil
 }
 
-func (x *Object) GetMyBytes() []byte {
+func (x *Public) GetMyBytes() []byte {
 	if x != nil {
 		return x.MyBytes
 	}
 	return nil
 }
 
-func (x *Object) GetMyMsg() *Object {
+func (x *Public) GetMyMsg() *Public {
 	if x != nil {
 		return x.MyMsg
 	}
 	return nil
 }
 
-func (x *Object) GetMyRepeated() []*Object {
+func (x *Public) GetMyRepeated() []*Public {
 	if x != nil {
 		return x.MyRepeated
 	}
 	return nil
 }
 
-func (x *Object) GetMyMap() map[string]*Object {
+func (x *Public) GetMyMap() map[string]*Public {
 	if x != nil {
 		return x.MyMap
 	}
 	return nil
 }
 
-func (x *Object) GetSpec() *Spec {
+func (x *Public) GetSpec() *Spec {
 	if x != nil {
 		return x.Spec
 	}
 	return nil
 }
 
-func (x *Object) GetStatus() *Status {
+func (x *Public) GetStatus() *Status {
 	if x != nil {
 		return x.Status
 	}
 	return nil
 }
 
-func (x *Object) SetId(v string) {
+func (x *Public) SetId(v string) {
 	x.Id = v
 }
 
-func (x *Object) SetMetadata(v *v1.Metadata) {
+func (x *Public) SetMetadata(v *v1.Metadata) {
 	x.Metadata = v
 }
 
-func (x *Object) SetMyBool(v bool) {
+func (x *Public) SetMyBool(v bool) {
 	x.MyBool = v
 }
 
-func (x *Object) SetMyInt32(v int32) {
+func (x *Public) SetMyInt32(v int32) {
 	x.MyInt32 = v
 }
 
-func (x *Object) SetMyInt64(v int64) {
+func (x *Public) SetMyInt64(v int64) {
 	x.MyInt64 = v
 }
 
-func (x *Object) SetMyString(v string) {
+func (x *Public) SetMyString(v string) {
 	x.MyString = v
 }
 
-func (x *Object) SetMyFloat(v float32) {
+func (x *Public) SetMyFloat(v float32) {
 	x.MyFloat = v
 }
 
-func (x *Object) SetMyDouble(v float64) {
+func (x *Public) SetMyDouble(v float64) {
 	x.MyDouble = v
 }
 
-func (x *Object) SetMyTimestamp(v *timestamppb.Timestamp) {
+func (x *Public) SetMyTimestamp(v *timestamppb.Timestamp) {
 	x.MyTimestamp = v
 }
 
-func (x *Object) SetMyBytes(v []byte) {
+func (x *Public) SetMyBytes(v []byte) {
 	if v == nil {
 		v = []byte{}
 	}
 	x.MyBytes = v
 }
 
-func (x *Object) SetMyMsg(v *Object) {
+func (x *Public) SetMyMsg(v *Public) {
 	x.MyMsg = v
 }
 
-func (x *Object) SetMyRepeated(v []*Object) {
+func (x *Public) SetMyRepeated(v []*Public) {
 	x.MyRepeated = v
 }
 
-func (x *Object) SetMyMap(v map[string]*Object) {
+func (x *Public) SetMyMap(v map[string]*Public) {
 	x.MyMap = v
 }
 
-func (x *Object) SetSpec(v *Spec) {
+func (x *Public) SetSpec(v *Spec) {
 	x.Spec = v
 }
 
-func (x *Object) SetStatus(v *Status) {
+func (x *Public) SetStatus(v *Status) {
 	x.Status = v
 }
 
-func (x *Object) HasMetadata() bool {
+func (x *Public) HasMetadata() bool {
 	if x == nil {
 		return false
 	}
 	return x.Metadata != nil
 }
 
-func (x *Object) HasMyTimestamp() bool {
+func (x *Public) HasMyTimestamp() bool {
 	if x == nil {
 		return false
 	}
 	return x.MyTimestamp != nil
 }
 
-func (x *Object) HasMyMsg() bool {
+func (x *Public) HasMyMsg() bool {
 	if x == nil {
 		return false
 	}
 	return x.MyMsg != nil
 }
 
-func (x *Object) HasSpec() bool {
+func (x *Public) HasSpec() bool {
 	if x == nil {
 		return false
 	}
 	return x.Spec != nil
 }
 
-func (x *Object) HasStatus() bool {
+func (x *Public) HasStatus() bool {
 	if x == nil {
 		return false
 	}
 	return x.Status != nil
 }
 
-func (x *Object) ClearMetadata() {
+func (x *Public) ClearMetadata() {
 	x.Metadata = nil
 }
 
-func (x *Object) ClearMyTimestamp() {
+func (x *Public) ClearMyTimestamp() {
 	x.MyTimestamp = nil
 }
 
-func (x *Object) ClearMyMsg() {
+func (x *Public) ClearMyMsg() {
 	x.MyMsg = nil
 }
 
-func (x *Object) ClearSpec() {
+func (x *Public) ClearSpec() {
 	x.Spec = nil
 }
 
-func (x *Object) ClearStatus() {
+func (x *Public) ClearStatus() {
 	x.Status = nil
 }
 
-type Object_builder struct {
+type Public_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
 	// Unique identifier of the object.
@@ -327,16 +327,16 @@ type Object_builder struct {
 	MyDouble    float64
 	MyTimestamp *timestamppb.Timestamp
 	MyBytes     []byte
-	MyMsg       *Object
-	MyRepeated  []*Object
-	MyMap       map[string]*Object
+	MyMsg       *Public
+	MyRepeated  []*Public
+	MyMap       map[string]*Public
 	// Spec and status:
 	Spec   *Spec
 	Status *Status
 }
 
-func (b0 Object_builder) Build() *Object {
-	m0 := &Object{}
+func (b0 Public_builder) Build() *Public {
+	m0 := &Public{}
 	b, x := &b0, m0
 	_, _ = b, x
 	x.Id = b.Id
@@ -373,7 +373,7 @@ type Spec struct {
 
 func (x *Spec) Reset() {
 	*x = Spec{}
-	mi := &file_tests_v1_object_type_proto_msgTypes[1]
+	mi := &file_tests_v1_public_type_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -385,7 +385,7 @@ func (x *Spec) String() string {
 func (*Spec) ProtoMessage() {}
 
 func (x *Spec) ProtoReflect() protoreflect.Message {
-	mi := &file_tests_v1_object_type_proto_msgTypes[1]
+	mi := &file_tests_v1_public_type_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -542,7 +542,7 @@ type Status struct {
 
 func (x *Status) Reset() {
 	*x = Status{}
-	mi := &file_tests_v1_object_type_proto_msgTypes[2]
+	mi := &file_tests_v1_public_type_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -554,7 +554,7 @@ func (x *Status) String() string {
 func (*Status) ProtoMessage() {}
 
 func (x *Status) ProtoReflect() protoreflect.Message {
-	mi := &file_tests_v1_object_type_proto_msgTypes[2]
+	mi := &file_tests_v1_public_type_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -695,17 +695,17 @@ func (b0 Status_builder) Build() *Status {
 	return m0
 }
 
-var File_tests_v1_object_type_proto protoreflect.FileDescriptor
+var File_tests_v1_public_type_proto protoreflect.FileDescriptor
 
-var file_tests_v1_object_type_proto_rawDesc = string([]byte{
-	0x0a, 0x1a, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2f, 0x76, 0x31, 0x2f, 0x6f, 0x62, 0x6a, 0x65, 0x63,
-	0x74, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x08, 0x74, 0x65,
+var file_tests_v1_public_type_proto_rawDesc = string([]byte{
+	0x0a, 0x1a, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2f, 0x76, 0x31, 0x2f, 0x70, 0x75, 0x62, 0x6c, 0x69,
+	0x63, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x08, 0x74, 0x65,
 	0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x1a, 0x1f, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x70,
 	0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d,
 	0x70, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x1d, 0x73, 0x68, 0x61, 0x72, 0x65, 0x64, 0x2f,
 	0x76, 0x31, 0x2f, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x5f, 0x74, 0x79, 0x70, 0x65,
-	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xf1, 0x04, 0x0a, 0x06, 0x4f, 0x62, 0x6a, 0x65, 0x63,
-	0x74, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xf1, 0x04, 0x0a, 0x06, 0x50, 0x75, 0x62, 0x6c, 0x69,
+	0x63, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69,
 	0x64, 0x12, 0x2f, 0x0a, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x18, 0x02, 0x20,
 	0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x73, 0x68, 0x61, 0x72, 0x65, 0x64, 0x2e, 0x76, 0x31, 0x2e,
 	0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x52, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61,
@@ -726,13 +726,13 @@ var file_tests_v1_object_type_proto_rawDesc = string([]byte{
 	0x73, 0x74, 0x61, 0x6d, 0x70, 0x12, 0x19, 0x0a, 0x08, 0x6d, 0x79, 0x5f, 0x62, 0x79, 0x74, 0x65,
 	0x73, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x07, 0x6d, 0x79, 0x42, 0x79, 0x74, 0x65, 0x73,
 	0x12, 0x27, 0x0a, 0x06, 0x6d, 0x79, 0x5f, 0x6d, 0x73, 0x67, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x0b,
-	0x32, 0x10, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x4f, 0x62, 0x6a, 0x65,
-	0x63, 0x74, 0x52, 0x05, 0x6d, 0x79, 0x4d, 0x73, 0x67, 0x12, 0x31, 0x0a, 0x0b, 0x6d, 0x79, 0x5f,
+	0x32, 0x10, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x75, 0x62, 0x6c,
+	0x69, 0x63, 0x52, 0x05, 0x6d, 0x79, 0x4d, 0x73, 0x67, 0x12, 0x31, 0x0a, 0x0b, 0x6d, 0x79, 0x5f,
 	0x72, 0x65, 0x70, 0x65, 0x61, 0x74, 0x65, 0x64, 0x18, 0x0c, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x10,
-	0x2e, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74,
+	0x2e, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x63,
 	0x52, 0x0a, 0x6d, 0x79, 0x52, 0x65, 0x70, 0x65, 0x61, 0x74, 0x65, 0x64, 0x12, 0x32, 0x0a, 0x06,
 	0x6d, 0x79, 0x5f, 0x6d, 0x61, 0x70, 0x18, 0x0d, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1b, 0x2e, 0x74,
-	0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x2e, 0x4d,
+	0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x63, 0x2e, 0x4d,
 	0x79, 0x4d, 0x61, 0x70, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x05, 0x6d, 0x79, 0x4d, 0x61, 0x70,
 	0x12, 0x22, 0x0a, 0x04, 0x73, 0x70, 0x65, 0x63, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0e,
 	0x2e, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x70, 0x65, 0x63, 0x52, 0x04,
@@ -742,7 +742,7 @@ var file_tests_v1_object_type_proto_rawDesc = string([]byte{
 	0x0a, 0x0a, 0x4d, 0x79, 0x4d, 0x61, 0x70, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03,
 	0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x26,
 	0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x10, 0x2e,
-	0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x52,
+	0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x63, 0x52,
 	0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0xa4, 0x02, 0x0a, 0x04, 0x53,
 	0x70, 0x65, 0x63, 0x12, 0x1b, 0x0a, 0x09, 0x73, 0x70, 0x65, 0x63, 0x5f, 0x62, 0x6f, 0x6f, 0x6c,
 	0x18, 0x01, 0x20, 0x01, 0x28, 0x08, 0x52, 0x08, 0x73, 0x70, 0x65, 0x63, 0x42, 0x6f, 0x6f, 0x6c,
@@ -783,8 +783,8 @@ var file_tests_v1_object_type_proto_rawDesc = string([]byte{
 	0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e,
 	0x54, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x52, 0x0f, 0x73, 0x74, 0x61, 0x74, 0x75,
 	0x73, 0x54, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x42, 0xa6, 0x01, 0x0a, 0x0c, 0x63,
-	0x6f, 0x6d, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x42, 0x0f, 0x4f, 0x62, 0x6a,
-	0x65, 0x63, 0x74, 0x54, 0x79, 0x70, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x44,
+	0x6f, 0x6d, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x73, 0x2e, 0x76, 0x31, 0x42, 0x0f, 0x50, 0x75, 0x62,
+	0x6c, 0x69, 0x63, 0x54, 0x79, 0x70, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x44,
 	0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x69, 0x6e, 0x6e, 0x61, 0x62,
 	0x6f, 0x78, 0x2f, 0x66, 0x75, 0x6c, 0x66, 0x69, 0x6c, 0x6c, 0x6d, 0x65, 0x6e, 0x74, 0x2d, 0x73,
 	0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f,
@@ -796,26 +796,26 @@ var file_tests_v1_object_type_proto_rawDesc = string([]byte{
 	0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 })
 
-var file_tests_v1_object_type_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
-var file_tests_v1_object_type_proto_goTypes = []any{
-	(*Object)(nil),                // 0: tests.v1.Object
+var file_tests_v1_public_type_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_tests_v1_public_type_proto_goTypes = []any{
+	(*Public)(nil),                // 0: tests.v1.Public
 	(*Spec)(nil),                  // 1: tests.v1.Spec
 	(*Status)(nil),                // 2: tests.v1.Status
-	nil,                           // 3: tests.v1.Object.MyMapEntry
+	nil,                           // 3: tests.v1.Public.MyMapEntry
 	(*v1.Metadata)(nil),           // 4: shared.v1.Metadata
 	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
 }
-var file_tests_v1_object_type_proto_depIdxs = []int32{
-	4,  // 0: tests.v1.Object.metadata:type_name -> shared.v1.Metadata
-	5,  // 1: tests.v1.Object.my_timestamp:type_name -> google.protobuf.Timestamp
-	0,  // 2: tests.v1.Object.my_msg:type_name -> tests.v1.Object
-	0,  // 3: tests.v1.Object.my_repeated:type_name -> tests.v1.Object
-	3,  // 4: tests.v1.Object.my_map:type_name -> tests.v1.Object.MyMapEntry
-	1,  // 5: tests.v1.Object.spec:type_name -> tests.v1.Spec
-	2,  // 6: tests.v1.Object.status:type_name -> tests.v1.Status
+var file_tests_v1_public_type_proto_depIdxs = []int32{
+	4,  // 0: tests.v1.Public.metadata:type_name -> shared.v1.Metadata
+	5,  // 1: tests.v1.Public.my_timestamp:type_name -> google.protobuf.Timestamp
+	0,  // 2: tests.v1.Public.my_msg:type_name -> tests.v1.Public
+	0,  // 3: tests.v1.Public.my_repeated:type_name -> tests.v1.Public
+	3,  // 4: tests.v1.Public.my_map:type_name -> tests.v1.Public.MyMapEntry
+	1,  // 5: tests.v1.Public.spec:type_name -> tests.v1.Spec
+	2,  // 6: tests.v1.Public.status:type_name -> tests.v1.Status
 	5,  // 7: tests.v1.Spec.spec_timestamp:type_name -> google.protobuf.Timestamp
 	5,  // 8: tests.v1.Status.status_timestamp:type_name -> google.protobuf.Timestamp
-	0,  // 9: tests.v1.Object.MyMapEntry.value:type_name -> tests.v1.Object
+	0,  // 9: tests.v1.Public.MyMapEntry.value:type_name -> tests.v1.Public
 	10, // [10:10] is the sub-list for method output_type
 	10, // [10:10] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
@@ -823,26 +823,26 @@ var file_tests_v1_object_type_proto_depIdxs = []int32{
 	0,  // [0:10] is the sub-list for field type_name
 }
 
-func init() { file_tests_v1_object_type_proto_init() }
-func file_tests_v1_object_type_proto_init() {
-	if File_tests_v1_object_type_proto != nil {
+func init() { file_tests_v1_public_type_proto_init() }
+func file_tests_v1_public_type_proto_init() {
+	if File_tests_v1_public_type_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tests_v1_object_type_proto_rawDesc), len(file_tests_v1_object_type_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tests_v1_public_type_proto_rawDesc), len(file_tests_v1_public_type_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_tests_v1_object_type_proto_goTypes,
-		DependencyIndexes: file_tests_v1_object_type_proto_depIdxs,
-		MessageInfos:      file_tests_v1_object_type_proto_msgTypes,
+		GoTypes:           file_tests_v1_public_type_proto_goTypes,
+		DependencyIndexes: file_tests_v1_public_type_proto_depIdxs,
+		MessageInfos:      file_tests_v1_public_type_proto_msgTypes,
 	}.Build()
-	File_tests_v1_object_type_proto = out.File
-	file_tests_v1_object_type_proto_goTypes = nil
-	file_tests_v1_object_type_proto_depIdxs = nil
+	File_tests_v1_public_type_proto = out.File
+	file_tests_v1_public_type_proto_goTypes = nil
+	file_tests_v1_public_type_proto_depIdxs = nil
 }

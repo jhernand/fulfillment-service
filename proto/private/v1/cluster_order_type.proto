@@ -15,15 +15,12 @@ syntax = "proto3";
 
 package private.v1;
 
-import "shared/v1/metadata_type.proto";
+import "private/v1/metadata_type.proto";
 
 // Contains the details about order that are available only for the system.
 message ClusterOrder {
-  // Unique identifier of the order.
-  string id = 1;
-
-  shared.v1.Metadata metadata = 2;
+  Metadata metadata = 1;
 
   // Identifier of the hub that was selected for this order.
-  string hub_id = 3;
+  string hub_id = 2;
 }
