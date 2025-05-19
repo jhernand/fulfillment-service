@@ -31,11 +31,11 @@ import (
 )
 
 // ReconcilerFunction is a function that receives the current state of an object and reconciles it.
-type ReconcilerFunction[O dao.Object] func(ctx context.Context, object O) error
+type ReconcilerFunction[O dao.PublicData] func(ctx context.Context, object O) error
 
 // ReconcilerBuilder contains the data and logic needed to create a controller. Don't create instances f this directly,
 // use the NewReconciler function instead.
-type ReconcilerBuilder[O dao.Object] struct {
+type ReconcilerBuilder[O dao.PublicData] struct {
 	logger        *slog.Logger
 	flags         *pflag.FlagSet
 	function      ReconcilerFunction[O]
@@ -47,7 +47,7 @@ type ReconcilerBuilder[O dao.Object] struct {
 }
 
 // Reconciler simplifies use of the API for clients.
-type Reconciler[O dao.Object] struct {
+type Reconciler[O dao.PublicData] struct {
 	logger        *slog.Logger
 	function      ReconcilerFunction[O]
 	eventFilter   string
@@ -66,7 +66,7 @@ type Reconciler[O dao.Object] struct {
 }
 
 // NewReconciler creates a builder that can then be used to configure and create a controller.
-func NewReconciler[O dao.Object]() *ReconcilerBuilder[O] {
+func NewReconciler[O dao.PublicData]() *ReconcilerBuilder[O] {
 	return &ReconcilerBuilder[O]{
 		syncInterval:  1 * time.Hour,
 		watchInterval: 10 * time.Second,

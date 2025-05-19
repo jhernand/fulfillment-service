@@ -227,7 +227,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		err = internalErr
 		return
 	}
-	cluster := getClusterResponse.GetObject()
+	cluster := getClusterResponse.GetPublic()
 	hubId := cluster.GetHubId()
 	orderId := cluster.GetOrderId()
 	if hubId == "" {
@@ -254,7 +254,7 @@ func (s *ClustersServer) getKubeconfig(ctx context.Context, clusterId string) (r
 		err = internalErr
 		return
 	}
-	hub := getHubResponse.GetObject()
+	hub := getHubResponse.GetPublic()
 	if hub == nil {
 		logger.ErrorContext(ctx, "Hub doesn't exist")
 		err = internalErr

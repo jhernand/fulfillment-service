@@ -65,27 +65,27 @@ var _ = Describe("Filter translator", func() {
 		Entry(
 			"Integer greater than literal",
 			"this.my_int32 > 42",
-			"cast(data->>'my_int32' as integer) > 42",
+			"cast(public_data->>'my_int32' as integer) > 42",
 		),
 		Entry(
 			"String in list",
 			"this.my_string in ['a', 'b', 'c']",
-			"data->>'my_string' in ('a', 'b', 'c')",
+			"public_data->>'my_string' in ('a', 'b', 'c')",
 		),
 		Entry(
 			"Calculated value in list",
 			"(this.my_int32 + 1) in [123, 456]",
-			"cast(data->>'my_int32' as integer) + 1 in (123, 456)",
+			"cast(public_data->>'my_int32' as integer) + 1 in (123, 456)",
 		),
 		Entry(
 			"String contains",
 			`this.my_string.contains("my value")`,
-			`data->>'my_string' like '%my value%'`,
+			`public_data->>'my_string' like '%my value%'`,
 		),
 		Entry(
 			"Nested string",
 			`this.spec.spec_string == 'my_value'`,
-			`data->'spec'->>'spec_string' = 'my_value'`,
+			`public_data->'spec'->>'spec_string' = 'my_value'`,
 		),
 		Entry(
 			"Creation timestamp is null",
@@ -110,22 +110,22 @@ var _ = Describe("Filter translator", func() {
 		Entry(
 			"Timestamp in the past",
 			`this.my_timestamp < now`,
-			`cast(data->>'my_timestamp' as timestamp with time zone) < now()`,
+			`cast(public_data->>'my_timestamp' as timestamp with time zone) < now()`,
 		),
 		Entry(
 			"Timestamp in the future",
 			`this.my_timestamp > now`,
-			`cast(data->>'my_timestamp' as timestamp with time zone) > now()`,
+			`cast(public_data->>'my_timestamp' as timestamp with time zone) > now()`,
 		),
 		Entry(
 			"Reverse null and timestamp before null check",
 			`null == this.my_timestamp`,
-			`cast(data->>'my_timestamp' as timestamp with time zone) is null`,
+			`cast(public_data->>'my_timestamp' as timestamp with time zone) is null`,
 		),
 		Entry(
 			"Reverse null and timestamp before not null check",
 			`null != this.my_timestamp`,
-			`cast(data->>'my_timestamp' as timestamp with time zone) is not null`,
+			`cast(public_data->>'my_timestamp' as timestamp with time zone) is not null`,
 		),
 		Entry(
 			"Check presence of identifier",
@@ -145,67 +145,67 @@ var _ = Describe("Filter translator", func() {
 		Entry(
 			"Check presence of boolean field",
 			`has(this.my_bool)`,
-			`data ? 'my_bool'`,
+			`public_data ? 'my_bool'`,
 		),
 		Entry(
 			"Check presence of int32 field",
 			`has(this.my_int32)`,
-			`data ? 'my_int32'`,
+			`public_data ? 'my_int32'`,
 		),
 		Entry(
 			"Check presence of int64 field",
 			`has(this.my_int64)`,
-			`data ? 'my_int64'`,
+			`public_data ? 'my_int64'`,
 		),
 		Entry(
 			"Check presence of string field",
 			`has(this.my_string)`,
-			`data ? 'my_string'`,
+			`public_data ? 'my_string'`,
 		),
 		Entry(
 			"Check presence of float field",
 			`has(this.my_float)`,
-			`data ? 'my_float'`,
+			`public_data ? 'my_float'`,
 		),
 		Entry(
 			"Check presence of double field",
 			`has(this.my_double)`,
-			`data ? 'my_double'`,
+			`public_data ? 'my_double'`,
 		),
 		Entry(
 			"Check presence of timestamp field",
 			`has(this.my_timestamp)`,
-			`data ? 'my_timestamp'`,
+			`public_data ? 'my_timestamp'`,
 		),
 		Entry(
 			"Check presence of message field",
 			`has(this.spec)`,
-			`data ? 'spec'`,
+			`public_data ? 'spec'`,
 		),
 		Entry(
 			"Check presence of nested boolean field",
 			`has(this.spec.spec_bool)`,
-			`data->'spec' ? 'spec_bool'`,
+			`public_data->'spec' ? 'spec_bool'`,
 		),
 		Entry(
 			"String starts with",
 			`this.my_string.startsWith("my")`,
-			`data->>'my_string' like 'my%'`,
+			`public_data->>'my_string' like 'my%'`,
 		),
 		Entry(
 			"String ends with",
 			`this.my_string.endsWith("my")`,
-			`data->>'my_string' like '%my'`,
+			`public_data->>'my_string' like '%my'`,
 		),
 		Entry(
 			"Escape percent in like pattern",
 			`this.my_string.startsWith("my%")`,
-			`data->>'my_string' like 'my\%%'`,
+			`public_data->>'my_string' like 'my\%%'`,
 		),
 		Entry(
 			"Escape underscore in like pattern",
 			`this.my_string.startsWith("my_")`,
-			`data->>'my_string' like 'my\_%'`,
+			`public_data->>'my_string' like 'my\_%'`,
 		),
 		Entry(
 			"Check if object is deleted",

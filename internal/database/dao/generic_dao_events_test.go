@@ -21,7 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
@@ -53,7 +53,7 @@ var _ = Describe("Generic DAO events", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				data jsonb not null
+				public_data jsonb not null
 			)
 			`,
 		)
@@ -79,7 +79,7 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Runs callback for create event", func() {
 		var event *Event
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(_ context.Context, e Event) error {
@@ -100,7 +100,7 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Runs callback for modify event", func() {
 		var event *Event
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(_ context.Context, e Event) error {
@@ -110,19 +110,19 @@ var _ = Describe("Generic DAO events", func() {
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		var object *api.Cluster
+		var object *ffv1.Cluster
 		runWithTx(func(ctx context.Context) {
 			response, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			object = response.GetObject()
+			object = response.GetPublic()
 		})
 
 		runWithTx(func(ctx context.Context) {
 			_, err = generic.Update().
-				SetObject(
-					api.Cluster_builder{
+				SetPublic(
+					ffv1.Cluster_builder{
 						Id: object.Id,
-						Status: api.ClusterStatus_builder{
+						Status: ffv1.ClusterStatus_builder{
 							ApiUrl: "https://api.example.com",
 						}.Build(),
 					}.Build(),
@@ -137,7 +137,7 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Runs callback for delete event", func() {
 		var event *Event
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(_ context.Context, e Event) error {
@@ -147,14 +147,14 @@ var _ = Describe("Generic DAO events", func() {
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		var object *api.Cluster
+		var object *ffv1.Cluster
 		runWithTx(func(ctx context.Context) {
 			response, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			object = response.GetObject()
+			object = response.GetPublic()
 		})
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Delete().SetObject(object).Send(ctx)
+			_, err = generic.Delete().SetPublic(object).Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
 		})
 		Expect(event).ToNot(BeNil())
@@ -163,7 +163,7 @@ var _ = Describe("Generic DAO events", func() {
 	})
 
 	It("Fails to create object if callback returns an error", func() {
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(context.Context, Event) error {
@@ -184,20 +184,20 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Fails to delete object if callback returns an error", func() {
 		// Create the DAO, without callbacks, just to do the insert:
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			Build()
 		Expect(err).ToNot(HaveOccurred())
-		var object *api.Cluster
+		var object *ffv1.Cluster
 		runWithTx(func(ctx context.Context) {
 			response, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			object = response.GetObject()
+			object = response.GetPublic()
 		})
 
 		// Create the DAO again, this time with the callback, to do the delete:
-		generic, err = NewGenericDAO[*api.Cluster]().
+		generic, err = NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(context.Context, Event) error {
@@ -206,7 +206,7 @@ var _ = Describe("Generic DAO events", func() {
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
-			_, err := generic.Delete().SetObject(object).Send(ctx)
+			_, err := generic.Delete().SetPublic(object).Send(ctx)
 			Expect(err).To(MatchError("my error"))
 		})
 
@@ -222,7 +222,7 @@ var _ = Describe("Generic DAO events", func() {
 	It("Doesn't fire update event if there are no changes", func() {
 		// Create the DAO again:
 		called := false
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(_ context.Context, event Event) error {
@@ -235,16 +235,16 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create the object:
-		var object *api.Cluster
+		var object *ffv1.Cluster
 		runWithTx(func(ctx context.Context) {
 			response, err := generic.Create().Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			object = response.GetObject()
+			object = response.GetPublic()
 		})
 
 		// Update without changes and verify the result:
 		runWithTx(func(ctx context.Context) {
-			_, err = generic.Update().SetObject(object).Send(ctx)
+			_, err = generic.Update().SetPublic(object).Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
 		})
 		Expect(called).To(BeFalse())
@@ -252,28 +252,28 @@ var _ = Describe("Generic DAO events", func() {
 
 	It("Fails to update object if callback returns an error", func() {
 		// Create the DAO, without callbacks, just to do the insert:
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			Build()
 		Expect(err).ToNot(HaveOccurred())
-		var object *api.Cluster
+		var object *ffv1.Cluster
 		runWithTx(func(ctx context.Context) {
 			response, err := generic.Create().
-				SetObject(
-					api.Cluster_builder{
-						Status: api.ClusterStatus_builder{
+				SetPublic(
+					ffv1.Cluster_builder{
+						Status: ffv1.ClusterStatus_builder{
 							ApiUrl: "https://my.api",
 						}.Build(),
 					}.Build(),
 				).
 				Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			object = response.GetObject()
+			object = response.GetPublic()
 		})
 
 		// Create the DAO again, this time with the callback, to do the update:
-		generic, err = NewGenericDAO[*api.Cluster]().
+		generic, err = NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(ctx context.Context, arg Event) error {
@@ -283,10 +283,10 @@ var _ = Describe("Generic DAO events", func() {
 		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
 			_, err = generic.Update().
-				SetObject(
-					api.Cluster_builder{
+				SetPublic(
+					ffv1.Cluster_builder{
 						Id: object.GetId(),
-						Status: api.ClusterStatus_builder{
+						Status: ffv1.ClusterStatus_builder{
 							ApiUrl: "https://your.api",
 						}.Build(),
 					}.Build(),
@@ -299,7 +299,7 @@ var _ = Describe("Generic DAO events", func() {
 		runWithTx(func(ctx context.Context) {
 			response, err := generic.Get().SetID(object.GetId()).Send(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			object = response.GetObject()
+			object = response.GetPublic()
 		})
 		Expect(object).ToNot(BeNil())
 		Expect(object.Status).ToNot(BeNil())
@@ -309,7 +309,7 @@ var _ = Describe("Generic DAO events", func() {
 	It("Calls multiple callbacks", func() {
 		called1 := false
 		called2 := false
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(context.Context, Event) error {
@@ -334,7 +334,7 @@ var _ = Describe("Generic DAO events", func() {
 	It("Doesn't call second callback if first returns an error", func() {
 		called1 := false
 		called2 := false
-		generic, err := NewGenericDAO[*api.Cluster]().
+		generic, err := NewGenericDAO[*ffv1.Cluster]().
 			SetLogger(logger).
 			SetTable("clusters").
 			AddEventCallback(func(context.Context, Event) error {

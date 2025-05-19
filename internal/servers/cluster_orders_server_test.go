@@ -69,7 +69,7 @@ var _ = Describe("Cluster orders server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				data jsonb not null
+				public_data jsonb not null
 			)
 			`,
 		)
@@ -79,7 +79,7 @@ var _ = Describe("Cluster orders server", func() {
 		_, err = tx.Exec(
 			ctx,
 			`
-			insert into cluster_templates (id, data) values
+			insert into cluster_templates (id, public_data) values
 			('my_template', '{}'),
 			('your_template', '{}')
 			`,
@@ -94,7 +94,7 @@ var _ = Describe("Cluster orders server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				data jsonb not null
+				public_data jsonb not null
 			)
 			`,
 		)

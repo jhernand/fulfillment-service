@@ -32,17 +32,25 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
-// Object is the interface that should be satisfied by objects to be managed by the generic DAO.
-type Object interface {
+// PublicData is the interface that should be satisfied by types that contain the public data of an object.
+type PublicData interface {
 	proto.Message
+
+	// GetId returns the unique identifier of the object.
 	GetId() string
+
+	// SetId sets the unique identifier of the object.
 	SetId(string)
+
+	// GetMetadata returns the public metadata of the object.
 	GetMetadata() *sharedv1.Metadata
+
+	// SetMetadata sets the public metadata of the object.
 	SetMetadata(*sharedv1.Metadata)
 }
 
 // GenericDAOBuilder is a builder for creating generic data access objects.
-type GenericDAOBuilder[O Object] struct {
+type GenericDAOBuilder[Public PublicData] struct {
 	logger         *slog.Logger
 	table          string
 	defaultOrder   string
@@ -57,37 +65,37 @@ type GenericDAOBuilder[O Object] struct {
 //   - `id` - The unique identifier of the object.
 //   - `creation_timestamp` - The time the object was created.
 //   - `deletion_timestamp` - The time the object was deleted.
-//   - `data` - The serialized object, using the protocol buffers JSON serialization.
+//   - `public_data` - The public data of the object, serialized object using the protocol buffers JSON serialization.
 //
 // Objects must have field named `id` of string type.
-type GenericDAO[O Object] struct {
+type GenericDAO[Public PublicData] struct {
 	logger           *slog.Logger
 	table            string
 	defaultOrder     string
 	defaultLimit     int
 	maxLimit         int
 	eventCallbacks   []EventCallback
-	objectTemplate   O
+	publicTemplate   Public
 	marshalOptions   protojson.MarshalOptions
-	filterTranslator *FilterTranslator[O]
+	filterTranslator *FilterTranslator[Public]
 }
 
 // NewGenericDAO creates a builder that can then be used to configure and create a generic DAO.
-func NewGenericDAO[O Object]() *GenericDAOBuilder[O] {
-	return &GenericDAOBuilder[O]{
+func NewGenericDAO[Public PublicData]() *GenericDAOBuilder[Public] {
+	return &GenericDAOBuilder[Public]{
 		defaultLimit: 100,
 		maxLimit:     1000,
 	}
 }
 
 // SetLogger sets the logger. This is mandatory.
-func (b *GenericDAOBuilder[O]) SetLogger(value *slog.Logger) *GenericDAOBuilder[O] {
+func (b *GenericDAOBuilder[Public]) SetLogger(value *slog.Logger) *GenericDAOBuilder[Public] {
 	b.logger = value
 	return b
 }
 
 // SetTable sets the table name. This is mandatory.
-func (b *GenericDAOBuilder[O]) SetTable(value string) *GenericDAOBuilder[O] {
+func (b *GenericDAOBuilder[Public]) SetTable(value string) *GenericDAOBuilder[Public] {
 	b.table = value
 	return b
 }
@@ -95,20 +103,20 @@ func (b *GenericDAOBuilder[O]) SetTable(value string) *GenericDAOBuilder[O] {
 // SetDefaultOrder sets the default order criteria to use when nothing has been requested by the user. This is optional
 // and the default is no order. This is intended only for use in unit tests, where it is convenient to have some
 // predictable ordering.
-func (b *GenericDAOBuilder[O]) SetDefaultOrder(value string) *GenericDAOBuilder[O] {
+func (b *GenericDAOBuilder[Public]) SetDefaultOrder(value string) *GenericDAOBuilder[Public] {
 	b.defaultOrder = value
 	return b
 }
 
 // SetDefaultLimit sets the default number of items returned. It will be used when the value of the limit parameter
 // of the list request is zero. This is optional, and the default is 100.
-func (b *GenericDAOBuilder[O]) SetDefaultLimit(value int) *GenericDAOBuilder[O] {
+func (b *GenericDAOBuilder[Public]) SetDefaultLimit(value int) *GenericDAOBuilder[Public] {
 	b.defaultLimit = value
 	return b
 }
 
 // SetMaxLimit sets the maximum number of items returned. This is optional and the default value is 1000.
-func (b *GenericDAOBuilder[O]) SetMaxLimit(value int) *GenericDAOBuilder[O] {
+func (b *GenericDAOBuilder[Public]) SetMaxLimit(value int) *GenericDAOBuilder[Public] {
 	b.maxLimit = value
 	return b
 }
@@ -118,13 +126,13 @@ func (b *GenericDAOBuilder[O]) SetMaxLimit(value int) *GenericDAOBuilder[O] {
 //
 // The functions are called synchronously, in the same order they were added, and with the same context used by the
 // DAO for its operations. If any of them returns an error the transaction will be rolled back.
-func (b *GenericDAOBuilder[O]) AddEventCallback(value EventCallback) *GenericDAOBuilder[O] {
+func (b *GenericDAOBuilder[Public]) AddEventCallback(value EventCallback) *GenericDAOBuilder[Public] {
 	b.eventCallbacks = append(b.eventCallbacks, value)
 	return b
 }
 
 // Build creates a new generic DAO using the configuration stored in the builder.
-func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
+func (b *GenericDAOBuilder[Public]) Build() (result *GenericDAO[Public], err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -151,9 +159,9 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		return
 	}
 
-	// Create the template that we will clone when we need to create a new object:
-	var object O
-	objectTemplate := object.ProtoReflect().New().Interface().(O)
+	// Create the template that we will clone when we need to create a new public:
+	var public Public
+	publicTemplate := public.ProtoReflect().New().Interface().(Public)
 
 	// Prepare the JSON marshalling options:
 	marshalOptions := protojson.MarshalOptions{
@@ -161,7 +169,7 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 	}
 
 	// Create the filter translator:
-	filterTranslator, err := NewFilterTranslator[O]().
+	filterTranslator, err := NewFilterTranslator[Public]().
 		SetLogger(b.logger).
 		Build()
 	if err != nil {
@@ -170,14 +178,14 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 	}
 
 	// Create and populate the object:
-	result = &GenericDAO[O]{
+	result = &GenericDAO[Public]{
 		logger:           b.logger,
 		table:            b.table,
 		defaultOrder:     b.defaultOrder,
 		defaultLimit:     b.defaultLimit,
 		maxLimit:         b.maxLimit,
 		eventCallbacks:   slices.Clone(b.eventCallbacks),
-		objectTemplate:   objectTemplate,
+		publicTemplate:   publicTemplate,
 		marshalOptions:   marshalOptions,
 		filterTranslator: filterTranslator,
 	}
@@ -185,7 +193,7 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 }
 
 // ListResponse represents the result of a paginated query.
-type ListResponse[O Object] interface {
+type ListResponse[Public PublicData] interface {
 	// GetSize returns the actual number of items returned.
 	GetSize() int
 
@@ -193,64 +201,66 @@ type ListResponse[O Object] interface {
 	GetTotal() int
 
 	// GetItems returns the list of items.
-	GetItems() []O
+	GetItems() []Public
 }
 
-type listResponse[O Object] struct {
-	items []O
+type listResponse[Public PublicData] struct {
+	items []Public
 	total int
 }
 
-func (r listResponse[O]) GetSize() int {
+func (r listResponse[Public]) GetSize() int {
 	return len(r.items)
 }
 
-func (r listResponse[O]) GetTotal() int {
+func (r listResponse[Public]) GetTotal() int {
 	return r.total
 }
 
-func (r listResponse[O]) GetItems() []O {
+func (r listResponse[Public]) GetItems() []Public {
 	return r.items
 }
 
 // ListRequest represents the parameters for paginated queries.
-type ListRequest[O Object] interface {
-	// SetOffset sets the starting point.
-	SetOffset(int) ListRequest[O]
+type ListRequest[Public PublicData] interface {
+	// SetOffset sets the starting point. This is optional, and the default is zero.
+	SetOffset(int) ListRequest[Public]
 
-	// SetLimit sets the maximum number of items.
-	SetLimit(int) ListRequest[O]
+	// SetLimit sets the maximum number of items. This is optional and the default is 100 unless a different value
+	// is set using the SetDefaultLimit method of the builder of the DAO.
+	SetLimit(int) ListRequest[Public]
 
-	// SetFilter sets the CEL expression that defines which objects should be returned.
-	SetFilter(string) ListRequest[O]
+	// SetFilter sets the CEL expression that defines which objects should be returned. This is optiona, and by
+	// default it is empty, which means that all objects will be returned.
+	SetFilter(string) ListRequest[Public]
 
 	// Send sends the request and waits for the response.
-	Send(context.Context) (ListResponse[O], error)
+	Send(context.Context) (ListResponse[Public], error)
 }
 
-type listRequest[O Object] struct {
-	d      *GenericDAO[O]
+type listRequest[Public PublicData] struct {
+	d      *GenericDAO[Public]
 	offset int
 	limit  int
 	filter string
 }
 
-func (r *listRequest[O]) SetOffset(value int) ListRequest[O] {
+func (r *listRequest[Public]) SetOffset(value int) ListRequest[Public] {
 	r.offset = value
 	return r
 }
 
-func (r *listRequest[O]) SetLimit(value int) ListRequest[O] {
+func (r *listRequest[Public]) SetLimit(value int) ListRequest[Public] {
 	r.limit = value
 	return r
 }
 
-func (r *listRequest[O]) SetFilter(value string) ListRequest[O] {
+func (r *listRequest[Public]) SetFilter(value string) ListRequest[Public] {
 	r.filter = value
 	return r
 }
 
-func (r *listRequest[O]) Send(ctx context.Context) (response ListResponse[O], err error) {
+func (r *listRequest[Public]) Send(ctx context.Context) (response ListResponse[Public], err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -261,13 +271,13 @@ func (r *listRequest[O]) Send(ctx context.Context) (response ListResponse[O], er
 }
 
 // List runs a query.
-func (d *GenericDAO[O]) List() ListRequest[O] {
-	return &listRequest[O]{
+func (d *GenericDAO[Public]) List() ListRequest[Public] {
+	return &listRequest[Public]{
 		d: d,
 	}
 }
 
-func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request *listRequest[O]) (response listResponse[O],
+func (d *GenericDAO[Public]) list(ctx context.Context, tx database.Tx, request *listRequest[Public]) (response listResponse[Public],
 	err error) {
 	// Calculate the filter:
 	var filter string
@@ -278,7 +288,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request *listR
 		}
 	}
 
-	// Calculate the order cluase:
+	// Calculate the order clause:
 	var order string
 	if d.defaultOrder != "" {
 		order = d.defaultOrder
@@ -324,7 +334,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request *listR
 			id,
 			creation_timestamp,
 			deletion_timestamp,
-			data
+			public_data
 		from
 			%s
 		`,
@@ -347,29 +357,29 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request *listR
 		return
 	}
 	defer itemsRows.Close()
-	var items []O
+	var items []Public
 	for itemsRows.Next() {
 		var (
-			id         string
-			creationTs time.Time
-			deletionTs time.Time
-			data       []byte
+			id          string
+			creationTs  time.Time
+			deletionTs  time.Time
+			publicBytes []byte
 		)
 		err = itemsRows.Scan(
 			&id,
 			&creationTs,
 			&deletionTs,
-			&data,
+			&publicBytes,
 		)
 		if err != nil {
 			return
 		}
-		item := d.newObject()
-		err = d.unmarshalData(data, item)
+		item := d.newPublic()
+		err = d.unmarshalPublic(publicBytes, item)
 		if err != nil {
 			return
 		}
-		md := d.makeMetadata(creationTs, deletionTs)
+		md := d.makePublicMetadata(creationTs, deletionTs)
 		item.SetId(id)
 		item.SetMetadata(md)
 		items = append(items, item)
@@ -384,55 +394,57 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request *listR
 }
 
 // GetResponse contains the result of fetching a single object.
-type GetResponse[O Object] interface {
-	// HasObject returns true if the object exists, and false otherwise.
-	HasObject() bool
+type GetResponse[Public PublicData] interface {
+	// GetExists returns true if the object exists, and false otherwise.
+	GetExists() bool
 
-	// GetObject return the data of the object, or nil if no such object exists.
-	GetObject() O
+	// GetPublic return the public data of the object, or nil if no such object exists.
+	GetPublic() Public
 }
 
-type getResponse[O Object] struct {
-	object O
+type getResponse[Public PublicData] struct {
+	exists bool
+	public Public
 }
 
-func (r getResponse[O]) HasObject() bool {
-	return !isNil(r.object)
+func (r getResponse[Public]) GetExists() bool {
+	return r.exists
 }
 
-func (r getResponse[O]) GetObject() O {
-	return r.object
+func (r getResponse[Public]) GetPublic() Public {
+	return r.public
 }
 
 // GetRequest contains the parameters to fetch a single object.
-type GetRequest[O Object] interface {
-	// SetObject sets the object to request. This is equivaent to calling SetID with the identifier of the object.
-	SetObject(O) GetRequest[O]
+type GetRequest[Public PublicData] interface {
+	// SetPublic sets the public data of the object to fetach. This is equivaent to calling SetID with the unique
+	// identifier of the object.
+	SetPublic(Public) GetRequest[Public]
 
 	// SetID sets the identifier of the object.
-	SetID(string) GetRequest[O]
+	SetID(string) GetRequest[Public]
 
 	// Send sends the request and waits for the response. Note that no error will be returned if the object doesn't
 	// exist. Use the HasObject or GetObject methods of the response to check of the object exists.
-	Send(context.Context) (GetResponse[O], error)
+	Send(context.Context) (GetResponse[Public], error)
 }
 
-type getRequest[O Object] struct {
-	d  *GenericDAO[O]
+type getRequest[Public PublicData] struct {
+	d  *GenericDAO[Public]
 	id string
 }
 
-func (r *getRequest[O]) SetObject(value O) GetRequest[O] {
+func (r *getRequest[Public]) SetPublic(value Public) GetRequest[Public] {
 	r.id = value.GetId()
 	return r
 }
 
-func (r *getRequest[O]) SetID(value string) GetRequest[O] {
+func (r *getRequest[Public]) SetID(value string) GetRequest[Public] {
 	r.id = value
 	return r
 }
 
-func (r *getRequest[O]) Send(ctx context.Context) (response GetResponse[O], err error) {
+func (r *getRequest[Public]) Send(ctx context.Context) (response GetResponse[Public], err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -443,13 +455,13 @@ func (r *getRequest[O]) Send(ctx context.Context) (response GetResponse[O], err 
 }
 
 // Get fetches a single object.
-func (d *GenericDAO[O]) Get() GetRequest[O] {
-	return &getRequest[O]{
+func (d *GenericDAO[Public]) Get() GetRequest[Public] {
+	return &getRequest[Public]{
 		d: d,
 	}
 }
 
-func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, request *getRequest[O]) (response *getResponse[O],
+func (d *GenericDAO[Public]) get(ctx context.Context, tx database.Tx, request *getRequest[Public]) (response getResponse[Public],
 	err error) {
 	if request.id == "" {
 		err = errors.New("object identifier is mandatory")
@@ -460,7 +472,7 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, request *getReq
 		select
 			creation_timestamp,
 			deletion_timestamp,
-			data
+			public_data
 		from
 			%s
 		where
@@ -470,36 +482,35 @@ func (d *GenericDAO[O]) get(ctx context.Context, tx database.Tx, request *getReq
 	)
 	row := tx.QueryRow(ctx, query, request.id)
 	var (
-		creationTs time.Time
-		deletionTs time.Time
-		data       []byte
+		creationTs  time.Time
+		deletionTs  time.Time
+		publicBytes []byte
 	)
 	err = row.Scan(
 		&creationTs,
 		&deletionTs,
-		&data,
+		&publicBytes,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = nil
 		return
 	}
-	gotten := d.newObject()
-	err = d.unmarshalData(data, gotten)
+	public := d.newPublic()
+	err = d.unmarshalPublic(publicBytes, public)
 	if err != nil {
 		return
 	}
-	md := d.makeMetadata(creationTs, deletionTs)
-	gotten.SetId(request.id)
-	gotten.SetMetadata(md)
-	response = &getResponse[O]{
-		object: gotten,
-	}
+	md := d.makePublicMetadata(creationTs, deletionTs)
+	public.SetId(request.id)
+	public.SetMetadata(md)
+	response.exists = true
+	response.public = public
 	return
 }
 
 // Exists checks if a row with the given identifiers exists. Returns false and no error if there is no row with the
 // given identifier.
-func (d *GenericDAO[O]) Exists(ctx context.Context, id string) (ok bool, err error) {
+func (d *GenericDAO[Public]) Exists(ctx context.Context, id string) (ok bool, err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -509,7 +520,7 @@ func (d *GenericDAO[O]) Exists(ctx context.Context, id string) (ok bool, err err
 	return
 }
 
-func (d *GenericDAO[O]) exists(ctx context.Context, tx database.Tx, id string) (ok bool, err error) {
+func (d *GenericDAO[Public]) exists(ctx context.Context, tx database.Tx, id string) (ok bool, err error) {
 	if id == "" {
 		err = errors.New("object identifier is mandatory")
 		return
@@ -526,68 +537,68 @@ func (d *GenericDAO[O]) exists(ctx context.Context, tx database.Tx, id string) (
 }
 
 // CreateResponse contains the results of creating an object.
-type CreateResponse[O Object] interface {
-	// GetObject returns the created object.
-	GetObject() O
+type CreateResponse[Public PublicData] interface {
+	// GetPublic returns the public data of the created object.
+	GetPublic() Public
 }
 
-type createResponse[O Object] struct {
-	object O
+type createResponse[Public PublicData] struct {
+	public Public
 }
 
-func (r createResponse[O]) GetObject() O {
-	return r.object
+func (r createResponse[Public]) GetPublic() Public {
+	return r.public
 }
 
-type createRequest[O Object] struct {
-	d      *GenericDAO[O]
-	object O
+type createRequest[Public PublicData] struct {
+	d      *GenericDAO[Public]
+	public Public
 }
 
-type CreateRequest[O Object] interface {
-	// SetObject sets the initial data of the object. This will not be modified. Use the GetObject method of the
-	// response to get the created object.
-	SetObject(objet O) CreateRequest[O]
+type CreateRequest[Public PublicData] interface {
+	// SetPublic sets the initial public data of the object. This will not be modified. Use the GetPublic method of
+	// the response to get the created object.
+	SetPublic(public Public) CreateRequest[Public]
 
 	// Send sends the request and waits for the response.
-	Send(ctx context.Context) (CreateResponse[O], error)
+	Send(ctx context.Context) (CreateResponse[Public], error)
 }
 
-func (r *createRequest[O]) SetObject(object O) CreateRequest[O] {
-	r.object = object
+func (r *createRequest[Public]) SetPublic(public Public) CreateRequest[Public] {
+	r.public = public
 	return r
 }
 
-func (r *createRequest[O]) Send(ctx context.Context) (response CreateResponse[O], err error) {
+func (r *createRequest[Public]) Send(ctx context.Context) (response CreateResponse[Public], err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
 	}
 	defer tx.ReportError(&err)
-	if isNil(r.object) {
-		r.object = r.d.newObject()
+	if isNil(r.public) {
+		r.public = r.d.newPublic()
 	}
 	response, err = r.d.create(ctx, tx, r)
 	return
 }
 
 // Create creates a new object.
-func (d *GenericDAO[O]) Create() CreateRequest[O] {
-	return &createRequest[O]{
+func (d *GenericDAO[Public]) Create() CreateRequest[Public] {
+	return &createRequest[Public]{
 		d: d,
 	}
 }
 
-func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, request *createRequest[O]) (response createResponse[O],
+func (d *GenericDAO[Public]) create(ctx context.Context, tx database.Tx, request *createRequest[Public]) (response createResponse[Public],
 	err error) {
 	// Generate an identifier if needed:
-	id := request.object.GetId()
+	id := request.public.GetId()
 	if id == "" {
 		id = d.newId()
 	}
 
 	// Save the object:
-	data, err := d.marshalData(request.object)
+	publicBytes, err := d.marshalPublic(request.public)
 	if err != nil {
 		return
 	}
@@ -595,7 +606,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, request *cre
 		`
 		insert into %s (
 			id,
-			data
+			public_data
 		) values (
 		 	$1,
 			$2
@@ -606,7 +617,7 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, request *cre
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, id, data)
+	row := tx.QueryRow(ctx, sql, id, publicBytes)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -618,58 +629,58 @@ func (d *GenericDAO[O]) create(ctx context.Context, tx database.Tx, request *cre
 	if err != nil {
 		return
 	}
-	object := d.cloneObject(request.object)
-	md := d.makeMetadata(creationTs, deletionTs)
-	object.SetId(id)
-	object.SetMetadata(md)
+	public := d.clonePublic(request.public)
+	publicMetadata := d.makePublicMetadata(creationTs, deletionTs)
+	public.SetId(id)
+	public.SetMetadata(publicMetadata)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
 		Type:   EventTypeCreated,
-		Object: object,
+		Object: public,
 	})
 	if err != nil {
 		return
 	}
 
-	response.object = object
+	response.public = public
 	return
 }
 
 // UpdateResponse response contains the result of updating an object.
-type UpdateResponse[O Object] interface {
-	// GetObject returns the data of the object after the update.
-	GetObject() O
+type UpdateResponse[Public PublicData] interface {
+	// GetPublic returns the public data of the object after the update.
+	GetPublic() Public
 }
 
-type updateResponse[O Object] struct {
-	object O
+type updateResponse[Public PublicData] struct {
+	public Public
 }
 
-func (r updateResponse[O]) GetObject() O {
-	return r.object
+func (r updateResponse[Public]) GetPublic() Public {
+	return r.public
 }
 
 // UpdateRequest contains the parameters for updating an object.
-type UpdateRequest[O Object] interface {
-	// SetObject sets the new data of the object. This is mandatory.
-	SetObject(O) UpdateRequest[O]
+type UpdateRequest[Public PublicData] interface {
+	// SetPublic sets the new public data of the object.
+	SetPublic(Public) UpdateRequest[Public]
 
 	// Send sends the request and waits for the response.
-	Send(context.Context) (UpdateResponse[O], error)
+	Send(context.Context) (UpdateResponse[Public], error)
 }
 
-type updateRequest[O Object] struct {
-	d      *GenericDAO[O]
-	object O
+type updateRequest[Public PublicData] struct {
+	d      *GenericDAO[Public]
+	public Public
 }
 
-func (r *updateRequest[O]) SetObject(object O) UpdateRequest[O] {
-	r.object = object
+func (r *updateRequest[Public]) SetPublic(public Public) UpdateRequest[Public] {
+	r.public = public
 	return r
 }
 
-func (r *updateRequest[O]) Send(ctx context.Context) (response UpdateResponse[O], err error) {
+func (r *updateRequest[Public]) Send(ctx context.Context) (response UpdateResponse[Public], err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -680,30 +691,30 @@ func (r *updateRequest[O]) Send(ctx context.Context) (response UpdateResponse[O]
 }
 
 // Update updates an existing object.
-func (d *GenericDAO[O]) Update() UpdateRequest[O] {
-	return &updateRequest[O]{
+func (d *GenericDAO[Public]) Update() UpdateRequest[Public] {
+	return &updateRequest[Public]{
 		d: d,
 	}
 }
 
-func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, request *updateRequest[O]) (response updateResponse[O],
+func (d *GenericDAO[Public]) update(ctx context.Context, tx database.Tx, request *updateRequest[Public]) (response updateResponse[Public],
 	err error) {
 	// Get the current object:
-	id := request.object.GetId()
+	id := request.public.GetId()
 	if id == "" {
 		err = errors.New("object identifier is mandatory")
 		return
 	}
-	getResponse, err := d.get(ctx, tx, &getRequest[O]{
+	getResponse, err := d.get(ctx, tx, &getRequest[Public]{
 		id: id,
 	})
 	if err != nil {
 		return
 	}
-	current := getResponse.object
+	current := getResponse.public
 
 	// Do nothing if there are no changes:
-	updated := d.cloneObject(request.object)
+	updated := d.clonePublic(request.public)
 	updated.SetMetadata(nil)
 	current.SetMetadata(nil)
 	if proto.Equal(updated, current) {
@@ -711,14 +722,14 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, request *upd
 	}
 
 	// Save the object:
-	data, err := d.marshalData(request.object)
+	publicBytes, err := d.marshalPublic(request.public)
 	if err != nil {
 		return
 	}
 	sql := fmt.Sprintf(
 		`
 		update %s set
-			data = $1
+			public_data = $1
 		where
 			id = $2
 		returning
@@ -727,7 +738,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, request *upd
 		`,
 		d.table,
 	)
-	row := tx.QueryRow(ctx, sql, data, id)
+	row := tx.QueryRow(ctx, sql, publicBytes, id)
 	var (
 		creationTs time.Time
 		deletionTs time.Time
@@ -739,7 +750,7 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, request *upd
 	if err != nil {
 		return
 	}
-	md := d.makeMetadata(creationTs, deletionTs)
+	md := d.makePublicMetadata(creationTs, deletionTs)
 	updated.SetId(id)
 	updated.SetMetadata(md)
 
@@ -749,46 +760,46 @@ func (d *GenericDAO[O]) update(ctx context.Context, tx database.Tx, request *upd
 		Object: updated,
 	})
 
-	response.object = updated
+	response.public = updated
 	return
 }
 
 // DeleteResponse contains the results of deleting an object.
-type DeleteResponse[O Object] interface {
+type DeleteResponse[Public PublicData] interface {
 }
 
-type deleteResponse[O Object] struct {
+type deleteResponse[Public PublicData] struct {
 }
 
 // DeleteRequest contains the parameters for deleting an object.
-type DeleteRequest[O Object] interface {
-	// SetObject sets the object to be deleted. This is equivalent to calling SetID with the idientifier of the
-	// object.
-	SetObject(O) DeleteRequest[O]
+type DeleteRequest[Public PublicData] interface {
+	// SetPublic sets the public data of the object to be deleted. This is equivalent to calling SetID with the
+	// unique identifier of the object.
+	SetPublic(Public) DeleteRequest[Public]
 
 	// SetID sets the identifier of the object to be deleted.
-	SetID(string) DeleteRequest[O]
+	SetID(string) DeleteRequest[Public]
 
 	// Send sends the request and waits for the response.
-	Send(context.Context) (DeleteResponse[O], error)
+	Send(context.Context) (DeleteResponse[Public], error)
 }
 
-type deleteRequest[O Object] struct {
-	d  *GenericDAO[O]
+type deleteRequest[Public PublicData] struct {
+	d  *GenericDAO[Public]
 	id string
 }
 
-func (r *deleteRequest[O]) SetObject(value O) DeleteRequest[O] {
+func (r *deleteRequest[Public]) SetPublic(value Public) DeleteRequest[Public] {
 	r.id = value.GetId()
 	return r
 }
 
-func (r *deleteRequest[O]) SetID(value string) DeleteRequest[O] {
+func (r *deleteRequest[Public]) SetID(value string) DeleteRequest[Public] {
 	r.id = value
 	return r
 }
 
-func (r *deleteRequest[O]) Send(ctx context.Context) (response DeleteResponse[O], err error) {
+func (r *deleteRequest[Public]) Send(ctx context.Context) (response DeleteResponse[Public], err error) {
 	tx, err := database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -799,13 +810,13 @@ func (r *deleteRequest[O]) Send(ctx context.Context) (response DeleteResponse[O]
 }
 
 // Delete deletes an object.
-func (d *GenericDAO[O]) Delete() DeleteRequest[O] {
-	return &deleteRequest[O]{
+func (d *GenericDAO[Public]) Delete() DeleteRequest[Public] {
+	return &deleteRequest[Public]{
 		d: d,
 	}
 }
 
-func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, request *deleteRequest[O]) (response deleteResponse[O],
+func (d *GenericDAO[Public]) delete(ctx context.Context, tx database.Tx, request *deleteRequest[Public]) (response deleteResponse[Public],
 	err error) {
 	if request.id == "" {
 		err = errors.New("object identifier is mandatory")
@@ -823,43 +834,43 @@ func (d *GenericDAO[O]) delete(ctx context.Context, tx database.Tx, request *del
 		returning
 			creation_timestamp,
 			deletion_timestamp,
-			data
+			public_data
 		`,
 		d.table,
 	)
 	row := tx.QueryRow(ctx, sql, request.id)
 	var (
-		creationTs time.Time
-		deletionTs time.Time
-		data       []byte
+		creationTs  time.Time
+		deletionTs  time.Time
+		publicBytes []byte
 	)
 	err = row.Scan(
 		&creationTs,
 		&deletionTs,
-		&data,
+		&publicBytes,
 	)
 	if err != nil {
 		return
 	}
-	deleted := d.newObject()
-	err = d.unmarshalData(data, deleted)
+	public := d.newPublic()
+	err = d.unmarshalPublic(publicBytes, public)
 	if err != nil {
 		return
 	}
-	md := d.makeMetadata(creationTs, deletionTs)
-	deleted.SetId(request.id)
-	deleted.SetMetadata(md)
+	publicMetadata := d.makePublicMetadata(creationTs, deletionTs)
+	public.SetId(request.id)
+	public.SetMetadata(publicMetadata)
 
 	// Fire the event:
 	err = d.fireEvent(ctx, Event{
 		Type:   EventTypeDeleted,
-		Object: deleted,
+		Object: public,
 	})
 
 	return
 }
 
-func (d *GenericDAO[O]) fireEvent(ctx context.Context, event Event) error {
+func (d *GenericDAO[Public]) fireEvent(ctx context.Context, event Event) error {
 	event.Table = d.table
 	for _, eventCallback := range d.eventCallbacks {
 		err := eventCallback(ctx, event)
@@ -870,36 +881,38 @@ func (d *GenericDAO[O]) fireEvent(ctx context.Context, event Event) error {
 	return nil
 }
 
-func (d *GenericDAO[O]) newId() string {
+func (d *GenericDAO[Public]) newId() string {
 	return uuid.NewString()
 }
 
-func (d *GenericDAO[O]) newObject() O {
-	return proto.Clone(d.objectTemplate).(O)
+func (d *GenericDAO[Public]) newPublic() Public {
+	return proto.Clone(d.publicTemplate).(Public)
 }
 
-func (d *GenericDAO[O]) cloneObject(object O) O {
-	return proto.Clone(object).(O)
+func (d *GenericDAO[Public]) clonePublic(public Public) Public {
+	return proto.Clone(public).(Public)
 }
 
-func (d *GenericDAO[O]) marshalData(object O) (result []byte, err error) {
+func (d *GenericDAO[Public]) marshalPublic(public Public) (result []byte, err error) {
 	// We need to marshal the object without the identifier and the metadata because those are stored in separate
 	// columns.
-	id := object.GetId()
-	md := object.GetMetadata()
-	object.SetId("")
-	object.SetMetadata(nil)
-	result, err = d.marshalOptions.Marshal(object)
-	object.SetId(id)
-	object.SetMetadata(md)
+	id := public.GetId()
+	metadata := public.GetMetadata()
+	public.SetId("")
+	public.SetMetadata(nil)
+	defer func() {
+		public.SetId(id)
+		public.SetMetadata(metadata)
+	}()
+	result, err = d.marshalOptions.Marshal(public)
 	return
 }
 
-func (d *GenericDAO[O]) unmarshalData(data []byte, object O) error {
-	return protojson.Unmarshal(data, object)
+func (d *GenericDAO[Public]) unmarshalPublic(bytes []byte, public Public) error {
+	return protojson.Unmarshal(bytes, public)
 }
 
-func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.Time) *sharedv1.Metadata {
+func (d *GenericDAO[Public]) makePublicMetadata(creationTimestamp, deletionTimestamp time.Time) *sharedv1.Metadata {
 	result := &sharedv1.Metadata{}
 	if creationTimestamp.Unix() != 0 {
 		result.SetCreationTimestamp(timestamppb.New(creationTimestamp))
@@ -909,6 +922,7 @@ func (d *GenericDAO[O]) makeMetadata(creationTimestamp, deletionTimestamp time.T
 	}
 	return result
 }
-func isNil(object any) bool {
-	return reflect.ValueOf(object).IsNil()
+
+func isNil(value proto.Message) bool {
+	return reflect.ValueOf(value).IsNil()
 }

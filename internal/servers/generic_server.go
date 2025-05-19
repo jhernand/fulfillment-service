@@ -34,7 +34,7 @@ import (
 )
 
 // GenericServerBuilder contains the data and logic neede to create new generic servers.
-type GenericServerBuilder[O dao.Object] struct {
+type GenericServerBuilder[O dao.PublicData] struct {
 	logger  *slog.Logger
 	service string
 	table   string
@@ -42,7 +42,7 @@ type GenericServerBuilder[O dao.Object] struct {
 
 // GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
 // any object that has identifier and metadata fields.
-type GenericServer[O dao.Object] struct {
+type GenericServer[O dao.PublicData] struct {
 	logger         *slog.Logger
 	service        string
 	dao            *dao.GenericDAO[O]
@@ -60,7 +60,7 @@ type GenericServer[O dao.Object] struct {
 }
 
 // NewGeneric server creates a builder that can then be used to configure and create a new generic server.
-func NewGenericServer[O dao.Object]() *GenericServerBuilder[O] {
+func NewGenericServer[O dao.PublicData]() *GenericServerBuilder[O] {
 	return &GenericServerBuilder[O]{}
 }
 
@@ -217,7 +217,7 @@ func (s *GenericServer[O]) List(ctx context.Context, request any, response any) 
 		GetLimit() int32
 		GetFilter() string
 	}
-	type responseIface[O dao.Object] interface {
+	type responseIface[O dao.PublicData] interface {
 		SetSize(int32)
 		SetTotal(int32)
 		SetItems([]O)
@@ -248,7 +248,7 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 	type requestIface interface {
 		GetId() string
 	}
-	type responseIface[O dao.Object] interface {
+	type responseIface[O dao.PublicData] interface {
 		SetObject(O)
 	}
 	requestMsg := request.(requestIface)
@@ -266,20 +266,20 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to get object with identifier '%s'", id)
 	}
-	if !daoResponse.HasObject() {
+	if !daoResponse.GetExists() {
 		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' doesn't exist", id)
 	}
 	responseMsg := proto.Clone(s.getResponse).(responseIface[O])
-	responseMsg.SetObject(daoResponse.GetObject())
+	responseMsg.SetObject(daoResponse.GetPublic())
 	s.setPointer(response, responseMsg)
 	return nil
 }
 
 func (s *GenericServer[O]) Create(ctx context.Context, request any, response any) error {
-	type requestIface[O dao.Object] interface {
+	type requestIface[O dao.PublicData] interface {
 		GetObject() O
 	}
-	type responseIface[O dao.Object] interface {
+	type responseIface[O dao.PublicData] interface {
 		SetObject(O)
 	}
 	requestMsg := request.(requestIface[O])
@@ -287,7 +287,7 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 	if s.isNil(object) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	daoResponse, err := s.dao.Create().SetObject(object).Send(ctx)
+	daoResponse, err := s.dao.Create().SetPublic(object).Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -297,7 +297,7 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to create object")
 	}
 	responseMsg := proto.Clone(s.createResponse).(responseIface[O])
-	responseMsg.SetObject(daoResponse.GetObject())
+	responseMsg.SetObject(daoResponse.GetPublic())
 	s.setPointer(response, responseMsg)
 	return nil
 }
@@ -339,7 +339,7 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 			id,
 		)
 	}
-	daoResponse, err := s.dao.Update().SetObject(object).Send(ctx)
+	daoResponse, err := s.dao.Update().SetPublic(object).Send(ctx)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -354,7 +354,7 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 		)
 	}
 	responseMsg := proto.Clone(s.updateResponse).(responseIface)
-	responseMsg.SetObject(daoResponse.GetObject())
+	responseMsg.SetObject(daoResponse.GetPublic())
 	s.setPointer(response, responseMsg)
 	return nil
 }

@@ -614,7 +614,7 @@ func (t *FilterTranslator[O]) translateSelectThisField(fieldName string, testOnl
 			result.precedence = filterTranslatorMaxPrecedence
 		}
 	default:
-		result, err = t.translateSelectJsonField("data", t.thisDesc, fieldName, testOnly)
+		result, err = t.translateSelectJsonField("public_data", t.thisDesc, fieldName, testOnly)
 	}
 	return
 }

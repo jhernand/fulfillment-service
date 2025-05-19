@@ -69,7 +69,7 @@ var _ = Describe("Clusters server", func() {
 				id text not null primary key,
 				creation_timestamp timestamp with time zone not null default now(),
 				deletion_timestamp timestamp with time zone not null default 'epoch',
-				data jsonb not null
+				public_data jsonb not null
 			)
 			`,
 		)
