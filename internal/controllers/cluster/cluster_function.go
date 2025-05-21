@@ -160,7 +160,7 @@ func (t *task) update(ctx context.Context) error {
 	for _, nodeSet := range t.public.GetSpec().GetNodeSets() {
 		nodeRequests = append(nodeRequests, map[string]any{
 			"resourceClass": nodeSet.GetHostClass(),
-			"numberOfNodes": nodeSet.GetSize(),
+			"numberOfNodes": int64(nodeSet.GetSize()),
 		})
 	}
 	spec := map[string]any{
