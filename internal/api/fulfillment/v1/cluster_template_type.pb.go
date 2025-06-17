@@ -37,22 +37,22 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// A cluster template defines a type of cluster that can be ordered by the user. Note that the user doesn't create these
+// A cluster template defines a type of cluster that can be created by the user. Note that the user doesn't create these
 // templates: the system provides a collection of them, and the user chooses one.
 type ClusterTemplate struct {
 	state protoimpl.MessageState `protogen:"hybrid.v1"`
 	// Unique identifier of the template.
 	Id       string       `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Metadata *v1.Metadata `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	// Human friendly short description of the template, only a few words, suitable for displaying in one single
-	// line on a UI or CLI.
+	// Human friendly short description of the template, only a few words, suitable for displaying in one single line on a
+	// UI or CLI.
 	Title string `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
 	// Human friendly long description of the template, using Markdown format.
 	Description string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	// Definitions of the parameters that can be used to customize the template.
 	//
 	// Note that these are only the *definitions* of the parameters, not the actual values. The actual values are in the
-	// `spec.template_parameters` field of the cluster order.
+	// `spec.template_parameters` field of the cluster.
 	Parameters []*ClusterTemplateParameterDefinition `protobuf:"bytes,5,rep,name=parameters,proto3" json:"parameters,omitempty"`
 	// Initial node sets of the cluster.
 	NodeSets      map[string]*ClusterTemplateNodeSet `protobuf:"bytes,6,rep,name=node_sets,json=nodeSets,proto3" json:"node_sets,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -168,15 +168,15 @@ type ClusterTemplate_builder struct {
 	// Unique identifier of the template.
 	Id       string
 	Metadata *v1.Metadata
-	// Human friendly short description of the template, only a few words, suitable for displaying in one single
-	// line on a UI or CLI.
+	// Human friendly short description of the template, only a few words, suitable for displaying in one single line on a
+	// UI or CLI.
 	Title string
 	// Human friendly long description of the template, using Markdown format.
 	Description string
 	// Definitions of the parameters that can be used to customize the template.
 	//
 	// Note that these are only the *definitions* of the parameters, not the actual values. The actual values are in the
-	// `spec.template_parameters` field of the cluster order.
+	// `spec.template_parameters` field of the cluster.
 	Parameters []*ClusterTemplateParameterDefinition
 	// Initial node sets of the cluster.
 	NodeSets map[string]*ClusterTemplateNodeSet
@@ -200,7 +200,7 @@ type ClusterTemplateParameterDefinition struct {
 	state protoimpl.MessageState `protogen:"hybrid.v1"`
 	// Name of the parameter.
 	//
-	// This is the name that should be used in the `template_parameters` field of the order to assign a value to the
+	// This is the name that should be used in the `template_parameters` field of the cluster to assign a value to the
 	// parameter.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Human friendly short description of the parameter, only a few words, suitable for displaying in one single line on
@@ -210,9 +210,9 @@ type ClusterTemplateParameterDefinition struct {
 	Description string `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
 	// Indicates if this parameter is required or optional.
 	//
-	// Values for required parameters must be included when sending the order, otherwise it will be rejected.
+	// Values for required parameters must be included when creating the cluster, otherwise it will be rejected.
 	//
-	// Note that there may be other dependencies between parameters which may cause a order to be rejected. For example,
+	// Note that there may be other dependencies between parameters which may cause a cluster to be rejected. For example,
 	// the allowed values of a parameter may depend on the value of another parameter. That kind of information will be in
 	// the `description` field.
 	Required bool `protobuf:"varint,4,opt,name=required,proto3" json:"required,omitempty"`
@@ -233,7 +233,7 @@ type ClusterTemplateParameterDefinition struct {
 	// | Array of bytes                 | `type.googleapis.com/google.protobuf.BytesValue`  |
 	// | Any JSON value                 | `type.googleapis.com/google.protobuf.Value`       |
 	//
-	// When using the HTTP+JSON version of the API the value provided in the `template_parameters` field of the order
+	// When using the HTTP+JSON version of the API the value provided in the `template_parameters` field of the cluster
 	// must be represented as documented in the (ProtoJSON format document)[https://protobuf.dev/programming-guides/json].
 	Type string `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
 	// Default value for optional parameters.
@@ -349,7 +349,7 @@ type ClusterTemplateParameterDefinition_builder struct {
 
 	// Name of the parameter.
 	//
-	// This is the name that should be used in the `template_parameters` field of the order to assign a value to the
+	// This is the name that should be used in the `template_parameters` field of the cluster to assign a value to the
 	// parameter.
 	Name string
 	// Human friendly short description of the parameter, only a few words, suitable for displaying in one single line on
@@ -359,9 +359,9 @@ type ClusterTemplateParameterDefinition_builder struct {
 	Description string
 	// Indicates if this parameter is required or optional.
 	//
-	// Values for required parameters must be included when sending the order, otherwise it will be rejected.
+	// Values for required parameters must be included when creating the cluster, otherwise it will be rejected.
 	//
-	// Note that there may be other dependencies between parameters which may cause a order to be rejected. For example,
+	// Note that there may be other dependencies between parameters which may cause a cluster to be rejected. For example,
 	// the allowed values of a parameter may depend on the value of another parameter. That kind of information will be in
 	// the `description` field.
 	Required bool
@@ -382,7 +382,7 @@ type ClusterTemplateParameterDefinition_builder struct {
 	// | Array of bytes                 | `type.googleapis.com/google.protobuf.BytesValue`  |
 	// | Any JSON value                 | `type.googleapis.com/google.protobuf.Value`       |
 	//
-	// When using the HTTP+JSON version of the API the value provided in the `template_parameters` field of the order
+	// When using the HTTP+JSON version of the API the value provided in the `template_parameters` field of the cluster
 	// must be represented as documented in the (ProtoJSON format document)[https://protobuf.dev/programming-guides/json].
 	Type string
 	// Default value for optional parameters.

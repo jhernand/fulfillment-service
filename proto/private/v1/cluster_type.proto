@@ -15,6 +15,7 @@ syntax = "proto3";
 
 package private.v1;
 
+import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 import "private/v1/metadata_type.proto";
 import "shared/v1/condition_status_type.proto";
@@ -26,28 +27,25 @@ message Cluster {
   Metadata metadata = 2;
   ClusterSpec spec = 3;
   ClusterStatus status = 4;
-
-  // Identifier of the hub that was selected for this cluster.
-  string hub_id = 5;
-
-  // Identifier of the cluster order that was originally used to create this cluster.
-  //
-  // This is needed because the way to find the Kubernetes `ClusterOrder` object corresponding to this cluster is to
-  // use the `.../clusterorder-uuid` label that was set when it was created, and that contains the identifier of the
-  // cluster order because at that point there is no cluster yet.
-  string order_id = 6;
 }
 
 message ClusterSpec {
-  map<string, ClusterNodeSet> node_sets = 1;
+  // Copies of the public fields.
+  string template = 1;
+  map<string, google.protobuf.Any> template_parameters = 2;
+  map<string, ClusterNodeSet> node_sets = 3;
 }
 
 message ClusterStatus {
+  // Copies of the public fields.
   ClusterState state = 1;
   repeated ClusterCondition conditions = 2;
   string api_url = 3;
   string console_url = 4;
   map<string, ClusterNodeSet> node_sets = 5;
+
+  // Identifier of the hub that was selected for this cluster.
+  string hub = 6;
 }
 
 enum ClusterState {

@@ -20,10 +20,12 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type ClusterTemplatesServerBuilder struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	notifier *database.Notifier
 }
 
 var _ ffv1.ClusterTemplatesServer = (*ClusterTemplatesServer)(nil)
@@ -44,6 +46,11 @@ func (b *ClusterTemplatesServerBuilder) SetLogger(value *slog.Logger) *ClusterTe
 	return b
 }
 
+func (b *ClusterTemplatesServerBuilder) SetNotifier(value *database.Notifier) *ClusterTemplatesServerBuilder {
+	b.notifier = value
+	return b
+}
+
 func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -56,6 +63,7 @@ func (b *ClusterTemplatesServerBuilder) Build() (result *ClusterTemplatesServer,
 		SetLogger(b.logger).
 		SetService(ffv1.ClusterTemplates_ServiceDesc.ServiceName).
 		SetTable("cluster_templates").
+		SetNotifier(b.notifier).
 		Build()
 	if err != nil {
 		return

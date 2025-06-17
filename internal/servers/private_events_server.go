@@ -31,57 +31,55 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
-	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
-type EventsServerBuilder struct {
+type PrivateEventsServerBuilder struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	dbUrl  string
 }
 
-var _ eventsv1.EventsServer = (*EventsServer)(nil)
+var _ privatev1.EventsServer = (*PrivateEventsServer)(nil)
 
-type EventsServer struct {
-	eventsv1.UnimplementedEventsServer
+type PrivateEventsServer struct {
+	privatev1.UnimplementedEventsServer
 
 	logger   *slog.Logger
 	listener *database.Listener
-	subs     map[string]privateEventsServerSubInfo
+	subs     map[string]eventsServerSubInfo
 	subsLock *sync.RWMutex
 	celEnv   *cel.Env
-	mapper   *GenericMapper[*privatev1.Event, *eventsv1.Event]
 }
 
-type privateEventsServerSubInfo struct {
-	stream     grpc.ServerStreamingServer[eventsv1.EventsWatchResponse]
+type eventsServerSubInfo struct {
+	stream     grpc.ServerStreamingServer[privatev1.EventsWatchResponse]
 	filterSrc  string
 	filterPrg  cel.Program
-	eventsChan chan *eventsv1.Event
+	eventsChan chan *privatev1.Event
 }
 
-func NewEventsServer() *EventsServerBuilder {
-	return &EventsServerBuilder{}
+func NewPrivateEventsServer() *PrivateEventsServerBuilder {
+	return &PrivateEventsServerBuilder{}
 }
 
-func (b *EventsServerBuilder) SetLogger(value *slog.Logger) *EventsServerBuilder {
+func (b *PrivateEventsServerBuilder) SetLogger(value *slog.Logger) *PrivateEventsServerBuilder {
 	b.logger = value
 	return b
 }
 
-func (b *EventsServerBuilder) SetFlags(value *pflag.FlagSet) *EventsServerBuilder {
+func (b *PrivateEventsServerBuilder) SetFlags(value *pflag.FlagSet) *PrivateEventsServerBuilder {
 	b.flags = value
 	return b
 }
 
-func (b *EventsServerBuilder) SetDbUrl(value string) *EventsServerBuilder {
+func (b *PrivateEventsServerBuilder) SetDbUrl(value string) *PrivateEventsServerBuilder {
 	b.dbUrl = value
 	return b
 }
 
-func (b *EventsServerBuilder) Build() (result *EventsServer, err error) {
+func (b *PrivateEventsServerBuilder) Build() (result *PrivateEventsServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
@@ -99,22 +97,12 @@ func (b *EventsServerBuilder) Build() (result *EventsServer, err error) {
 		return
 	}
 
-	// Create the mappers:
-	mapper, err := NewGenericMapper[*privatev1.Event, *eventsv1.Event]().
-		SetLogger(b.logger).
-		Build()
-	if err != nil {
-		err = fmt.Errorf("failed to create mapper: %w", err)
-		return
-	}
-
 	// Create the object early so that whe can use its methods as callback functions:
-	s := &EventsServer{
+	s := &PrivateEventsServer{
 		logger:   b.logger,
-		subs:     map[string]privateEventsServerSubInfo{},
+		subs:     map[string]eventsServerSubInfo{},
 		subsLock: &sync.RWMutex{},
 		celEnv:   celEnv,
-		mapper:   mapper,
 	}
 
 	// Create the notification listener:
@@ -133,12 +121,12 @@ func (b *EventsServerBuilder) Build() (result *EventsServer, err error) {
 	return
 }
 
-func (b *EventsServerBuilder) createCelEnv() (result *cel.Env, err error) {
+func (b *PrivateEventsServerBuilder) createCelEnv() (result *cel.Env, err error) {
 	// Declare contants for the enum types of the package:
 	var options []cel.EnvOption
 	protoregistry.GlobalTypes.RangeEnums(func(enumType protoreflect.EnumType) bool {
 		enumDesc := enumType.Descriptor()
-		if !eventsServerPackages[enumDesc.FullName().Parent()] {
+		if !privateEventsServerPackages[enumDesc.FullName().Parent()] {
 			return true
 		}
 		enumValues := enumDesc.Values()
@@ -159,7 +147,7 @@ func (b *EventsServerBuilder) createCelEnv() (result *cel.Env, err error) {
 	})
 
 	// Declare the event type:
-	var eventModel *eventsv1.Event
+	var eventModel *privatev1.Event
 	options = append(options, cel.Types(eventModel))
 
 	// Declare the event variable:
@@ -174,12 +162,12 @@ func (b *EventsServerBuilder) createCelEnv() (result *cel.Env, err error) {
 
 // Starts starts the background components of the server, in particular the notification listener. This is a blocking
 // operation, and will return only when the context is canceled.
-func (s *EventsServer) Start(ctx context.Context) error {
+func (s *PrivateEventsServer) Start(ctx context.Context) error {
 	return s.listener.Listen(ctx)
 }
 
-func (s *EventsServer) Watch(request *eventsv1.EventsWatchRequest,
-	stream grpc.ServerStreamingServer[eventsv1.EventsWatchResponse]) (err error) {
+func (s *PrivateEventsServer) Watch(request *privatev1.EventsWatchRequest,
+	stream grpc.ServerStreamingServer[privatev1.EventsWatchResponse]) (err error) {
 	// Get the context:
 	ctx := stream.Context()
 
@@ -213,11 +201,11 @@ func (s *EventsServer) Watch(request *eventsv1.EventsWatchRequest,
 	logger := s.logger.With(
 		slog.String("subscription", subId),
 	)
-	subInfo := privateEventsServerSubInfo{
+	subInfo := eventsServerSubInfo{
 		stream:     stream,
 		filterSrc:  filterSrc,
 		filterPrg:  filterPrg,
-		eventsChan: make(chan *eventsv1.Event),
+		eventsChan: make(chan *privatev1.Event),
 	}
 	s.subsLock.Lock()
 	s.subs[subId] = subInfo
@@ -239,9 +227,9 @@ func (s *EventsServer) Watch(request *eventsv1.EventsWatchRequest,
 				logger.DebugContext(ctx, "Subscription channel closed")
 				return nil
 			}
-			err = stream.Send(eventsv1.EventsWatchResponse_builder{
+			err = stream.Send(&privatev1.EventsWatchResponse{
 				Event: event,
-			}.Build())
+			})
 			if err != nil {
 				return err
 			}
@@ -252,7 +240,7 @@ func (s *EventsServer) Watch(request *eventsv1.EventsWatchRequest,
 	}
 }
 
-func (s *EventsServer) compileFilter(ctx context.Context, filterSrc string) (result cel.Program, err error) {
+func (s *PrivateEventsServer) compileFilter(ctx context.Context, filterSrc string) (result cel.Program, err error) {
 	tree, issues := s.celEnv.Compile(filterSrc)
 	err = issues.Err()
 	if err != nil {
@@ -262,7 +250,7 @@ func (s *EventsServer) compileFilter(ctx context.Context, filterSrc string) (res
 	return
 }
 
-func (s *EventsServer) evalFilter(ctx context.Context, filterPrg cel.Program, event *eventsv1.Event) (result bool,
+func (s *PrivateEventsServer) evalFilter(ctx context.Context, filterPrg cel.Program, event *privatev1.Event) (result bool,
 	err error) {
 	activation, err := cel.NewActivation(map[string]any{
 		"event": event,
@@ -282,26 +270,21 @@ func (s *EventsServer) evalFilter(ctx context.Context, filterPrg cel.Program, ev
 	return
 }
 
-func (s *EventsServer) processPayload(ctx context.Context, payload proto.Message) error {
-	private, ok := payload.(*privatev1.Event)
+func (s *PrivateEventsServer) processPayload(ctx context.Context, payload proto.Message) error {
+	event, ok := payload.(*privatev1.Event)
 	if !ok {
 		s.logger.ErrorContext(
 			ctx,
 			"Unexpected payload type",
-			slog.String("expected", fmt.Sprintf("%T", private)),
+			slog.String("expected", fmt.Sprintf("%T", event)),
 			slog.String("actual", fmt.Sprintf("%T", payload)),
 		)
 		return nil
 	}
-	public := &eventsv1.Event{}
-	err := s.mapper.Copy(ctx, private, public)
-	if err != nil {
-		return err
-	}
-	return s.processEvent(ctx, public)
+	return s.processEvent(ctx, event)
 }
 
-func (s *EventsServer) processEvent(ctx context.Context, event *eventsv1.Event) error {
+func (s *PrivateEventsServer) processEvent(ctx context.Context, event *privatev1.Event) error {
 	s.subsLock.RLock()
 	defer s.subsLock.RUnlock()
 	for subId, sub := range s.subs {
@@ -334,7 +317,6 @@ func (s *EventsServer) processEvent(ctx context.Context, event *eventsv1.Event) 
 }
 
 // Names of the packages whose enums will be available in the filter expressions:
-var eventsServerPackages = map[protoreflect.FullName]bool{
-	"events.v1":      true,
-	"fulfillment.v1": true,
+var privateEventsServerPackages = map[protoreflect.FullName]bool{
+	"private.v1": true,
 }

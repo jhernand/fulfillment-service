@@ -854,14 +854,23 @@ func (d *GenericDAO[O]) equivalentMessages(x, y protoreflect.Message) bool {
 	fields := x.Descriptor().Fields()
 	for i := range fields.Len() {
 		field := fields.Get(i)
-		xv := x.Get(field)
-		yv := y.Get(field)
-		if field == d.metadataField {
-			if !d.equivalentMetadata(xv.Message(), yv.Message()) {
+		xPresent := x.Has(field)
+		yPresent := y.Has(field)
+		if xPresent != yPresent {
+			return false
+		}
+		if !xPresent && !yPresent {
+			continue
+		}
+		xValue := x.Get(field)
+		yValue := y.Get(field)
+		switch field.Name() {
+		case metadataFieldName:
+			if !d.equivalentMetadata(xValue.Message(), yValue.Message()) {
 				return false
 			}
-		} else {
-			if !xv.Equal(yv) {
+		default:
+			if !xValue.Equal(yValue) {
 				return false
 			}
 		}

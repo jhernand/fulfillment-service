@@ -31,6 +31,7 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/jq"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
@@ -38,7 +39,8 @@ import (
 )
 
 type ClustersServerBuilder struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	notifier *database.Notifier
 }
 
 var _ ffv1.ClustersServer = (*ClustersServer)(nil)
@@ -61,6 +63,11 @@ func NewClustersServer() *ClustersServerBuilder {
 
 func (b *ClustersServerBuilder) SetLogger(value *slog.Logger) *ClustersServerBuilder {
 	b.logger = value
+	return b
+}
+
+func (b *ClustersServerBuilder) SetNotifier(value *database.Notifier) *ClustersServerBuilder {
+	b.notifier = value
 	return b
 }
 
@@ -95,11 +102,24 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 		return
 	}
 
+	// Find the full name of the 'status' field so that we can configure the generic server to ignore it. This is
+	// because users don't have permission to change the status.
+	var object *ffv1.Cluster
+	objectReflect := object.ProtoReflect()
+	objectDesc := objectReflect.Descriptor()
+	statusField := objectDesc.Fields().ByName("status")
+	if statusField == nil {
+		err = fmt.Errorf("failed to find the status field of type '%s'", objectDesc.FullName())
+		return
+	}
+
 	// Create the generic server:
 	generic, err := NewGenericServer[*ffv1.Cluster, *privatev1.Cluster]().
 		SetLogger(b.logger).
 		SetService(ffv1.Clusters_ServiceDesc.ServiceName).
 		SetTable("clusters").
+		AddIgnoredFields(statusField.FullName()).
+		SetNotifier(b.notifier).
 		Build()
 	if err != nil {
 		return
@@ -326,12 +346,12 @@ func (s *ClustersServer) getHostedClusterSecret(ctx context.Context, clusterId s
 	secretField string) (result *corev1.Secret, err error) {
 	// Get the data of the cluster:
 	cluster, err := s.clustersDao.Get(ctx, clusterId)
-	if err != nil || cluster == nil || cluster.HubId == "" {
+	if err != nil || cluster == nil || cluster.GetStatus().GetHub() == "" {
 		return
 	}
 
 	// Get the data of the hub:
-	hub, err := s.hubsDao.Get(ctx, cluster.HubId)
+	hub, err := s.hubsDao.Get(ctx, cluster.GetStatus().GetHub())
 	if err != nil || hub == nil {
 		return
 	}
@@ -343,7 +363,7 @@ func (s *ClustersServer) getHostedClusterSecret(ctx context.Context, clusterId s
 	}
 
 	// Get the cluster order from the hub:
-	order, err := s.getKubeClusterOrder(ctx, hubClient, hub.Namespace, cluster.OrderId)
+	order, err := s.getKubeClusterOrder(ctx, hubClient, hub.Namespace, cluster.GetId())
 	if err != nil {
 		return
 	}

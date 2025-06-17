@@ -20,10 +20,12 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type HostClassesServerBuilder struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	notifier *database.Notifier
 }
 
 var _ ffv1.HostClassesServer = (*HostClassesServer)(nil)
@@ -44,6 +46,11 @@ func (b *HostClassesServerBuilder) SetLogger(value *slog.Logger) *HostClassesSer
 	return b
 }
 
+func (b *HostClassesServerBuilder) SetNotifier(value *database.Notifier) *HostClassesServerBuilder {
+	b.notifier = value
+	return b
+}
+
 func (b *HostClassesServerBuilder) Build() (result *HostClassesServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -56,6 +63,7 @@ func (b *HostClassesServerBuilder) Build() (result *HostClassesServer, err error
 		SetLogger(b.logger).
 		SetService(ffv1.HostClasses_ServiceDesc.ServiceName).
 		SetTable("host_classes").
+		SetNotifier(b.notifier).
 		Build()
 	if err != nil {
 		return

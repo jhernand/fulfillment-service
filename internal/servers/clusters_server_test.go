@@ -224,8 +224,13 @@ var _ = Describe("Clusters server", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
 				Object: ffv1.Cluster_builder{
-					Status: ffv1.ClusterStatus_builder{
-						ApiUrl: "https://myapi.com",
+					Spec: ffv1.ClusterSpec_builder{
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								HostClass: "acme_1tib",
+								Size:      3,
+							}.Build(),
+						},
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -236,20 +241,31 @@ var _ = Describe("Clusters server", func() {
 			updateResponse, err := server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
 				Object: ffv1.Cluster_builder{
 					Id: object.GetId(),
-					Status: ffv1.ClusterStatus_builder{
-						ApiUrl: "https://yourapi.com",
+					Spec: ffv1.ClusterSpec_builder{
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								HostClass: "acme_1tib",
+								Size:      4,
+							}.Build(),
+						},
 					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updateResponse.GetObject().GetStatus().GetApiUrl()).To(Equal("https://yourapi.com"))
+			object = updateResponse.GetObject()
+			nodeSet := object.GetSpec().GetNodeSets()["compute"]
+			Expect(nodeSet.GetHostClass()).To(Equal("acme_1tib"))
+			Expect(nodeSet.GetSize()).To(BeNumerically("==", 4))
 
 			// Get and verify:
 			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
 				Id: object.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetStatus().GetApiUrl()).To(Equal("https://yourapi.com"))
+			object = getResponse.GetObject()
+			nodeSet = object.GetSpec().GetNodeSets()["compute"]
+			Expect(nodeSet.GetHostClass()).To(Equal("acme_1tib"))
+			Expect(nodeSet.GetSize()).To(BeNumerically("==", 4))
 		})
 
 		It("Delete object", func() {
@@ -285,7 +301,7 @@ var _ = Describe("Clusters server", func() {
 			Expect(object.GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
 		})
 
-		It("Preserves private data during update of public data", func() {
+		It("Preserves private data during update", func() {
 			// Use the DAO directly to create an object with private data:
 			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().
 				SetLogger(logger).
@@ -293,25 +309,103 @@ var _ = Describe("Clusters server", func() {
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			object, err := dao.Create(ctx, privatev1.Cluster_builder{
-				HubId: "123",
+				Spec: privatev1.ClusterSpec_builder{
+					Template: "my_template",
+					NodeSets: map[string]*privatev1.ClusterNodeSet{
+						"compute": privatev1.ClusterNodeSet_builder{
+							HostClass: "my_host_class",
+							Size:      3,
+						}.Build(),
+					},
+				}.Build(),
+				Status: privatev1.ClusterStatus_builder{
+					Hub: "123",
+				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 
-			// Update the object using the server:
+			// Update the object using the public server:
 			_, err = server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
 				Object: ffv1.Cluster_builder{
 					Id: object.GetId(),
-					Status: ffv1.ClusterStatus_builder{
-						ApiUrl: "https://yourapi.com",
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+						NodeSets: map[string]*ffv1.ClusterNodeSet{
+							"compute": ffv1.ClusterNodeSet_builder{
+								HostClass: "my_host_class",
+								Size:      4,
+							}.Build(),
+						},
 					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 
-			// Get and object agan and verify that the private data hasn't changed:
+			// Get the object again and verify that the private data hasn't changed:
 			object, err = dao.Get(ctx, object.GetId())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(object.GetHubId()).To(Equal("123"))
+			Expect(object.GetStatus().GetHub()).To(Equal("123"))
+		})
+
+		It("Ignores status during creation", func() {
+			// Try to create an object with status:
+			createResponse, err := server.Create(ctx, ffv1.ClustersCreateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+					Status: ffv1.ClusterStatus_builder{
+						ApiUrl: "https://your.api",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			// Get the object and verify that the status was ignored:
+			getResponse, err := server.Get(ctx, ffv1.ClustersGetRequest_builder{
+				Id: object.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object = getResponse.GetObject()
+			Expect(object.GetStatus().GetApiUrl()).To(BeEmpty())
+		})
+
+		It("Ignores changes to status during update", func() {
+			// Use the DAO directly to create an object with status:
+			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().
+				SetLogger(logger).
+				SetTable("clusters").
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			object, err := dao.Create(ctx, privatev1.Cluster_builder{
+				Spec: privatev1.ClusterSpec_builder{
+					Template: "my_template",
+				}.Build(),
+				Status: privatev1.ClusterStatus_builder{
+					ApiUrl: "https://my.api",
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Try to update the status:
+			_, err = server.Update(ctx, ffv1.ClustersUpdateRequest_builder{
+				Object: ffv1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: ffv1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+					Status: ffv1.ClusterStatus_builder{
+						ApiUrl: "https://your.api",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Get the object again and verify that the status hasn't changed:
+			object, err = dao.Get(ctx, object.GetId())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(object.GetStatus().GetApiUrl()).To(Equal("https://my.api"))
 		})
 	})
 })

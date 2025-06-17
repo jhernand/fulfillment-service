@@ -38,7 +38,6 @@ type ClientBuilder struct {
 type Client struct {
 	logger                 *slog.Logger
 	grpcConn               *grpc.ClientConn
-	clusterOrdersClient    api.ClusterOrdersClient
 	clusterTemplatesClient api.ClusterTemplatesClient
 	clustersClient         api.ClustersClient
 	hubsClient             privatev1.HubsClient
@@ -86,7 +85,6 @@ func (b *ClientBuilder) Build() (result *Client, err error) {
 	}
 
 	// Create the clients for specific services:
-	clusterOrdersClient := api.NewClusterOrdersClient(grpcConn)
 	clusterTemplatesClient := api.NewClusterTemplatesClient(grpcConn)
 	clustersClient := api.NewClustersClient(grpcConn)
 	managementClustersClient := privatev1.NewHubsClient(grpcConn)
@@ -99,16 +97,11 @@ func (b *ClientBuilder) Build() (result *Client, err error) {
 		logger:                 b.logger,
 		grpcConn:               grpcConn,
 		clusterTemplatesClient: clusterTemplatesClient,
-		clusterOrdersClient:    clusterOrdersClient,
 		clustersClient:         clustersClient,
 		eventsClient:           eventsClient,
 		hubsClient:             managementClustersClient,
 	}
 	return
-}
-
-func (c *Client) ClusterOrders() api.ClusterOrdersClient {
-	return c.clusterOrdersClient
 }
 
 func (c *Client) ClusterTemplates() api.ClusterTemplatesClient {

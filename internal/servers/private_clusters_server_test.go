@@ -20,6 +20,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -118,8 +120,12 @@ var _ = Describe("Private clusters server", func() {
 		It("Creates object", func() {
 			response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
-					OrderId: "my_order",
-					HubId:   "my_hub",
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my_hub",
+					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -135,8 +141,12 @@ var _ = Describe("Private clusters server", func() {
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 					Object: privatev1.Cluster_builder{
-						OrderId: fmt.Sprintf("my_order_%d", i),
-						HubId:   fmt.Sprintf("my_hub_%d", i),
+						Spec: privatev1.ClusterSpec_builder{
+							Template: fmt.Sprintf("my_template_%d", i),
+						}.Build(),
+						Status: privatev1.ClusterStatus_builder{
+							Hub: fmt.Sprintf("my_hub_%d", i),
+						}.Build(),
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
@@ -156,8 +166,12 @@ var _ = Describe("Private clusters server", func() {
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 					Object: privatev1.Cluster_builder{
-						OrderId: fmt.Sprintf("my_order_%d", i),
-						HubId:   fmt.Sprintf("my_hub_%d", i),
+						Spec: privatev1.ClusterSpec_builder{
+							Template: fmt.Sprintf("my_template_%d", i),
+						}.Build(),
+						Status: privatev1.ClusterStatus_builder{
+							Hub: fmt.Sprintf("my_hub_%d", i),
+						}.Build(),
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
@@ -177,8 +191,12 @@ var _ = Describe("Private clusters server", func() {
 			for i := range count {
 				_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 					Object: privatev1.Cluster_builder{
-						OrderId: fmt.Sprintf("my_order_%d", i),
-						HubId:   fmt.Sprintf("my_hub_%d", i),
+						Spec: privatev1.ClusterSpec_builder{
+							Template: fmt.Sprintf("my_template_%d", i),
+						}.Build(),
+						Status: privatev1.ClusterStatus_builder{
+							Hub: fmt.Sprintf("my_hub_%d", i),
+						}.Build(),
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
@@ -199,8 +217,12 @@ var _ = Describe("Private clusters server", func() {
 			for i := range count {
 				response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 					Object: privatev1.Cluster_builder{
-						OrderId: fmt.Sprintf("my_order_%d", i),
-						HubId:   fmt.Sprintf("my_hub_%d", i),
+						Spec: privatev1.ClusterSpec_builder{
+							Template: fmt.Sprintf("my_template_%d", i),
+						}.Build(),
+						Status: privatev1.ClusterStatus_builder{
+							Hub: fmt.Sprintf("my_hub_%d", i),
+						}.Build(),
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
@@ -222,8 +244,12 @@ var _ = Describe("Private clusters server", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
-					OrderId: "my_order",
-					HubId:   "my_hub",
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my_hub",
+					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -240,8 +266,12 @@ var _ = Describe("Private clusters server", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 				Object: privatev1.Cluster_builder{
-					OrderId: "my_order",
-					HubId:   "my_hub",
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my_hub",
+					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -250,22 +280,26 @@ var _ = Describe("Private clusters server", func() {
 			// Update the object:
 			updateResponse, err := server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
 				Object: privatev1.Cluster_builder{
-					Id:      object.GetId(),
-					OrderId: "your_order",
-					HubId:   "your_hub",
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "your_template",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "your_hub",
+					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updateResponse.GetObject().GetOrderId()).To(Equal("your_order"))
-			Expect(updateResponse.GetObject().GetHubId()).To(Equal("your_hub"))
+			Expect(updateResponse.GetObject().GetSpec().GetTemplate()).To(Equal("your_template"))
+			Expect(updateResponse.GetObject().GetStatus().GetHub()).To(Equal("your_hub"))
 
 			// Get and verify:
 			getResponse, err := server.Get(ctx, privatev1.ClustersGetRequest_builder{
 				Id: object.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetOrderId()).To(Equal("your_order"))
-			Expect(getResponse.GetObject().GetHubId()).To(Equal("your_hub"))
+			Expect(getResponse.GetObject().GetSpec().GetTemplate()).To(Equal("your_template"))
+			Expect(getResponse.GetObject().GetStatus().GetHub()).To(Equal("your_hub"))
 		})
 
 		It("Delete object", func() {
@@ -275,8 +309,12 @@ var _ = Describe("Private clusters server", func() {
 					Metadata: privatev1.Metadata_builder{
 						Finalizers: []string{"a"},
 					}.Build(),
-					OrderId: "my_order",
-					HubId:   "my_hub",
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my_hub",
+					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -293,7 +331,64 @@ var _ = Describe("Private clusters server", func() {
 				Id: object.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
+			object = getResponse.GetObject()
+			Expect(object.GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
+		})
+
+		It("Rejects creation with duplicate condition", func() {
+			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Status: privatev1.ClusterStatus_builder{
+						Conditions: []*privatev1.ClusterCondition{
+							privatev1.ClusterCondition_builder{
+								Type: privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_READY,
+							}.Build(),
+							privatev1.ClusterCondition_builder{
+								Type: privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_READY,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal("condition 'CLUSTER_CONDITION_TYPE_READY' is duplicated"))
+		})
+
+		It("Rejects update with duplicate condition", func() {
+			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Status: privatev1.ClusterStatus_builder{
+						Conditions: []*privatev1.ClusterCondition{
+							privatev1.ClusterCondition_builder{
+								Type: privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_READY,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			_, err = server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Status: privatev1.ClusterStatus_builder{
+						Conditions: []*privatev1.ClusterCondition{
+							privatev1.ClusterCondition_builder{
+								Type: privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_READY,
+							}.Build(),
+							privatev1.ClusterCondition_builder{
+								Type: privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_READY,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(Equal("condition 'CLUSTER_CONDITION_TYPE_READY' is duplicated"))
 		})
 	})
 })

@@ -21,7 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 
-	privatev1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 )
 
 var _ = Describe("Priate host classes", func() {
@@ -36,6 +36,18 @@ var _ = Describe("Priate host classes", func() {
 	})
 
 	It("Can get the list of host classes", func() {
+		// Create the host class:
+		id := fmt.Sprintf("my_host_class_%s", uuid.NewString())
+		_, err := client.Create(ctx, privatev1.HostClassesCreateRequest_builder{
+			Object: privatev1.HostClass_builder{
+				Id:          id,
+				Title:       "My title",
+				Description: "My description.",
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+
+		// Get the list:
 		listResponse, err := client.List(ctx, privatev1.HostClassesListRequest_builder{}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(listResponse).ToNot(BeNil())
@@ -148,6 +160,9 @@ var _ = Describe("Priate host classes", func() {
 		id := fmt.Sprintf("my_host_class_%s", uuid.NewString())
 		_, err := client.Create(ctx, privatev1.HostClassesCreateRequest_builder{
 			Object: privatev1.HostClass_builder{
+				Metadata: privatev1.Metadata_builder{
+					Finalizers: []string{"a"},
+				}.Build(),
 				Id:          id,
 				Title:       "My title",
 				Description: "My description.",

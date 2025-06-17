@@ -18,11 +18,17 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/bits-and-blooms/bitset"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
+
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 type PrivateClustersServerBuilder struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	notifier *database.Notifier
 }
 
 var _ privatev1.ClustersServer = (*PrivateClustersServer)(nil)
@@ -42,6 +48,11 @@ func (b *PrivateClustersServerBuilder) SetLogger(value *slog.Logger) *PrivateClu
 	return b
 }
 
+func (b *PrivateClustersServerBuilder) SetNotifier(value *database.Notifier) *PrivateClustersServerBuilder {
+	b.notifier = value
+	return b
+}
+
 func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -54,6 +65,7 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 		SetLogger(b.logger).
 		SetService(privatev1.Clusters_ServiceDesc.ServiceName).
 		SetTable("clusters").
+		SetNotifier(b.notifier).
 		Build()
 	if err != nil {
 		return
@@ -81,12 +93,20 @@ func (s *PrivateClustersServer) Get(ctx context.Context,
 
 func (s *PrivateClustersServer) Create(ctx context.Context,
 	request *privatev1.ClustersCreateRequest) (response *privatev1.ClustersCreateResponse, err error) {
+	err = s.validateNoDuplicateConditions(request.GetObject())
+	if err != nil {
+		return
+	}
 	err = s.generic.Create(ctx, request, &response)
 	return
 }
 
 func (s *PrivateClustersServer) Update(ctx context.Context,
 	request *privatev1.ClustersUpdateRequest) (response *privatev1.ClustersUpdateResponse, err error) {
+	err = s.validateNoDuplicateConditions(request.GetObject())
+	if err != nil {
+		return
+	}
 	err = s.generic.Update(ctx, request, &response)
 	return
 }
@@ -95,4 +115,24 @@ func (s *PrivateClustersServer) Delete(ctx context.Context,
 	request *privatev1.ClustersDeleteRequest) (response *privatev1.ClustersDeleteResponse, err error) {
 	err = s.generic.Delete(ctx, request, &response)
 	return
+}
+
+func (s *PrivateClustersServer) validateNoDuplicateConditions(object *privatev1.Cluster) error {
+	conditions := object.GetStatus().GetConditions()
+	if conditions == nil {
+		return nil
+	}
+	conditionTypes := &bitset.BitSet{}
+	for _, condition := range conditions {
+		conditionType := condition.GetType()
+		if conditionTypes.Test(uint(conditionType)) {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"condition '%s' is duplicated",
+				conditionType.String(),
+			)
+		}
+		conditionTypes.Set(uint(conditionType))
+	}
+	return nil
 }

@@ -11,32 +11,20 @@
 -- specific language governing permissions and limitations under the License.
 --
 
+-- Create the host classes tables:
 --
--- Public cluster templates.
----
-create table cluster_templates (
+create table host_classes (
   id text not null primary key,
   creation_timestamp timestamp with time zone not null default now(),
   deletion_timestamp timestamp with time zone not null default 'epoch',
+  finalizers text[] not null default '{}',
   data jsonb not null
 );
 
---
--- Public clusters.
---
-create table clusters (
-  id text not null primary key,
-  creation_timestamp timestamp with time zone not null default now(),
-  deletion_timestamp timestamp with time zone not null default 'epoch',
-  data jsonb not null
-);
-
---
--- Public cluster orders.
---
-create table cluster_orders (
-  id text not null primary key,
-  creation_timestamp timestamp with time zone not null default now(),
-  deletion_timestamp timestamp with time zone not null default 'epoch',
+create table archived_host_classes (
+  id text not null,
+  creation_timestamp timestamp with time zone not null,
+  deletion_timestamp timestamp with time zone not null,
+  archival_timestamp timestamp with time zone not null default now(),
   data jsonb not null
 );

@@ -26,7 +26,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
-	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
@@ -62,7 +62,7 @@ type Reconciler[O dao.Object] struct {
 	listRequest   proto.Message
 	listResponse  proto.Message
 	objectChannel chan O
-	eventsClient  eventsv1.EventsClient
+	eventsClient  privatev1.EventsClient
 }
 
 // NewReconciler creates a builder that can then be used to configure and create a controller.
@@ -174,7 +174,7 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 	}
 
 	// Create the events client:
-	eventsClient := eventsv1.NewEventsClient(b.grpcClient)
+	eventsClient := privatev1.NewEventsClient(b.grpcClient)
 
 	// Create and populate the object:
 	result = &Reconciler[O]{
@@ -196,11 +196,11 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 }
 
 // findPayloadField finds the field of the event type that contains the payload for the type supported by the
-// reconciler. For example, if the type is a cluster order then the field will be `cluster_order`, if it is a cluster
-// template it will be `cluster_template`, etc.
+// reconciler. For example, if the type is a cluster order then the field will be `cluster`, if it is a cluster template
+// it will be `cluster_template`, etc.
 func (b *ReconcilerBuilder[O]) findPayloadField() (result protoreflect.FieldDescriptor, err error) {
 	var (
-		event  *eventsv1.Event
+		event  *privatev1.Event
 		object O
 	)
 	eventDesc := event.ProtoReflect().Descriptor()
@@ -338,7 +338,7 @@ func (c *Reconciler[O]) watchLoop(ctx context.Context) {
 }
 
 func (c *Reconciler[O]) watchEvents(ctx context.Context) error {
-	stream, err := c.eventsClient.Watch(ctx, &eventsv1.EventsWatchRequest{
+	stream, err := c.eventsClient.Watch(ctx, &privatev1.EventsWatchRequest{
 		Filter: &c.eventFilter,
 	})
 	if err != nil {

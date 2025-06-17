@@ -274,7 +274,7 @@ func (e *Encoder) marshalList(stream *jsoniter.Stream, list protoreflect.List,
 
 func (e *Encoder) marshalMap(stream *jsoniter.Stream, m protoreflect.Map,
 	field protoreflect.FieldDescriptor) (err error) {
-	stream.WriteObjectEnd()
+	stream.WriteObjectStart()
 	if stream.Error != nil {
 		err = stream.Error
 		return

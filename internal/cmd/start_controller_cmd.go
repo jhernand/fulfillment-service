@@ -28,10 +28,9 @@ import (
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/innabox/fulfillment-service/internal"
-	fulfillmentv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/cluster"
-	"github.com/innabox/fulfillment-service/internal/controllers/clusterorder"
 	"github.com/innabox/fulfillment-service/internal/network"
 )
 
@@ -91,40 +90,6 @@ func (c *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create hub cache: %w", err)
 	}
 
-	// Create the cluster order reconciler:
-	c.logger.InfoContext(ctx, "Creating cluster order reconciler")
-	clusterOrderReconcilerFunction, err := clusterorder.NewFunction().
-		SetLogger(c.logger).
-		SetConnection(client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create cluster order reconciler function: %w", err)
-	}
-	clusterOrderReconciler, err := controllers.NewReconciler[*fulfillmentv1.ClusterOrder]().
-		SetLogger(c.logger).
-		SetClient(client).
-		SetFunction(clusterOrderReconcilerFunction).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create cluster order reconciler: %w", err)
-	}
-
-	// Start the cluster order reconciler:
-	c.logger.InfoContext(ctx, "Starting cluster order reconciler")
-	go func() {
-		err := clusterOrderReconciler.Start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			c.logger.InfoContext(ctx, "Cluster order reconciler finished")
-		} else {
-			c.logger.InfoContext(
-				ctx,
-				"Cluster order reconciler failed",
-				slog.Any("error", err),
-			)
-		}
-	}()
-
 	// Create the cluster reconciler:
 	c.logger.InfoContext(ctx, "Creating cluster reconciler")
 	clusterReconcilerFunction, err := cluster.NewFunction().
@@ -135,7 +100,7 @@ func (c *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create cluster reconciler function: %w", err)
 	}
-	clusterReconciler, err := controllers.NewReconciler[*fulfillmentv1.Cluster]().
+	clusterReconciler, err := controllers.NewReconciler[*privatev1.Cluster]().
 		SetLogger(c.logger).
 		SetClient(client).
 		SetFunction(clusterReconcilerFunction).

@@ -27,38 +27,41 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
-	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
-	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 // GenericServerBuilder contains the data and logic neede to create new generic servers.
 type GenericServerBuilder[Public, Private dao.Object] struct {
-	logger  *slog.Logger
-	service string
-	table   string
+	logger        *slog.Logger
+	service       string
+	table         string
+	ignoredFields []any
+	notifier      *database.Notifier
 }
 
 // GenericServer is a gRPC server that knows how to implement the List, Get, Create, Update and Delete operators for
 // any object that has identifier and metadata fields.
 type GenericServer[Public, Private dao.Object] struct {
-	logger         *slog.Logger
-	service        string
-	dao            *dao.GenericDAO[Private]
-	inMapper       *GenericMapper[Public, Private]
-	outMapper      *GenericMapper[Private, Public]
-	listRequest    proto.Message
-	listResponse   proto.Message
-	getRequest     proto.Message
-	getResponse    proto.Message
-	createRequest  proto.Message
-	createResponse proto.Message
-	updateRequest  proto.Message
-	updateResponse proto.Message
-	deleteRequest  proto.Message
-	deleteResponse proto.Message
-	notifier       *database.Notifier
+	logger          *slog.Logger
+	service         string
+	dao             *dao.GenericDAO[Private]
+	inMapper        *GenericMapper[Public, Private]
+	outMapper       *GenericMapper[Private, Public]
+	publicTemplate  proto.Message
+	privateTemplate proto.Message
+	listRequest     proto.Message
+	listResponse    proto.Message
+	getRequest      proto.Message
+	getResponse     proto.Message
+	createRequest   proto.Message
+	createResponse  proto.Message
+	updateRequest   proto.Message
+	updateResponse  proto.Message
+	deleteRequest   proto.Message
+	deleteResponse  proto.Message
+	notifier        *database.Notifier
 }
 
 // NewGeneric server creates a builder that can then be used to configure and create a new generic server.
@@ -84,6 +87,29 @@ func (b *GenericServerBuilder[Public, Private]) SetTable(value string) *GenericS
 	return b
 }
 
+// AddIgnoredFields adds a set of fields to be omitted when mapping objects. The values passed can be of the following
+// types:
+//
+// string - This should be a field name, for example 'status' and then any field with that name in any object will
+// be ignored.
+//
+// protoreflect.Name - Like string.
+//
+// protoreflect.FullName - This indicates a field of a particular type. For example, if the value is
+// 'fulfillment.v1.Cluster.status' then only the 'status' field of the 'fulfillment.v1.Cluster' object will be ignored.
+func (b *GenericServerBuilder[Public, Private]) AddIgnoredFields(values ...any) *GenericServerBuilder[Public, Private] {
+	b.ignoredFields = append(b.ignoredFields, values...)
+	return b
+}
+
+// SetNotifier sets the notifier that the server will use to send events when objects are created, updated or deleted.
+// This is optional.
+func (b *GenericServerBuilder[Public, Private]) SetNotifier(
+	value *database.Notifier) *GenericServerBuilder[Public, Private] {
+	b.notifier = value
+	return b
+}
+
 // Build uses the configuration stored in the builder to create and configure a new generic server.
 func (b *GenericServerBuilder[Public, Private]) Build() (result *GenericServer[Public, Private], err error) {
 	// Check parameters:
@@ -102,16 +128,19 @@ func (b *GenericServerBuilder[Public, Private]) Build() (result *GenericServer[P
 
 	// Create the object early so that we can use its methods as callbacks:
 	s := &GenericServer[Public, Private]{
-		logger:  b.logger,
-		service: b.service,
+		logger:   b.logger,
+		service:  b.service,
+		notifier: b.notifier,
 	}
 
 	// Create the DAO:
-	s.dao, err = dao.NewGenericDAO[Private]().
-		SetLogger(b.logger).
-		SetTable(b.table).
-		AddEventCallback(s.notifyEvent).
-		Build()
+	daoBuilder := dao.NewGenericDAO[Private]()
+	daoBuilder.SetLogger(b.logger)
+	daoBuilder.SetTable(b.table)
+	if b.notifier != nil {
+		daoBuilder.AddEventCallback(s.notifyEvent)
+	}
+	s.dao, err = daoBuilder.Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create DAO: %w", err)
 		return
@@ -121,6 +150,7 @@ func (b *GenericServerBuilder[Public, Private]) Build() (result *GenericServer[P
 	s.inMapper, err = NewGenericMapper[Public, Private]().
 		SetLogger(b.logger).
 		SetStrict(true).
+		AddIgnoredFields(b.ignoredFields...).
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create in mapper: %w", err)
@@ -135,21 +165,19 @@ func (b *GenericServerBuilder[Public, Private]) Build() (result *GenericServer[P
 		return
 	}
 
-	// Create the notifier:
-	s.notifier, err = database.NewNotifier().
-		SetLogger(b.logger).
-		SetChannel("events").
-		Build()
-	if err != nil {
-		err = fmt.Errorf("failed to create notifier: %w", err)
-		return
-	}
-
 	// Find the descriptor:
 	service, err := b.findService()
 	if err != nil {
 		return
 	}
+
+	// Prepare the templates for the public and private objects:
+	var (
+		public  Public
+		private Private
+	)
+	s.publicTemplate = public.ProtoReflect().New().Interface()
+	s.privateTemplate = private.ProtoReflect().New().Interface()
 
 	// Prepare templates for the request and response types. These are empty messages that will be cloned when
 	// it is necessary to create new instances.
@@ -261,7 +289,8 @@ func (s *GenericServer[Public, Private]) List(ctx context.Context, request any, 
 	responseMsg.SetTotal(daoResponse.Total)
 	publicItems := make([]Public, len(daoResponse.Items))
 	for i, privateItem := range daoResponse.Items {
-		publicItems[i], err = s.outMapper.Map(ctx, privateItem)
+		publicItem := proto.Clone(s.publicTemplate).(Public)
+		err = s.outMapper.Copy(ctx, privateItem, publicItem)
 		if err != nil {
 			s.logger.ErrorContext(
 				ctx,
@@ -270,6 +299,7 @@ func (s *GenericServer[Public, Private]) List(ctx context.Context, request any, 
 			)
 			return grpcstatus.Errorf(grpccodes.Internal, "failed to list")
 		}
+		publicItems[i] = publicItem
 	}
 	responseMsg.SetItems(publicItems)
 	s.setPointer(response, responseMsg)
@@ -301,7 +331,8 @@ func (s *GenericServer[Public, Private]) Get(ctx context.Context, request any, r
 	if s.isNil(private) {
 		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' doesn't exist", id)
 	}
-	public, err := s.outMapper.Map(ctx, private)
+	public := proto.Clone(s.publicTemplate).(Public)
+	err = s.outMapper.Copy(ctx, private, public)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -329,7 +360,8 @@ func (s *GenericServer[Public, Private]) Create(ctx context.Context, request any
 	if s.isNil(public) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	private, err := s.inMapper.Map(ctx, public)
+	private := proto.Clone(s.privateTemplate).(Private)
+	err := s.inMapper.Copy(ctx, public, private)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -347,7 +379,7 @@ func (s *GenericServer[Public, Private]) Create(ctx context.Context, request any
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to create object")
 	}
-	public, err = s.outMapper.Map(ctx, private)
+	err = s.outMapper.Copy(ctx, private, public)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -399,11 +431,11 @@ func (s *GenericServer[Public, Private]) Update(ctx context.Context, request any
 			id,
 		)
 	}
-	err = s.inMapper.Merge(ctx, public, private)
+	err = s.inMapper.Copy(ctx, public, private)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
-			"Failed to map",
+			"Failed to copy object",
 			slog.Any("error", err),
 		)
 		return grpcstatus.Errorf(
@@ -426,7 +458,7 @@ func (s *GenericServer[Public, Private]) Update(ctx context.Context, request any
 			id,
 		)
 	}
-	public, err = s.outMapper.Map(ctx, private)
+	err = s.outMapper.Copy(ctx, private, public)
 	if err != nil {
 		s.logger.ErrorContext(
 			ctx,
@@ -472,36 +504,32 @@ func (s *GenericServer[Public, Private]) Delete(ctx context.Context, request any
 }
 
 // notifyEvent converts the DAO event into an API event and publishes it using the PostgreSQL NOTIFY command.
-func (s *GenericServer[Public, Private]) notifyEvent(ctx context.Context, e dao.Event) (err error) {
+func (s *GenericServer[Public, Private]) notifyEvent(ctx context.Context, e dao.Event) error {
 	// TODO: This is the only part of the generic server that depends on specific object types. Is there a way
 	// to avoid that?
-	event := &eventsv1.Event{}
-	event.Id = uuid.NewString()
+	event := &privatev1.Event{}
+	event.SetId(uuid.NewString())
 	switch e.Type {
 	case dao.EventTypeCreated:
-		event.Type = eventsv1.EventType_EVENT_TYPE_OBJECT_CREATED
+		event.SetType(privatev1.EventType_EVENT_TYPE_OBJECT_CREATED)
 	case dao.EventTypeUpdated:
-		event.Type = eventsv1.EventType_EVENT_TYPE_OBJECT_UPDATED
+		event.SetType(privatev1.EventType_EVENT_TYPE_OBJECT_UPDATED)
 	case dao.EventTypeDeleted:
-		event.Type = eventsv1.EventType_EVENT_TYPE_OBJECT_DELETED
+		event.SetType(privatev1.EventType_EVENT_TYPE_OBJECT_DELETED)
 	default:
 		return fmt.Errorf("unknown event kind '%s'", e.Type)
 	}
 	switch object := e.Object.(type) {
-	case *ffv1.Cluster:
-		event.Payload = &eventsv1.Event_Cluster{
-			Cluster: object,
-		}
-	case *ffv1.ClusterOrder:
-		event.Payload = &eventsv1.Event_ClusterOrder{
-			ClusterOrder: object,
-		}
-	case *ffv1.ClusterTemplate:
-		event.Payload = &eventsv1.Event_ClusterTemplate{
-			ClusterTemplate: object,
-		}
+	case *privatev1.ClusterTemplate:
+		event.SetClusterTemplate(object)
+	case *privatev1.Cluster:
+		event.SetCluster(object)
+	case *privatev1.HostClass:
+		event.SetHostClass(object)
+	case *privatev1.Hub:
+		event.SetHub(object)
 	default:
-		return
+		return fmt.Errorf("unknown object type '%T'", object)
 	}
 	return s.notifier.Notify(ctx, event)
 }
