@@ -299,28 +299,6 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}
 	ffv1.RegisterClusterTemplatesServer(grpcServer, clusterTemplatesServer)
 
-	// Create the clusters server:
-	c.logger.InfoContext(ctx, "Creating clusters server")
-	clustersServer, err := servers.NewClustersServer().
-		SetLogger(c.logger).
-		SetNotifier(notifier).
-		Build()
-	if err != nil {
-		return errors.Wrapf(err, "failed to create clusters server")
-	}
-	ffv1.RegisterClustersServer(grpcServer, clustersServer)
-
-	// Create the host classes server:
-	c.logger.InfoContext(ctx, "Creating host classes server")
-	hostClassesServer, err := servers.NewHostClassesServer().
-		SetLogger(c.logger).
-		SetNotifier(notifier).
-		Build()
-	if err != nil {
-		return errors.Wrapf(err, "failed to create host classes server")
-	}
-	ffv1.RegisterHostClassesServer(grpcServer, hostClassesServer)
-
 	// Create the private cluster templates server:
 	c.logger.InfoContext(ctx, "Creating private cluster templates server")
 	privateClusterTemplatesServer, err := servers.NewPrivateClusterTemplatesServer().
@@ -342,6 +320,28 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return errors.Wrapf(err, "failed to create private clusters server")
 	}
 	privatev1.RegisterClustersServer(grpcServer, privateClustersServer)
+
+	// Create the clusters server:
+	c.logger.InfoContext(ctx, "Creating clusters server")
+	clustersServer, err := servers.NewClustersServer().
+		SetLogger(c.logger).
+		SetPrivate(privateClustersServer).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create clusters server")
+	}
+	ffv1.RegisterClustersServer(grpcServer, clustersServer)
+
+	// Create the host classes server:
+	c.logger.InfoContext(ctx, "Creating host classes server")
+	hostClassesServer, err := servers.NewHostClassesServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		Build()
+	if err != nil {
+		return errors.Wrapf(err, "failed to create host classes server")
+	}
+	ffv1.RegisterHostClassesServer(grpcServer, hostClassesServer)
 
 	// Create the private host classes server:
 	c.logger.InfoContext(ctx, "Creating private host classes server")
