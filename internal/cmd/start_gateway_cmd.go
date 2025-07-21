@@ -25,7 +25,9 @@ import (
 	"golang.org/x/net/http2/h2c"
 
 	"github.com/innabox/fulfillment-service/internal"
-	api "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	eventsv1 "github.com/innabox/fulfillment-service/internal/api/events/v1"
+	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/network"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -94,16 +96,42 @@ func (c *startGatewayCommandRunner) run(cmd *cobra.Command, argv []string) error
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, gatewayMarshaller),
 	)
 
-	// Register the service handlers:
-	err = api.RegisterClusterTemplatesHandler(ctx, gatewayMux, grpcClient)
+	// Register the public service handlers:
+	err = ffv1.RegisterClusterTemplatesHandler(ctx, gatewayMux, grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterClustersHandler(ctx, gatewayMux, grpcClient)
+	err = ffv1.RegisterClustersHandler(ctx, gatewayMux, grpcClient)
 	if err != nil {
 		return err
 	}
-	err = api.RegisterHostClassesHandler(ctx, gatewayMux, grpcClient)
+	err = ffv1.RegisterHostClassesHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = eventsv1.RegisterEventsHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+
+	// Register the private service handlers:
+	err = privatev1.RegisterClusterTemplatesHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privatev1.RegisterClustersHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privatev1.RegisterHostClassesHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privatev1.RegisterHubsHandler(ctx, gatewayMux, grpcClient)
+	if err != nil {
+		return err
+	}
+	err = privatev1.RegisterEventsHandler(ctx, gatewayMux, grpcClient)
 	if err != nil {
 		return err
 	}
