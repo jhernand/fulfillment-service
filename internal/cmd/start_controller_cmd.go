@@ -116,6 +116,7 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		SetLogger(r.logger).
 		SetClient(r.client).
 		SetFunction(clusterReconcilerFunction).
+		SetEventFilter("has(event.cluster) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create cluster reconciler: %w", err)

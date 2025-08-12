@@ -349,17 +349,25 @@ func (c *Reconciler[O]) watchEvents(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		payload := response.Event.ProtoReflect().Get(c.payloadField).Message().Interface()
-		object, ok := payload.(O)
-		if !ok {
-			return fmt.Errorf("expected payload of type %T, but got %T", object, payload)
+		event := response.Event.ProtoReflect()
+		if event.Has(c.payloadField) {
+			object := event.Get(c.payloadField).Message().Interface().(O)
+			c.logger.DebugContext(
+				ctx,
+				"Enqueueing object",
+				slog.Any("object", object),
+			)
+			c.objectChannel <- object
+		} else {
+			c.logger.DebugContext(
+				ctx,
+				"Received event without the expected payload, will trigger a full sync",
+			)
+			err = c.syncObjects(ctx)
+			if err != nil {
+				return err
+			}
 		}
-		c.logger.DebugContext(
-			ctx,
-			"Enqueueing object",
-			slog.Any("object", object),
-		)
-		c.objectChannel <- object
 	}
 }
 
