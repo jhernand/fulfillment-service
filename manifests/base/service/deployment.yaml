@@ -73,6 +73,8 @@ spec:
         - --grpc-authn-jwks-token-file=/run/secrets/kubernetes.io/serviceaccount/token
         - --grpc-authz-type=rules
         - --grpc-authz-rules-file=/etc/fulfillment-service/rules.yaml
+        - --metrics-listener-network=unix
+        - --metrics-listener-address=/run/sockets/server_metrics.socket
 
       - name: gateway
         image: fulfillment-service

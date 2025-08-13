@@ -58,13 +58,14 @@ type Config struct {
 }
 
 var (
-	logger      *slog.Logger
-	config      *Config
-	kind        *Kind
-	clientConn  *grpc.ClientConn
-	adminConn   *grpc.ClientConn
-	userClient  *http.Client
-	adminClient *http.Client
+	logger        *slog.Logger
+	config        *Config
+	kind          *Kind
+	clientConn    *grpc.ClientConn
+	adminConn     *grpc.ClientConn
+	userClient    *http.Client
+	adminClient   *http.Client
+	metricsClient *http.Client
 )
 
 func TestIntegration(t *testing.T) {
@@ -302,23 +303,26 @@ var _ = BeforeSuite(func() {
 
 	// Create the HTTP clients:
 	makeClient := func(token string) *http.Client {
-		transport := &http.Transport{
+		var transport http.RoundTripper = &http.Transport{
 			TLSClientConfig: &tls.Config{
 				RootCAs: caPool,
 			},
 		}
-		return &http.Client{
-			Transport: ghttp.RoundTripperFunc(
+		if token != "" {
+			transport = ghttp.RoundTripperFunc(
 				func(request *http.Request) (response *http.Response, err error) {
 					request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-					response, err = transport.RoundTrip(request)
-					return
+					return transport.RoundTrip(request)
 				},
-			),
+			)
+		}
+		return &http.Client{
+			Transport: transport,
 		}
 	}
 	userClient = makeClient(clientToken)
 	adminClient = makeClient(adminToken)
+	metricsClient = makeClient("")
 
 	// Wait till the application is healthy:
 	healthClient := healthv1.NewHealthClient(adminConn)

@@ -17,10 +17,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
@@ -37,6 +39,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/logging"
+	"github.com/innabox/fulfillment-service/internal/metrics"
 	"github.com/innabox/fulfillment-service/internal/network"
 	"github.com/innabox/fulfillment-service/internal/recovery"
 	"github.com/innabox/fulfillment-service/internal/servers"
@@ -53,6 +56,7 @@ func NewStartServerCommand() *cobra.Command {
 	}
 	flags := command.Flags()
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
+	network.AddListenerFlags(flags, network.MetricsListenerName, network.DefaultMetricsAddress)
 	database.AddFlags(flags)
 	auth.AddGrpcJwksAuthnFlags(flags)
 	auth.AddGrpcRulesAuthzFlags(flags)
@@ -234,6 +238,16 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		return fmt.Errorf("failed to create panic interceptor: %w", err)
 	}
 
+	// Prepare the metrics interceptor:
+	c.logger.InfoContext(ctx, "Creating metrics interceptor")
+	metricsInterceptor, err := metrics.NewGrpcMetricsInterceptor().
+		SetLogger(c.logger).
+		SetSubsystem("inbound").
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics interceptor: %w", err)
+	}
+
 	// Prepare the transactions interceptor:
 	c.logger.InfoContext(ctx, "Creating transactions interceptor")
 	txManager, err := database.NewTxManager().
@@ -256,6 +270,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			panicInterceptor.UnaryServer,
+			metricsInterceptor.UnaryServer,
 			loggingInterceptor.UnaryServer,
 			authnInterceptor.UnaryServer,
 			authzInterceptor.UnaryServer,
@@ -263,6 +278,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		),
 		grpc.ChainStreamInterceptor(
 			panicInterceptor.StreamServer,
+			metricsInterceptor.StreamServer,
 			loggingInterceptor.StreamServer,
 			authnInterceptor.StreamServer,
 			authzInterceptor.StreamServer,
@@ -412,6 +428,46 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		}
 	}()
 	privatev1.RegisterEventsServer(grpcServer, privateEventsServer)
+
+	// Create the metrics listener:
+	metricsListener, err := network.NewListener().
+		SetLogger(c.logger).
+		SetFlags(c.flags, network.MetricsListenerName).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics listener: %w", err)
+	}
+
+	// Start the metrics HTTP server:
+	c.logger.InfoContext(
+		ctx,
+		"Starting metrics server",
+		slog.String("address", metricsListener.Addr().String()),
+	)
+	metricsServer := &http.Server{
+		Handler: promhttp.Handler(),
+	}
+	go func() {
+		err := metricsServer.Serve(metricsListener)
+		if err != nil && err != http.ErrServerClosed {
+			c.logger.ErrorContext(
+				ctx,
+				"Metrics server failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		err := metricsServer.Shutdown(context.Background())
+		if err != nil {
+			c.logger.ErrorContext(
+				ctx,
+				"Failed to shutdown metrics server",
+				slog.Any("error", err),
+			)
+		}
+	}()
 
 	// Start serving:
 	c.logger.InfoContext(

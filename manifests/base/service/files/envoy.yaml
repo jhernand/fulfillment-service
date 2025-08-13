@@ -63,6 +63,13 @@ static_resources:
                   cluster: gateway
                   timeout: 300s
 
+              - name: server_metrics
+                match:
+                  prefix: /server_metrics
+                route:
+                  cluster: server_metrics
+                  timeout: 300s
+
               - name: server
                 match:
                   prefix: /
@@ -113,6 +120,24 @@ static_resources:
             address:
               pipe:
                 path: /run/sockets/server.socket
+
+  - name: server_metrics
+    connect_timeout: 1s
+    type: STATIC
+    lb_policy: ROUND_ROBIN
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+    load_assignment:
+      cluster_name: server_metrics
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              pipe:
+                path: /run/sockets/server_metrics.socket
 
   - name: gateway
     connect_timeout: 1s
