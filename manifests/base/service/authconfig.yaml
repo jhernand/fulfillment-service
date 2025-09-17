@@ -49,6 +49,11 @@ spec:
         #           audience: fulfillment-api
         #
         # But that needs to be tested.
+        #
+        # Note also that different flavours of Kubernetes use different audicences for the service account tokens. Kind
+        # uses the full DNS name `kubernetes.default.svc.cluster.local`, but OpenShift uses the `kubernetes.default.svc`
+        # abbreviation.
+        - https://kubernetes.default.svc
         - https://kubernetes.default.svc.cluster.local
   authorization:
     "fulfillment-api":
