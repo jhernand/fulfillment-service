@@ -25,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
@@ -43,26 +44,28 @@ type ReconcilerBuilder[O dao.Object] struct {
 	objectFilter  string
 	syncInterval  time.Duration
 	watchInterval time.Duration
+	keepAlive     time.Duration
 	grpcClient    *grpc.ClientConn
 }
 
 // Reconciler simplifies use of the API for clients.
 type Reconciler[O dao.Object] struct {
-	logger        *slog.Logger
-	function      ReconcilerFunction[O]
-	eventFilter   string
-	objectFilter  string
-	syncInterval  time.Duration
-	lastSync      time.Time
-	watchInterval time.Duration
-	lastWatch     time.Time
-	grpcClient    *grpc.ClientConn
-	payloadField  protoreflect.FieldDescriptor
-	listMethod    string
-	listRequest   proto.Message
-	listResponse  proto.Message
-	objectChannel chan O
-	eventsClient  privatev1.EventsClient
+	logger            *slog.Logger
+	function          ReconcilerFunction[O]
+	eventFilter       string
+	objectFilter      string
+	syncInterval      time.Duration
+	lastSync          time.Time
+	watchInterval     time.Duration
+	keepAliveInterval time.Duration
+	lastWatch         time.Time
+	grpcClient        *grpc.ClientConn
+	payloadField      protoreflect.FieldDescriptor
+	listMethod        string
+	listRequest       proto.Message
+	listResponse      proto.Message
+	objectChannel     chan O
+	eventsClient      privatev1.EventsClient
 }
 
 // NewReconciler creates a builder that can then be used to configure and create a controller.
@@ -70,6 +73,7 @@ func NewReconciler[O dao.Object]() *ReconcilerBuilder[O] {
 	return &ReconcilerBuilder[O]{
 		syncInterval:  1 * time.Hour,
 		watchInterval: 10 * time.Second,
+		keepAlive:     1 * time.Minute,
 	}
 }
 
@@ -120,6 +124,14 @@ func (b *ReconcilerBuilder[O]) SetWatchInterval(value time.Duration) *Reconciler
 	return b
 }
 
+// SetKeepAlive sets the keep alive interval for the watch stream, used to prevent the TCP connection from being closed
+// by a proxy or firewall. This is optional, and the default is one minute. If set to zero, keep alive events will be
+// disabled.
+func (b *ReconcilerBuilder[O]) SetKeepAlive(value time.Duration) *ReconcilerBuilder[O] {
+	b.keepAlive = value
+	return b
+}
+
 // SetFlags sets the command line flags that should be used to configure the reconciler. This is optional.
 func (b *ReconcilerBuilder[O]) SetFlags(flags *pflag.FlagSet, name string) *ReconcilerBuilder[O] {
 	b.flags = flags
@@ -143,6 +155,10 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 	}
 	if b.syncInterval <= 0 {
 		err = fmt.Errorf("sync interval should be positive, but it is %s", b.syncInterval)
+		return
+	}
+	if b.keepAlive < 0 {
+		err = fmt.Errorf("keep alive interval should be non-negative, but it is %s", b.keepAlive)
 		return
 	}
 
@@ -178,19 +194,20 @@ func (b *ReconcilerBuilder[O]) Build() (result *Reconciler[O], err error) {
 
 	// Create and populate the object:
 	result = &Reconciler[O]{
-		logger:        b.logger,
-		function:      b.function,
-		eventFilter:   eventFilter,
-		objectFilter:  b.objectFilter,
-		syncInterval:  b.syncInterval,
-		watchInterval: b.watchInterval,
-		grpcClient:    b.grpcClient,
-		payloadField:  payloadField,
-		listMethod:    listMethod,
-		listRequest:   listRequest,
-		listResponse:  listResponse,
-		objectChannel: make(chan O),
-		eventsClient:  eventsClient,
+		logger:            b.logger,
+		function:          b.function,
+		eventFilter:       eventFilter,
+		objectFilter:      b.objectFilter,
+		syncInterval:      b.syncInterval,
+		watchInterval:     b.watchInterval,
+		keepAliveInterval: b.keepAlive,
+		grpcClient:        b.grpcClient,
+		payloadField:      payloadField,
+		listMethod:        listMethod,
+		listRequest:       listRequest,
+		listResponse:      listResponse,
+		objectChannel:     make(chan O),
+		eventsClient:      eventsClient,
 	}
 	return
 }
@@ -338,37 +355,63 @@ func (c *Reconciler[O]) watchLoop(ctx context.Context) {
 }
 
 func (c *Reconciler[O]) watchEvents(ctx context.Context) error {
-	stream, err := c.eventsClient.Watch(ctx, &privatev1.EventsWatchRequest{
+	request := privatev1.EventsWatchRequest_builder{
 		Filter: &c.eventFilter,
-	})
+	}.Build()
+	if c.keepAliveInterval > 0 {
+		request.SetKeepAlive(durationpb.New(c.keepAliveInterval))
+	}
+	stream, err := c.eventsClient.Watch(ctx, request)
 	if err != nil {
 		return err
 	}
+	c.logger.DebugContext(
+		ctx,
+		"Started watching events",
+		slog.String("filter", request.GetFilter()),
+		slog.Duration("keep_alive", c.keepAliveInterval),
+	)
 	for {
 		response, err := stream.Recv()
 		if err != nil {
 			return err
 		}
-		event := response.Event.ProtoReflect()
-		if event.Has(c.payloadField) {
-			object := event.Get(c.payloadField).Message().Interface().(O)
-			c.logger.DebugContext(
-				ctx,
-				"Enqueueing object",
-				slog.Any("object", object),
-			)
-			c.objectChannel <- object
-		} else {
-			c.logger.DebugContext(
-				ctx,
-				"Received event without the expected payload, will trigger a full sync",
-			)
-			err = c.syncObjects(ctx)
-			if err != nil {
-				return err
-			}
+		event := response.GetEvent()
+		err = c.processEvent(ctx, event)
+		if err != nil {
+			return err
 		}
 	}
+}
+
+func (c *Reconciler[O]) processEvent(ctx context.Context, event *privatev1.Event) error {
+	if event.GetType() == privatev1.EventType_EVENT_TYPE_KEEP_ALIVE {
+		c.logger.DebugContext(ctx, "Received keep alive event")
+		return nil
+	}
+	return c.processReflectEvent(ctx, event.ProtoReflect())
+}
+
+func (c *Reconciler[O]) processReflectEvent(ctx context.Context, event protoreflect.Message) error {
+	if event.Has(c.payloadField) {
+		object := event.Get(c.payloadField).Message().Interface().(O)
+		c.logger.DebugContext(
+			ctx,
+			"Enqueueing object",
+			slog.Any("object", object),
+		)
+		c.objectChannel <- object
+	} else {
+		c.logger.DebugContext(
+			ctx,
+			"Received event without the expected payload, will trigger a full sync",
+		)
+		err := c.syncObjects(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Reconciler[O]) syncLoop(ctx context.Context) {

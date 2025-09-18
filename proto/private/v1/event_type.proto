@@ -64,4 +64,10 @@ enum EventType {
   //
   // The payload will contain the representation of the object right before it was deleted.
   EVENT_TYPE_OBJECT_DELETED = 3;
+
+  // Keep alive event sent to maintain the connection.
+  //
+  // This event has no payload and is used to prevent proxies from dropping idle TCP connections.
+  // It is sent when a watch stream has been idle for more than the specified `keep_alive` interval.
+  EVENT_TYPE_KEEP_ALIVE = 4;
 }

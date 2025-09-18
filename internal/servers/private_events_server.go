@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
@@ -219,7 +220,24 @@ func (s *PrivateEventsServer) Watch(request *privatev1.EventsWatchRequest,
 		logger.DebugContext(ctx, "Canceled subcription")
 	}()
 
-	// Wait to receive events on the channel of the subscription and forward them to the client:
+	// Set up keep alive timer if requested:
+	var (
+		keepAliveTimer    *time.Timer
+		keepAliveInterval time.Duration
+	)
+	if request.HasKeepAlive() {
+		keepAliveInterval = request.GetKeepAlive().AsDuration()
+		keepAliveTimer = time.NewTimer(keepAliveInterval)
+		logger.DebugContext(
+			ctx,
+			"Keep alive enabled",
+			slog.Duration("interval", keepAliveInterval),
+		)
+		defer keepAliveTimer.Stop()
+	}
+
+	// Wait to receive events on the channel of the subscription or from the keep alive timer, and forward them to
+	// the client:
 	for {
 		select {
 		case event, ok := <-subInfo.eventsChan:
@@ -233,6 +251,22 @@ func (s *PrivateEventsServer) Watch(request *privatev1.EventsWatchRequest,
 			if err != nil {
 				return err
 			}
+			if keepAliveTimer != nil {
+				keepAliveTimer.Reset(keepAliveInterval)
+			}
+		case <-keepAliveTimer.C:
+			logger.DebugContext(ctx, "Sending keep alive event")
+			event := &privatev1.Event{
+				Id:   uuid.NewString(),
+				Type: privatev1.EventType_EVENT_TYPE_KEEP_ALIVE,
+			}
+			err = stream.Send(&privatev1.EventsWatchResponse{
+				Event: event,
+			})
+			if err != nil {
+				return err
+			}
+			keepAliveTimer.Reset(keepAliveInterval)
 		case <-stream.Context().Done():
 			s.logger.DebugContext(ctx, "Subscription context canceled")
 			return nil

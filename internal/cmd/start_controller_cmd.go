@@ -49,14 +49,22 @@ func NewStartControllerCommand() *cobra.Command {
 	}
 	flags := command.Flags()
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
+	flags.DurationVar(
+		&runner.watchKeepAlive,
+		"watch-keep-alive",
+		time.Minute,
+		"Keep alive interval for the watch stream, used to prevent the TCP connection from being closed by "+
+			"a proxy or firewall. If set to zero, keep alive events will be disabled.",
+	)
 	return command
 }
 
 // startControllerRunner contains the data and logic needed to run the `start controllers` command.
 type startControllerRunner struct {
-	logger *slog.Logger
-	flags  *pflag.FlagSet
-	client *grpc.ClientConn
+	logger         *slog.Logger
+	flags          *pflag.FlagSet
+	client         *grpc.ClientConn
+	watchKeepAlive time.Duration
 }
 
 // run runs the `start controllers` command.
@@ -77,6 +85,11 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 
 	// Save the flags:
 	r.flags = cmd.Flags()
+
+	// Validate the command line parameters:
+	if r.watchKeepAlive <= 0 {
+		return fmt.Errorf("watch keep alive interval should be positive, but it is '%s'", r.watchKeepAlive)
+	}
 
 	// Create the gRPC client:
 	r.client, err = network.NewClient().
@@ -118,6 +131,7 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		SetClient(r.client).
 		SetFunction(clusterReconcilerFunction).
 		SetEventFilter("has(event.cluster) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetKeepAlive(r.watchKeepAlive).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create cluster reconciler: %w", err)
@@ -153,6 +167,7 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		SetClient(r.client).
 		SetFunction(vmReconcilerFunction).
 		SetEventFilter("has(event.virtual_machine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetKeepAlive(r.watchKeepAlive).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create virtual machine reconciler: %w", err)
