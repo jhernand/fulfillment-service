@@ -23,13 +23,15 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Private hosts server", func() {
 	var (
-		ctx context.Context
-		tx  database.Tx
+		ctx     context.Context
+		tx      database.Tx
+		tenancy auth.TenancyLogic
 	)
 
 	BeforeEach(func() {
@@ -37,6 +39,12 @@ var _ = Describe("Private hosts server", func() {
 
 		// Create a context:
 		ctx = context.Background()
+
+		// Create the tenancy logic:
+		tenancy, err = auth.NewEmptyTenancyLogic().
+			SetLogger(logger).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -93,6 +101,7 @@ var _ = Describe("Private hosts server", func() {
 		It("Can be built if all the required parameters are set", func() {
 			server, err := NewPrivateHostsServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(server).ToNot(BeNil())
@@ -100,6 +109,7 @@ var _ = Describe("Private hosts server", func() {
 
 		It("Fails if logger is not set", func() {
 			server, err := NewPrivateHostsServer().
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
 			Expect(server).To(BeNil())
@@ -115,6 +125,7 @@ var _ = Describe("Private hosts server", func() {
 			// Create the server:
 			server, err = NewPrivateHostsServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})

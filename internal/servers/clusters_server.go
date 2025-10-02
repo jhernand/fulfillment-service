@@ -31,6 +31,7 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/jq"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
@@ -38,8 +39,9 @@ import (
 )
 
 type ClustersServerBuilder struct {
-	logger  *slog.Logger
-	private privatev1.ClustersServer
+	logger       *slog.Logger
+	private      privatev1.ClustersServer
+	tenancyLogic auth.TenancyLogic
 }
 
 var _ ffv1.ClustersServer = (*ClustersServer)(nil)
@@ -73,6 +75,12 @@ func (b *ClustersServerBuilder) SetPrivate(value privatev1.ClustersServer) *Clus
 	return b
 }
 
+// SetTenancyLogic sets the tenancy logic to use. This is mandatory.
+func (b *ClustersServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *ClustersServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -81,6 +89,10 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	}
 	if b.private == nil {
 		err = errors.New("private server is mandatory")
+		return
+	}
+	if b.tenancyLogic == nil {
+		err = errors.New("tenancy logic is mandatory")
 		return
 	}
 
@@ -96,6 +108,7 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	hubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
 		SetLogger(b.logger).
 		SetTable("hubs").
+		SetTenancyLogic(b.tenancyLogic).
 		Build()
 	if err != nil {
 		return

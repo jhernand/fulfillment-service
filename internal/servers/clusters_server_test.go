@@ -29,14 +29,16 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Clusters server", func() {
 	var (
-		ctx context.Context
-		tx  database.Tx
+		ctx     context.Context
+		tx      database.Tx
+		tenancy auth.TenancyLogic
 	)
 
 	BeforeEach(func() {
@@ -44,6 +46,12 @@ var _ = Describe("Clusters server", func() {
 
 		// Create a context:
 		ctx = context.Background()
+
+		// Create the tenancy logic:
+		tenancy, err = auth.NewEmptyTenancyLogic().
+			SetLogger(logger).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -120,11 +128,13 @@ var _ = Describe("Clusters server", func() {
 		It("Can be built if all the required parameters are set", func() {
 			privateServer, err := NewPrivateClustersServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			server, err := NewClustersServer().
 				SetLogger(logger).
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(server).ToNot(BeNil())
@@ -133,10 +143,12 @@ var _ = Describe("Clusters server", func() {
 		It("Fails if logger is not set", func() {
 			privateServer, err := NewPrivateClustersServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			server, err := NewClustersServer().
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
 			Expect(server).To(BeNil())
@@ -145,8 +157,23 @@ var _ = Describe("Clusters server", func() {
 		It("Fails if private server is not set", func() {
 			server, err := NewClustersServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("private server is mandatory"))
+			Expect(server).To(BeNil())
+		})
+
+		It("Fails if tenancy logic is not set", func() {
+			privateServer, err := NewPrivateClustersServer().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			server, err := NewClustersServer().
+				SetLogger(logger).
+				SetPrivate(privateServer).
+				Build()
+			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
 		})
 	})
@@ -166,6 +193,7 @@ var _ = Describe("Clusters server", func() {
 			// Create the private server:
 			privateServer, err := NewPrivateClustersServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -173,6 +201,15 @@ var _ = Describe("Clusters server", func() {
 			server, err = NewClustersServer().
 				SetLogger(logger).
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create the server:
+			server, err = NewClustersServer().
+				SetLogger(logger).
+				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -180,6 +217,7 @@ var _ = Describe("Clusters server", func() {
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 				SetLogger(logger).
 				SetTable("cluster_templates").
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -849,6 +887,7 @@ var _ = Describe("Clusters server", func() {
 			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().
 				SetLogger(logger).
 				SetTable("clusters").
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			object, err := dao.Create(ctx, privatev1.Cluster_builder{
@@ -919,6 +958,7 @@ var _ = Describe("Clusters server", func() {
 			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().
 				SetLogger(logger).
 				SetTable("clusters").
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			object, err := dao.Create(ctx, privatev1.Cluster_builder{

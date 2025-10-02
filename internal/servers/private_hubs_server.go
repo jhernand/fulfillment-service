@@ -69,6 +69,10 @@ func (b *PrivateHubsServerBuilder) Build() (result *PrivateHubsServer, err error
 		err = errors.New("logger is mandatory")
 		return
 	}
+	if b.tenancyLogic == nil {
+		err = errors.New("tenancy logic is mandatory")
+		return
+	}
 
 	// Create the generic server:
 	generic, err := NewGenericServer[*privatev1.Hub]().

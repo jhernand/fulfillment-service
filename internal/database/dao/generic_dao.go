@@ -182,6 +182,10 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		)
 		return
 	}
+	if b.tenancyLogic == nil {
+		err = errors.New("tenancy logic is mandatory")
+		return
+	}
 
 	// Get descriptors of well known types:
 	var timestamp *timestamppb.Timestamp
@@ -256,16 +260,6 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		}
 	}
 
-	// Set the default tenancy logic so that it will never be nil:
-	tenancyLogic := b.tenancyLogic
-	if tenancyLogic == nil {
-		tenancyLogic, err = auth.NewEmptyTenancyLogic().Build()
-		if err != nil {
-			err = fmt.Errorf("failed to create default tenancy logic: %w", err)
-			return
-		}
-	}
-
 	// Create and populate the object:
 	result = &GenericDAO[O]{
 		logger:           b.logger,
@@ -282,7 +276,7 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		unmarshalOptions: unmarshalOptions,
 		filterTranslator: filterTranslator,
 		attributionLogic: attributionLogic,
-		tenancyLogic:     tenancyLogic,
+		tenancyLogic:     b.tenancyLogic,
 	}
 	return
 }
