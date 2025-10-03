@@ -79,6 +79,10 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 		err = errors.New("logger is mandatory")
 		return
 	}
+	if b.tenancyLogic == nil {
+		err = errors.New("tenancy logic is mandatory")
+		return
+	}
 
 	// Create the templates DAO:
 	templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().

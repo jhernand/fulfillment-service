@@ -23,13 +23,15 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Hosts server", func() {
 	var (
-		ctx context.Context
-		tx  database.Tx
+		ctx     context.Context
+		tx      database.Tx
+		tenancy auth.TenancyLogic
 	)
 
 	BeforeEach(func() {
@@ -37,6 +39,12 @@ var _ = Describe("Hosts server", func() {
 
 		// Create a context:
 		ctx = context.Background()
+
+		// Create the tenancy logic:
+		tenancy, err = auth.NewEmptyTenancyLogic().
+			SetLogger(logger).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -93,11 +101,13 @@ var _ = Describe("Hosts server", func() {
 		It("Can be built if all the required parameters are set", func() {
 			privateServer, err := NewPrivateHostsServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostsServer().
 				SetLogger(logger).
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(server).ToNot(BeNil())
@@ -106,10 +116,12 @@ var _ = Describe("Hosts server", func() {
 		It("Fails if logger is not set", func() {
 			privateServer, err := NewPrivateHostsServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostsServer().
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
 			Expect(server).To(BeNil())
@@ -118,8 +130,23 @@ var _ = Describe("Hosts server", func() {
 		It("Fails if private server is not set", func() {
 			server, err := NewHostsServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("private server is mandatory"))
+			Expect(server).To(BeNil())
+		})
+
+		It("Fails if tenancy logic is not set", func() {
+			privateServer, err := NewPrivateHostsServer().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			server, err := NewHostsServer().
+				SetLogger(logger).
+				SetPrivate(privateServer).
+				Build()
+			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
 		})
 	})
@@ -133,6 +160,7 @@ var _ = Describe("Hosts server", func() {
 			// Create the private server:
 			privateServer, err := NewPrivateHostsServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -140,6 +168,7 @@ var _ = Describe("Hosts server", func() {
 			server, err = NewHostsServer().
 				SetLogger(logger).
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})

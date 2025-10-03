@@ -24,11 +24,13 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 )
 
 type HostPoolsServerBuilder struct {
-	logger  *slog.Logger
-	private privatev1.HostPoolsServer
+	logger       *slog.Logger
+	private      privatev1.HostPoolsServer
+	tenancyLogic auth.TenancyLogic
 }
 
 var _ ffv1.HostPoolsServer = (*HostPoolsServer)(nil)
@@ -58,6 +60,12 @@ func (b *HostPoolsServerBuilder) SetPrivate(value privatev1.HostPoolsServer) *Ho
 	return b
 }
 
+// SetTenancyLogic sets the tenancy logic to use. This is mandatory.
+func (b *HostPoolsServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *HostPoolsServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *HostPoolsServerBuilder) Build() (result *HostPoolsServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -66,6 +74,10 @@ func (b *HostPoolsServerBuilder) Build() (result *HostPoolsServer, err error) {
 	}
 	if b.private == nil {
 		err = errors.New("private server is mandatory")
+		return
+	}
+	if b.tenancyLogic == nil {
+		err = errors.New("tenancy logic is mandatory")
 		return
 	}
 

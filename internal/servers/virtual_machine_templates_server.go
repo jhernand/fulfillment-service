@@ -23,11 +23,13 @@ import (
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 )
 
 type VirtualMachineTemplatesServerBuilder struct {
-	logger  *slog.Logger
-	private privatev1.VirtualMachineTemplatesServer
+	logger       *slog.Logger
+	private      privatev1.VirtualMachineTemplatesServer
+	tenancyLogic auth.TenancyLogic
 }
 
 var _ ffv1.VirtualMachineTemplatesServer = (*VirtualMachineTemplatesServer)(nil)
@@ -57,6 +59,12 @@ func (b *VirtualMachineTemplatesServerBuilder) SetPrivate(value privatev1.Virtua
 	return b
 }
 
+// SetTenancyLogic sets the tenancy logic to use. This is mandatory.
+func (b *VirtualMachineTemplatesServerBuilder) SetTenancyLogic(value auth.TenancyLogic) *VirtualMachineTemplatesServerBuilder {
+	b.tenancyLogic = value
+	return b
+}
+
 func (b *VirtualMachineTemplatesServerBuilder) Build() (result *VirtualMachineTemplatesServer, err error) {
 	// Check parameters:
 	if b.logger == nil {
@@ -65,6 +73,10 @@ func (b *VirtualMachineTemplatesServerBuilder) Build() (result *VirtualMachineTe
 	}
 	if b.private == nil {
 		err = errors.New("private server is mandatory")
+		return
+	}
+	if b.tenancyLogic == nil {
+		err = errors.New("tenancy logic is mandatory")
 		return
 	}
 

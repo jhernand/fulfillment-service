@@ -24,13 +24,15 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Private virtual machine templates server", func() {
 	var (
-		ctx context.Context
-		tx  database.Tx
+		ctx     context.Context
+		tx      database.Tx
+		tenancy auth.TenancyLogic
 	)
 
 	BeforeEach(func() {
@@ -38,6 +40,12 @@ var _ = Describe("Private virtual machine templates server", func() {
 
 		// Create a context:
 		ctx = context.Background()
+
+		// Create the tenancy logic:
+		tenancy, err = auth.NewEmptyTenancyLogic().
+			SetLogger(logger).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -94,6 +102,7 @@ var _ = Describe("Private virtual machine templates server", func() {
 		It("Creates server with logger", func() {
 			server, err := NewPrivateVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(server).ToNot(BeNil())
@@ -101,6 +110,7 @@ var _ = Describe("Private virtual machine templates server", func() {
 
 		It("Doesn't create server without logger", func() {
 			server, err := NewPrivateVirtualMachineTemplatesServer().
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(server).To(BeNil())
@@ -116,6 +126,7 @@ var _ = Describe("Private virtual machine templates server", func() {
 			// Create the server:
 			server, err = NewPrivateVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})

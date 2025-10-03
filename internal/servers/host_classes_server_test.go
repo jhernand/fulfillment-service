@@ -23,13 +23,15 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Host classes server", func() {
 	var (
-		ctx context.Context
-		tx  database.Tx
+		ctx     context.Context
+		tx      database.Tx
+		tenancy auth.TenancyLogic
 	)
 
 	BeforeEach(func() {
@@ -37,6 +39,12 @@ var _ = Describe("Host classes server", func() {
 
 		// Create a context:
 		ctx = context.Background()
+
+		// Create the tenancy logic:
+		tenancy, err = auth.NewEmptyTenancyLogic().
+			SetLogger(logger).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -93,11 +101,13 @@ var _ = Describe("Host classes server", func() {
 		It("Can be built if all the required parameters are set", func() {
 			privateServer, err := NewPrivateHostClassesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostClassesServer().
 				SetLogger(logger).
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(server).ToNot(BeNil())
@@ -106,6 +116,7 @@ var _ = Describe("Host classes server", func() {
 		It("Fails if logger is not set", func() {
 			privateServer, err := NewPrivateHostClassesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			server, err := NewHostClassesServer().
@@ -133,6 +144,7 @@ var _ = Describe("Host classes server", func() {
 			// Create the private server:
 			privateServer, err := NewPrivateHostClassesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -140,6 +152,7 @@ var _ = Describe("Host classes server", func() {
 			server, err = NewHostClassesServer().
 				SetLogger(logger).
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})

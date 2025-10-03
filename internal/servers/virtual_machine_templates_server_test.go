@@ -24,13 +24,15 @@ import (
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	ffv1 "github.com/innabox/fulfillment-service/internal/api/fulfillment/v1"
+	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Virtual machine templates server", func() {
 	var (
-		ctx context.Context
-		tx  database.Tx
+		ctx     context.Context
+		tx      database.Tx
+		tenancy auth.TenancyLogic
 	)
 
 	BeforeEach(func() {
@@ -38,6 +40,12 @@ var _ = Describe("Virtual machine templates server", func() {
 
 		// Create a context:
 		ctx = context.Background()
+
+		// Create the tenancy logic:
+		tenancy, err = auth.NewEmptyTenancyLogic().
+			SetLogger(logger).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -95,6 +103,7 @@ var _ = Describe("Virtual machine templates server", func() {
 			// Create the private server:
 			privateServer, err := NewPrivateVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -102,6 +111,7 @@ var _ = Describe("Virtual machine templates server", func() {
 			server, err := NewVirtualMachineTemplatesServer().
 				SetLogger(logger).
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(server).ToNot(BeNil())
@@ -111,12 +121,14 @@ var _ = Describe("Virtual machine templates server", func() {
 			// Create the private server:
 			privateServer, err := NewPrivateVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			// Try to create the public server without logger:
 			server, err := NewVirtualMachineTemplatesServer().
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(server).To(BeNil())
@@ -126,8 +138,23 @@ var _ = Describe("Virtual machine templates server", func() {
 			// Try to create the public server without private server:
 			server, err := NewVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(HaveOccurred())
+			Expect(server).To(BeNil())
+		})
+
+		It("Fails if tenancy logic is not set", func() {
+			privateServer, err := NewPrivateVirtualMachineTemplatesServer().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			server, err := NewVirtualMachineTemplatesServer().
+				SetLogger(logger).
+				SetPrivate(privateServer).
+				Build()
+			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
 		})
 	})
@@ -141,6 +168,7 @@ var _ = Describe("Virtual machine templates server", func() {
 			// Create the private server:
 			privateServer, err := NewPrivateVirtualMachineTemplatesServer().
 				SetLogger(logger).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -148,6 +176,7 @@ var _ = Describe("Virtual machine templates server", func() {
 			server, err = NewVirtualMachineTemplatesServer().
 				SetLogger(logger).
 				SetPrivate(privateServer).
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})

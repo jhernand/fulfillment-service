@@ -272,6 +272,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	clusterTemplatesServer, err := servers.NewClusterTemplatesServer().
 		SetLogger(c.logger).
 		SetPrivate(privateClusterTemplatesServer).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create cluster templates server")
@@ -296,6 +297,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	clustersServer, err := servers.NewClustersServer().
 		SetLogger(c.logger).
 		SetPrivate(privateClustersServer).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create clusters server")
@@ -320,6 +322,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	hostClassesServer, err := servers.NewHostClassesServer().
 		SetLogger(c.logger).
 		SetPrivate(privateHostClassesServer).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create host classes server")
@@ -344,6 +347,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	hostsServer, err := servers.NewHostsServer().
 		SetLogger(c.logger).
 		SetPrivate(privateHostsServer).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create hosts server")
@@ -368,6 +372,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	hostPoolsServer, err := servers.NewHostPoolsServer().
 		SetLogger(c.logger).
 		SetPrivate(privateHostPoolsServer).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create host pools server")
@@ -392,6 +397,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	virtualMachineTemplatesServer, err := servers.NewVirtualMachineTemplatesServer().
 		SetLogger(c.logger).
 		SetPrivate(privateVirtualMachineTemplatesServer).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create virtual machine templates server")
@@ -416,6 +422,7 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	virtualMachinesServer, err := servers.NewVirtualMachinesServer().
 		SetLogger(c.logger).
 		SetPrivate(privateVirtualMachinesServer).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return errors.Wrapf(err, "failed to create virtual machines server")

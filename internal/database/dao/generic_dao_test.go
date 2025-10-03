@@ -41,9 +41,10 @@ var _ = Describe("Generic DAO", func() {
 	)
 
 	var (
-		ctrl *gomock.Controller
-		ctx  context.Context
-		tx   database.Tx
+		ctrl    *gomock.Controller
+		ctx     context.Context
+		tx      database.Tx
+		tenancy auth.TenancyLogic
 	)
 
 	sort := func(objects []*testsv1.Object) {
@@ -61,6 +62,12 @@ var _ = Describe("Generic DAO", func() {
 
 		// Create a context:
 		ctx = context.Background()
+
+		// Create the tenancy logic:
+		tenancy, err = auth.NewEmptyTenancyLogic().
+			SetLogger(logger).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
 
 		// Prepare the database pool:
 		db := server.MakeDatabase()
@@ -91,6 +98,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(generic).ToNot(BeNil())
@@ -112,10 +120,20 @@ var _ = Describe("Generic DAO", func() {
 			Expect(generic).To(BeNil())
 		})
 
+		It("Fails if tenancy logic is not set", func() {
+			generic, err := NewGenericDAO[*testsv1.Object]().
+				SetLogger(logger).
+				SetTable("objects").
+				Build()
+			Expect(err).To(MatchError("tenancy logic is mandatory"))
+			Expect(generic).To(BeNil())
+		})
+
 		It("Fails if default limit is zero", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetTenancyLogic(tenancy).
 				SetDefaultLimit(0).
 				Build()
 			Expect(err).To(MatchError("default limit must be a possitive integer, but it is 0"))
@@ -126,6 +144,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetTenancyLogic(tenancy).
 				SetDefaultLimit(-1).
 				Build()
 			Expect(err).To(MatchError("default limit must be a possitive integer, but it is -1"))
@@ -136,6 +155,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetTenancyLogic(tenancy).
 				SetMaxLimit(0).
 				Build()
 			Expect(err).To(MatchError("max limit must be a possitive integer, but it is 0"))
@@ -146,6 +166,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetTenancyLogic(tenancy).
 				SetMaxLimit(-1).
 				Build()
 			Expect(err).To(MatchError("max limit must be a possitive integer, but it is -1"))
@@ -156,6 +177,7 @@ var _ = Describe("Generic DAO", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
 				SetTable("objects").
+				SetTenancyLogic(tenancy).
 				SetMaxLimit(100).
 				SetDefaultLimit(1000).
 				Build()
