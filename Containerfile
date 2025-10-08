@@ -3,6 +3,7 @@ FROM registry.access.redhat.com/ubi9/ubi:9.6-1758184894 AS builder
 # Install packages:
 RUN \
   dnf install -y \
+  git \
   golang \
   && \
   dnf clean all -y
