@@ -136,10 +136,24 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
-	// Select the hub:
+	// Select the hub, and if no hubs are available, update the condition to inform the user that creation is
+	// pending. Note that we don't want to disclose the existence of hubs to the user, as that is a internal
+	// implementation detail, so keep the message generic enough to not reveal that information.
 	err := t.selectHub(ctx)
 	if err != nil {
-		return err
+		t.r.logger.ErrorContext(
+			ctx,
+			"Failed to select hub",
+			slog.String("error", err.Error()),
+		)
+		t.updateCondition(
+			privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
+			sharedv1.ConditionStatus_CONDITION_STATUS_FALSE,
+			"ResourcesUnavailable",
+			"The cluster cannot be created because there are no resources available to fulfill the "+
+				"request.",
+		)
+		return nil
 	}
 
 	// Save the selected hub in the private data of the cluster:
@@ -356,4 +370,32 @@ func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstruct
 		result = &items[0]
 	}
 	return
+}
+
+// updateCondition updates or creates a condition with the specified type, status, reason, and message.
+func (t *task) updateCondition(conditionType privatev1.ClusterConditionType, status sharedv1.ConditionStatus,
+	reason string, message string) {
+	conditions := t.cluster.GetStatus().GetConditions()
+	updated := false
+	for i, condition := range conditions {
+		if condition.GetType() == conditionType {
+			conditions[i] = privatev1.ClusterCondition_builder{
+				Type:    conditionType,
+				Status:  status,
+				Reason:  &reason,
+				Message: &message,
+			}.Build()
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		conditions = append(conditions, privatev1.ClusterCondition_builder{
+			Type:    conditionType,
+			Status:  status,
+			Reason:  &reason,
+			Message: &message,
+		}.Build())
+	}
+	t.cluster.GetStatus().SetConditions(conditions)
 }
