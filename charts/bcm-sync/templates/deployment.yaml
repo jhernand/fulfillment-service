@@ -1,0 +1,67 @@
+{{/*
+Copyright (c) 2025 Red Hat Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+the License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: bcm-sync
+spec:
+  selector:
+    matchLabels:
+      app: bcm-sync
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: bcm-sync
+    spec:
+      serviceAccountName: bcm-sync
+      volumes:
+      {{- if .Values.certs.caBundle.configMap }}
+      - name: cas
+        configMap:
+          name: {{ .Values.certs.caBundle.configMap }}
+      {{- end }}
+      - name: bcm-credentials
+        secret:
+          secretName: {{ required "bcm.credentialsSecret is required" .Values.bcm.credentialsSecret }}
+      containers:
+      - name: bcm-sync
+        image: {{ .Values.images.service }}
+        volumeMounts:
+        {{- if .Values.certs.caBundle.configMap }}
+        - name: cas
+          mountPath: /etc/bcm-sync/tls/cas
+        {{- end }}
+        - name: bcm-credentials
+          mountPath: /secrets/bcm
+        command:
+        - /usr/local/bin/fulfillment-service
+        - start
+        - bcm-sync
+        - --log-level={{ .Values.log.level }}
+        - --log-headers={{ .Values.log.headers }}
+        - --log-bodies={{ .Values.log.bodies }}
+        {{- if .Values.certs.caBundle.configMap }}
+        - --ca-file=/etc/bcm-sync/tls/cas
+        {{- end }}
+        - --token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
+        - --grpc-server-network=tcp
+        - --grpc-server-address={{ .Values.grpc.server.address }}
+        - --grpc-keep-alive=5m
+        - --bcm-url={{ required "bcm.url is required" .Values.bcm.url }}
+        - --bcm-crt=/secrets/bcm/tls.crt
+        - --bcm-key=/secrets/bcm/tls.key
+        - --ca-file=/secrets/bcm/ca.crt
+        - --sync-interval={{ .Values.bcm.syncInterval }}
