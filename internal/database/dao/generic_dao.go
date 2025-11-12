@@ -365,7 +365,7 @@ func (d *GenericDAO[O]) list(ctx context.Context, tx database.Tx, request ListRe
 		return
 	}
 
-	// Fetch the results:
+	// Prepare the SQL statement to fetch the results:
 	sqlBuffer.Reset()
 	fmt.Fprintf(
 		sqlBuffer,
