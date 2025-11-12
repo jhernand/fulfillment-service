@@ -26,6 +26,7 @@ func NewStartCommand() *cobra.Command {
 	}
 	result.AddCommand(NewStartControllerCommand())
 	result.AddCommand(NewStartGatewayCommand())
+	result.AddCommand(NewStartBcmSyncCommand())
 	result.AddCommand(NewStartServerCommand())
 	return result
 }

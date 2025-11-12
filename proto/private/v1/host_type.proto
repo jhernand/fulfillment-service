@@ -31,6 +31,27 @@ message Host {
 message HostSpec {
   // Copies of the public fields.
   HostPowerState power_state = 1;
+
+  // BMC (Baseboard Management Controller) details for this host.
+  BMC bmc = 2;
+
+  // Rack name where this host is located.
+  string rack = 3;
+
+  // Identifier of the host class for this host.
+  string class = 4;
+}
+
+// BMC contains the details of the Baseboard Management Controller for a host.
+message BMC {
+  // URL of the BMC interface.
+  string url = 1;
+
+  // Username for authenticating with the BMC.
+  string user = 2;
+
+  // Password for authenticating with the BMC.
+  string password = 3;
 }
 
 message HostStatus {
