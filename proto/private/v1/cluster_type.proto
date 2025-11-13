@@ -74,4 +74,7 @@ enum ClusterConditionType {
 message ClusterNodeSet {
   string host_class = 1;
   int32 size = 2;
+
+  // List of identifiers of the hosts that have been assigned to this cluster.
+  repeated string hosts = 3;
 }

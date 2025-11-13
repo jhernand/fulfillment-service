@@ -19,9 +19,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"sort"
+	"strconv"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -44,10 +47,12 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger         *slog.Logger
-	hubCache       *controllers.HubCache
-	clustersClient privatev1.ClustersClient
-	hubsClient     privatev1.HubsClient
+	logger            *slog.Logger
+	hubCache          *controllers.HubCache
+	clustersClient    privatev1.ClustersClient
+	hubsClient        privatev1.HubsClient
+	hostClassesClient privatev1.HostClassesClient
+	hostsClient       privatev1.HostsClient
 }
 
 type task struct {
@@ -99,10 +104,12 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 
 	// Create and populate the object:
 	object := &function{
-		logger:         b.logger,
-		clustersClient: privatev1.NewClustersClient(b.connection),
-		hubsClient:     privatev1.NewHubsClient(b.connection),
-		hubCache:       b.hubCache,
+		logger:            b.logger,
+		clustersClient:    privatev1.NewClustersClient(b.connection),
+		hubsClient:        privatev1.NewHubsClient(b.connection),
+		hostsClient:       privatev1.NewHostsClient(b.connection),
+		hostClassesClient: privatev1.NewHostClassesClient(b.connection),
+		hubCache:          b.hubCache,
 	}
 	result = object.run
 	return
@@ -140,10 +147,21 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
+	// Check if hosts need to be assigned or unassigned:
+	err := t.checkHostAssignment(ctx)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Skip the rest of the logic for now, as we just want to test the hosts assignment.
+	if true {
+		return nil
+	}
+
 	// Select the hub, and if no hubs are available, update the condition to inform the user that creation is
 	// pending. Note that we don't want to disclose the existence of hubs to the user, as that is a internal
 	// implementation detail, so keep the message generic enough to not reveal that information.
-	err := t.selectHub(ctx)
+	err = t.selectHub(ctx)
 	if err != nil {
 		t.r.logger.ErrorContext(
 			ctx,
@@ -226,15 +244,31 @@ func (t *task) update(ctx context.Context) error {
 }
 
 func (t *task) setDefaults() {
-	if !t.cluster.HasStatus() {
-		t.cluster.SetStatus(&privatev1.ClusterStatus{})
+	status := t.cluster.GetStatus()
+	if status == nil {
+		status = privatev1.ClusterStatus_builder{}.Build()
+		t.cluster.SetStatus(status)
 	}
-	if t.cluster.GetStatus().GetState() == privatev1.ClusterState_CLUSTER_STATE_UNSPECIFIED {
-		t.cluster.GetStatus().SetState(privatev1.ClusterState_CLUSTER_STATE_PROGRESSING)
+	if status.GetState() == privatev1.ClusterState_CLUSTER_STATE_UNSPECIFIED {
+		status.SetState(privatev1.ClusterState_CLUSTER_STATE_PROGRESSING)
 	}
 	for value := range privatev1.ClusterConditionType_name {
 		if value != 0 {
 			t.setConditionDefaults(privatev1.ClusterConditionType(value))
+		}
+	}
+	nodeSets := status.GetNodeSets()
+	if nodeSets == nil {
+		nodeSets = map[string]*privatev1.ClusterNodeSet{}
+		status.SetNodeSets(nodeSets)
+	}
+	for nodeSetName, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
+		statusNodeSet := nodeSets[nodeSetName]
+		if statusNodeSet == nil {
+			statusNodeSet = privatev1.ClusterNodeSet_builder{
+				HostClass: nodeSet.GetHostClass(),
+			}.Build()
+			nodeSets[nodeSetName] = statusNodeSet
 		}
 	}
 }
@@ -274,6 +308,19 @@ func (t *task) prepareNodeRequest(nodeSet *privatev1.ClusterNodeSet) any {
 }
 
 func (t *task) delete(ctx context.Context) error {
+	// Unassign all the hosts from the cluster:
+	for _, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
+		err := t.unassignHosts(ctx, nodeSet.GetHostClass(), int(nodeSet.GetSize()))
+		if err != nil {
+			return err
+		}
+	}
+
+	// TODO: Skip the rest of the logic for now, as we just want to test the hosts assignment.
+	if true {
+		return nil
+	}
+
 	// Do nothing if we don't know the hub yet:
 	t.hubId = t.cluster.GetStatus().GetHub()
 	if t.hubId == "" {
@@ -309,6 +356,191 @@ func (t *task) delete(ctx context.Context) error {
 	)
 
 	return err
+}
+
+func (t *task) checkHostAssignment(ctx context.Context) error {
+	for nodeSetName, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
+		err := t.checkNodeSetHostAssignment(ctx, nodeSetName, nodeSet)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (t *task) checkNodeSetHostAssignment(ctx context.Context, nodeSetName string, nodeSet *privatev1.ClusterNodeSet) error {
+	// The user may have specified the host class by identifier or by name, so we need to look it up to make sure
+	// that we have the identifier, as that is what is used internally to avoid ambiguity.
+	desiredClass, err := t.lookupHostClass(ctx, nodeSet.GetHostClass())
+	if err != nil {
+		return err
+	}
+
+	// Get the desired number of hosts for this node set:
+	desiredCount := int(nodeSet.GetSize())
+
+	// Find the number of hots already assigned to this cluster. Note tha twe set the limit to zero don't care
+	// about the items, we only want the count.
+	assignedFilter := fmt.Sprintf(
+		"!has(this.metadata.deletion_timestamp) && "+
+			"this.spec.class == '%s' && "+
+			"has(this.status.cluster) && this.status.cluster == '%s'",
+		desiredClass, t.cluster.GetId(),
+	)
+	assignedResponse, err := t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: &assignedFilter,
+		Limit:  proto.Int32(0),
+	}.Build())
+	if err != nil {
+		return err
+	}
+	assignedCount := int(assignedResponse.GetTotal())
+
+	// Calculate the delta, which can be zero, positive or negative:
+	deltaCount := desiredCount - assignedCount
+	t.r.logger.DebugContext(
+		ctx,
+		"Host assignment delta",
+		slog.String("node_set", nodeSetName),
+		slog.Int("desired", desiredCount),
+		slog.Int("assigned", assignedCount),
+		slog.Int("delta", deltaCount),
+	)
+
+	// If the delta is positive, we need to assign new hosts, if it is negative, we need to unassign hosts.
+	switch {
+	case deltaCount > 0:
+		err = t.assignHosts(ctx, desiredClass, deltaCount)
+		if err != nil {
+			return err
+		}
+	case deltaCount < 0:
+		err = t.unassignHosts(ctx, desiredClass, -deltaCount)
+		if err != nil {
+			return err
+		}
+	}
+
+	// If the delta wasn't zero, then check again the hosts assigned to the cluster, as the above code should have
+	// changed it. Note that this time we do want' the complete list of hosts, so that we can get the identifiers
+	// and add them to the details of the node set.
+	assignedResponse, err = t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: &assignedFilter,
+		Limit:  proto.Int32(int32(deltaCount)),
+	}.Build())
+	if err != nil {
+		return err
+	}
+	assignedHosts := assignedResponse.GetItems()
+	assignedCount = len(assignedHosts)
+	assignedIds := make([]string, assignedCount)
+	for i, assignedHost := range assignedHosts {
+		assignedIds[i] = assignedHost.GetId()
+	}
+	sort.Strings(assignedIds)
+
+	// Update the status of the cluster to reflect the new number and identifiers of the hosts actually assigned to
+	// the cluster. Note that we don't need to check or create the node set in the status, becauase we always check
+	// and set it in the method that sets the defaults.
+	statusNodeSet := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
+	statusNodeSet.SetSize(int32(assignedCount))
+	statusNodeSet.SetHosts(assignedIds)
+
+	return nil
+}
+
+func (t *task) assignHosts(ctx context.Context, hostClass string, hostCount int) error {
+	// Find available hosts with matching class:
+	availableFilter := fmt.Sprintf(
+		"!has(this.metadata.deletion_timestamp) && "+
+			"this.spec.class == '%s' && "+
+			"!has(this.status.cluster)",
+		hostClass,
+	)
+	availableResponse, err := t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: &availableFilter,
+		Limit:  proto.Int32(int32(hostCount)),
+	}.Build())
+	if err != nil {
+		return err
+	}
+	availableHosts := availableResponse.GetItems()
+
+	// Assign the hosts:
+	for _, host := range availableHosts {
+		host.GetStatus().SetCluster(t.cluster.GetId())
+		_, err = t.r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
+			Object: host,
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{
+					"status.cluster",
+				},
+			},
+		}.Build())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (t *task) unassignHosts(ctx context.Context, hostClass string, hostCount int) error {
+	// Find the hosts that are assigned to this cluster and have the matching class:
+	assignedFilter := fmt.Sprintf(
+		"!has(this.metadata.deletion_timestamp) && "+
+			"this.spec.class == '%s' && "+
+			"has(this.status.cluster) && this.status.cluster == '%s'",
+		hostClass, t.cluster.GetId(),
+	)
+	assignedResponse, err := t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: &assignedFilter,
+		Limit:  proto.Int32(int32(hostCount)),
+	}.Build())
+	if err != nil {
+		return err
+	}
+	assignedHosts := assignedResponse.GetItems()
+
+	// Unassign the hosts:
+	for _, assignedHost := range assignedHosts {
+		assignedHost.GetStatus().SetCluster("")
+		_, err = t.r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
+			Object: assignedHost,
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{
+					"status.cluster",
+				},
+			},
+		}.Build())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (t *task) lookupHostClass(ctx context.Context, key string) (result string, err error) {
+	filter := fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key))
+	response, err := t.r.hostClassesClient.List(ctx, privatev1.HostClassesListRequest_builder{
+		Filter: &filter,
+		Limit:  proto.Int32(1),
+	}.Build())
+	if err != nil {
+		return
+	}
+	total := response.GetTotal()
+	switch {
+	case total == 0:
+		err = fmt.Errorf("there is no host class with identifier or name '%s'", key)
+	case total == 1:
+		result = response.GetItems()[0].GetId()
+	default:
+		err = fmt.Errorf("there are multiple host classes with identifier or name '%s'", key)
+	}
+	return
 }
 
 func (t *task) selectHub(ctx context.Context) error {

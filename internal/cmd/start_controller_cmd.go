@@ -36,8 +36,6 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/cluster"
 	"github.com/innabox/fulfillment-service/internal/controllers/host"
-	"github.com/innabox/fulfillment-service/internal/controllers/hostpool"
-	"github.com/innabox/fulfillment-service/internal/controllers/vm"
 	"google.golang.org/grpc"
 )
 
@@ -177,40 +175,42 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		}
 	}()
 
-	// Create the virtual machine reconciler:
-	r.logger.InfoContext(ctx, "Creating virtual machine reconciler")
-	vmReconcilerFunction, err := vm.NewFunction().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create virtual machine reconciler function: %w", err)
-	}
-	vmReconciler, err := controllers.NewReconciler[*privatev1.VirtualMachine]().
-		SetLogger(r.logger).
-		SetClient(r.client).
-		SetFunction(vmReconcilerFunction).
-		SetEventFilter("has(event.virtual_machine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create virtual machine reconciler: %w", err)
-	}
-
-	// Start the virtual machine reconciler:
-	r.logger.InfoContext(ctx, "Starting virtual machine reconciler")
-	go func() {
-		err := vmReconciler.Start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Virtual machine reconciler finished")
-		} else {
-			r.logger.InfoContext(
-				ctx,
-				"Virtual machine reconciler failed",
-				slog.Any("error", err),
-			)
+	/*
+		// Create the virtual machine reconciler:
+		r.logger.InfoContext(ctx, "Creating virtual machine reconciler")
+		vmReconcilerFunction, err := vm.NewFunction().
+			SetLogger(r.logger).
+			SetConnection(r.client).
+			SetHubCache(hubCache).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create virtual machine reconciler function: %w", err)
 		}
-	}()
+		vmReconciler, err := controllers.NewReconciler[*privatev1.VirtualMachine]().
+			SetLogger(r.logger).
+			SetClient(r.client).
+			SetFunction(vmReconcilerFunction).
+			SetEventFilter("has(event.virtual_machine) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create virtual machine reconciler: %w", err)
+		}
+
+		// Start the virtual machine reconciler:
+		r.logger.InfoContext(ctx, "Starting virtual machine reconciler")
+		go func() {
+			err := vmReconciler.Start(ctx)
+			if err == nil || errors.Is(err, context.Canceled) {
+				r.logger.InfoContext(ctx, "Virtual machine reconciler finished")
+			} else {
+				r.logger.InfoContext(
+					ctx,
+					"Virtual machine reconciler failed",
+					slog.Any("error", err),
+				)
+			}
+		}()
+	*/
 
 	// Create the host reconciler:
 	r.logger.InfoContext(ctx, "Creating host reconciler")
@@ -247,40 +247,42 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		}
 	}()
 
-	// Create the host pool reconciler:
-	r.logger.InfoContext(ctx, "Creating host pool reconciler")
-	hostPoolReconcilerFunction, err := hostpool.NewFunction().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create host pool reconciler function: %w", err)
-	}
-	hostPoolReconciler, err := controllers.NewReconciler[*privatev1.HostPool]().
-		SetLogger(r.logger).
-		SetClient(r.client).
-		SetFunction(hostPoolReconcilerFunction).
-		SetEventFilter("has(event.host_pool) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create host pool reconciler: %w", err)
-	}
-
-	// Start the host pool reconciler:
-	r.logger.InfoContext(ctx, "Starting host pool reconciler")
-	go func() {
-		err := hostPoolReconciler.Start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Host pool reconciler finished")
-		} else {
-			r.logger.InfoContext(
-				ctx,
-				"Host pool reconciler failed",
-				slog.Any("error", err),
-			)
+	/*
+		// Create the host pool reconciler:
+		r.logger.InfoContext(ctx, "Creating host pool reconciler")
+		hostPoolReconcilerFunction, err := hostpool.NewFunction().
+			SetLogger(r.logger).
+			SetConnection(r.client).
+			SetHubCache(hubCache).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create host pool reconciler function: %w", err)
 		}
-	}()
+		hostPoolReconciler, err := controllers.NewReconciler[*privatev1.HostPool]().
+			SetLogger(r.logger).
+			SetClient(r.client).
+			SetFunction(hostPoolReconcilerFunction).
+			SetEventFilter("has(event.host_pool) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create host pool reconciler: %w", err)
+		}
+
+		// Start the host pool reconciler:
+		r.logger.InfoContext(ctx, "Starting host pool reconciler")
+		go func() {
+			err := hostPoolReconciler.Start(ctx)
+			if err == nil || errors.Is(err, context.Canceled) {
+				r.logger.InfoContext(ctx, "Host pool reconciler finished")
+			} else {
+				r.logger.InfoContext(
+					ctx,
+					"Host pool reconciler failed",
+					slog.Any("error", err),
+				)
+			}
+		}()
+	*/
 
 	// Wait for a signal:
 	r.logger.InfoContext(ctx, "Waiting for signal")
