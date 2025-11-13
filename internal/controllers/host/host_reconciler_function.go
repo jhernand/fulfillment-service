@@ -139,6 +139,11 @@ func (t *task) update(ctx context.Context) error {
 	//	return nil
 	//}
 
+	// TODO: Skip the rest of the logic for now, as we just want to test the hosts assignment.
+	if true {
+		return nil
+	}
+
 	// Select the hub:
 	err := t.selectHub(ctx)
 	if err != nil {

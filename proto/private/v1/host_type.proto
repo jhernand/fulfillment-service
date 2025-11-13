@@ -62,6 +62,9 @@ message HostStatus {
 
   // Identifier of the host pool that was selected for this host.
   string host_pool = 4;
+
+  // Identifier of the cluster that this host is assigned to.
+  string cluster = 5;
 }
 
 enum HostState {

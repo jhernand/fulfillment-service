@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privateapi "github.com/innabox/fulfillment-service/internal/api/private/v1"
@@ -273,40 +275,43 @@ func (s *Synchronizer) deviceToHost(ctx context.Context, device *Device) (
 // createOrUpdateHost creates a new host or updates an existing one.
 func (s *Synchronizer) createOrUpdateHost(ctx context.Context, host *privateapi.Host) error {
 	// Try to get the existing host:
-	getResp, err := s.hostsClient.Get(ctx, &privateapi.HostsGetRequest{
-		Id: host.Id,
+	_, err := s.hostsClient.Get(ctx, &privateapi.HostsGetRequest{
+		Id: host.GetId(),
 	})
-	if err != nil {
+	if grpcstatus.Code(err) == grpccodes.NotFound {
 		// Host doesn't exist, create it:
 		s.logger.InfoContext(
 			ctx,
 			"Creating new host",
-			slog.String("id", host.Id),
+			slog.String("id", host.GetId()),
 		)
-		_, err = s.hostsClient.Create(ctx, &privateapi.HostsCreateRequest{
+		_, err = s.hostsClient.Create(ctx, privateapi.HostsCreateRequest_builder{
 			Object: host,
-		})
+		}.Build())
 		if err != nil {
 			return fmt.Errorf("failed to create host: %w", err)
 		}
 		return nil
+	}
+	if err != nil {
+		return err
 	}
 
 	// Host exists, update it:
 	s.logger.InfoContext(
 		ctx,
 		"Updating existing host",
-		slog.String("id", host.Id),
+		slog.String("id", host.GetId()),
 	)
 
-	// Preserve the existing status and only update the spec:
-	existingHost := getResp.Object
-	existingHost.Spec = host.Spec
-
+	// Update the host:
 	_, err = s.hostsClient.Update(ctx, &privateapi.HostsUpdateRequest{
-		Object: existingHost,
+		Object: host,
 		UpdateMask: &fieldmaskpb.FieldMask{
-			Paths: []string{"spec"},
+			Paths: []string{
+				"metadata.name",
+				"spec",
+			},
 		},
 	})
 	if err != nil {
@@ -335,14 +340,14 @@ func (s *Synchronizer) synchronizeCategories(ctx context.Context) error {
 	// Process each category:
 	for _, category := range categories {
 		// Convert the category to a host class:
-		hostClass := &privateapi.HostClass{
+		hostClass := privateapi.HostClass_builder{
 			Id: category.Uuid,
-			Metadata: &privateapi.Metadata{
+			Metadata: privateapi.Metadata_builder{
 				Name: category.Name,
-			},
+			}.Build(),
 			Title:       fmt.Sprintf("BCM `%s` category", category.Name),
-			Description: fmt.Sprintf("BCM `%s` host category extracted from BCM.", category.Name),
-		}
+			Description: fmt.Sprintf("Extracted from BCM device category `%s`.", category.Name),
+		}.Build()
 
 		// Create or update the host class:
 		err = s.createOrUpdateHostClass(ctx, hostClass)
@@ -371,16 +376,15 @@ func (s *Synchronizer) synchronizeCategories(ctx context.Context) error {
 
 // createOrUpdateHostClass creates a new host class or updates an existing one.
 func (s *Synchronizer) createOrUpdateHostClass(ctx context.Context, hostClass *privateapi.HostClass) error {
-	// Try to get the existing host class:
-	getResp, err := s.hostClassesClient.Get(ctx, &privateapi.HostClassesGetRequest{
-		Id: hostClass.Id,
+	// Try to get the existing host class, and create it if it doesn't exist yet:
+	_, err := s.hostClassesClient.Get(ctx, &privateapi.HostClassesGetRequest{
+		Id: hostClass.GetId(),
 	})
-	if err != nil {
-		// Host class doesn't exist, create it:
+	if grpcstatus.Code(err) == grpccodes.NotFound {
 		s.logger.InfoContext(
 			ctx,
 			"Creating new host class",
-			slog.String("id", hostClass.Id),
+			slog.String("id", hostClass.GetId()),
 		)
 		_, err = s.hostClassesClient.Create(ctx, &privateapi.HostClassesCreateRequest{
 			Object: hostClass,
@@ -390,24 +394,24 @@ func (s *Synchronizer) createOrUpdateHostClass(ctx context.Context, hostClass *p
 		}
 		return nil
 	}
+	if err != nil {
+		return err
+	}
 
 	// Host class exists, update it:
 	s.logger.InfoContext(
 		ctx,
 		"Updating existing host class",
-		slog.String("id", hostClass.Id),
+		slog.String("id", hostClass.GetId()),
 	)
-
-	// Update the existing host class:
-	existingHostClass := getResp.Object
-	existingHostClass.Metadata = hostClass.Metadata
-	existingHostClass.Title = hostClass.Title
-	existingHostClass.Description = hostClass.Description
-
 	_, err = s.hostClassesClient.Update(ctx, &privateapi.HostClassesUpdateRequest{
-		Object: existingHostClass,
+		Object: hostClass,
 		UpdateMask: &fieldmaskpb.FieldMask{
-			Paths: []string{"metadata", "title", "description"},
+			Paths: []string{
+				"metadata.name",
+				"title",
+				"description",
+			},
 		},
 	})
 	if err != nil {
