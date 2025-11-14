@@ -56,11 +56,12 @@ type Entity struct {
 type Device struct {
 	Entity
 
+	BmcSettings  BmcSettings  `json:"bmcSettings"`
+	Category     string       `json:"category"`
 	Hostname     string       `json:"hostname"`
 	Interfaces   []Interface  `json:"interfaces"`
-	BMCSettings  BMCSettings  `json:"bmcSettings"`
+	Mac          string       `json:"mac"`
 	RackPosition RackPosition `json:"rackPosition"`
-	Category     string       `json:"category"` // UUID of the category
 }
 
 // Interface represents a network interface.
@@ -71,8 +72,8 @@ type Interface struct {
 	IP   string `json:"ip"`
 }
 
-// BMCSettings contains BMC authentication details.
-type BMCSettings struct {
+// BmcSettings contains BMC authentication details.
+type BmcSettings struct {
 	Entity
 
 	UserName string `json:"userName"`
