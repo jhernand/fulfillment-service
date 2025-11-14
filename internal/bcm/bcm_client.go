@@ -60,6 +60,7 @@ type Device struct {
 // Interface represents a network interface.
 type Interface struct {
 	ChildType string `json:"childType"`
+	Name      string `json:"name"`
 	IP        string `json:"ip"`
 }
 

@@ -17,8 +17,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"time"
 
+	"github.com/stmcginnis/gofish"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -219,36 +221,105 @@ func (s *Synchronizer) synchronize(ctx context.Context) error {
 	return nil
 }
 
+// buildRedfishUrl connects to a Redfish server, finds the system ID matching the device name, and builds a virtual
+// media URL.
+func (s *Synchronizer) buildRedfishUrl(ctx context.Context, address, username, password, device string) (result string,
+	err error) {
+	// Connect to the server. Yes, using insecure mode because BCM doesn't contain the CA certificates to use.
+	config := gofish.ClientConfig{
+		Endpoint:  fmt.Sprintf("https://%s", address),
+		Username:  username,
+		Password:  password,
+		BasicAuth: true,
+		Insecure:  true,
+	}
+	client, err := gofish.ConnectContext(ctx, config)
+	if err != nil {
+		err = fmt.Errorf("failed to connect to Redfish server: %w", err)
+		return
+	}
+	defer client.Logout()
+
+	// Get the systems:
+	systems, err := client.Service.Systems()
+	if err != nil {
+		err = fmt.Errorf("failed to get systems from Redfish server: %w", err)
+		return
+	}
+
+	// Find the system matching the device name:
+	var path string
+	for _, system := range systems {
+		if system.Name == device {
+			path = system.ODataID
+			break
+		}
+	}
+	if path == "" {
+		err = fmt.Errorf("system with name '%s' not found", device)
+		return
+	}
+
+	// Build the virtual media URL:
+	result = fmt.Sprintf("redfish-virtualmedia://%s%s", address, path)
+	return
+}
+
 // deviceToHost converts a BCM device to a fulfillment service host.
 func (s *Synchronizer) deviceToHost(ctx context.Context, device *Device) (
 	*privateapi.Host, error) {
 	// Prepare BMC information:
-	bmcInfo := &privateapi.BMC{
+	bmc := &privateapi.BMC{
 		User:     device.BMCSettings.UserName,
 		Password: device.BMCSettings.Password,
 	}
 
-	// Find the BMC network interface to get the IP address:
+	// Find the BMC network interface in order to build the BMC URL:
 	for _, iface := range device.Interfaces {
 		if iface.ChildType == "NetworkBmcInterface" {
-			bmcInfo.Url = fmt.Sprintf("https://%s", iface.IP)
-			break
+			switch {
+			case redfishInterfaceRegex.MatchString(iface.Name):
+				var err error
+				bmc.Url, err = s.buildRedfishUrl(
+					ctx,
+					iface.IP,
+					device.BMCSettings.UserName,
+					device.BMCSettings.Password,
+					device.Hostname,
+				)
+				if err != nil {
+					s.logger.ErrorContext(
+						ctx,
+						"Failed to build Redfish URL",
+						slog.String("interface", iface.Name),
+						slog.String("ip", iface.IP),
+						slog.Any("error", err),
+					)
+				}
+			default:
+				s.logger.ErrorContext(
+					ctx,
+					"Unsupported BMC interface type",
+					slog.String("interface", iface.Name),
+					slog.String("ip", iface.IP),
+				)
+			}
 		}
 	}
 
 	// Get the rack name if available:
-	var rackName string
+	var rack string
 	if device.RackPosition.Rack != "" {
 		racks, err := s.bcmClient.GetRacksByUuids(ctx, []string{device.RackPosition.Rack})
 		if err != nil {
 			s.logger.WarnContext(
 				ctx,
 				"Failed to get rack information",
-				slog.String("rack_uuid", device.RackPosition.Rack),
+				slog.String("rack", device.RackPosition.Rack),
 				slog.Any("error", err),
 			)
 		} else if len(racks) > 0 {
-			rackName = racks[0].Name
+			rack = racks[0].Name
 		}
 	}
 
@@ -259,8 +330,8 @@ func (s *Synchronizer) deviceToHost(ctx context.Context, device *Device) (
 			Name: device.Hostname,
 		},
 		Spec: &privateapi.HostSpec{
-			Bmc:  bmcInfo,
-			Rack: rackName,
+			Bmc:  bmc,
+			Rack: rack,
 		},
 	}
 
@@ -420,3 +491,8 @@ func (s *Synchronizer) createOrUpdateHostClass(ctx context.Context, hostClass *p
 
 	return nil
 }
+
+// Regular expressions to match BMC network interfaces by type.
+var (
+	redfishInterfaceRegex = regexp.MustCompile(`^rf\d+$`)
+)
