@@ -28,6 +28,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/auth"
 	"github.com/innabox/fulfillment-service/internal/database"
 	"github.com/innabox/fulfillment-service/internal/database/dao"
+	"github.com/innabox/fulfillment-service/internal/uuid"
 )
 
 var _ = Describe("Private clusters server", func() {
@@ -110,6 +111,28 @@ var _ = Describe("Private clusters server", func() {
 			);
 
 			create table archived_cluster_templates (
+				id text not null,
+				name text not null default '',
+				creation_timestamp timestamp with time zone not null,
+				deletion_timestamp timestamp with time zone not null,
+				archival_timestamp timestamp with time zone not null default now(),
+				creators text[] not null default '{}',
+				tenants text[] not null default '{}',
+				data jsonb not null
+			);
+
+			create table host_classes (
+				id text not null primary key,
+				name text not null default '',
+				creation_timestamp timestamp with time zone not null default now(),
+				deletion_timestamp timestamp with time zone not null default 'epoch',
+				finalizers text[] not null default '{}',
+				creators text[] not null default '{}',
+				tenants text[] not null default '{}',
+				data jsonb not null
+			);
+
+			create table archived_host_classes (
 				id text not null,
 				name text not null default '',
 				creation_timestamp timestamp with time zone not null,
@@ -223,6 +246,41 @@ var _ = Describe("Private clusters server", func() {
 			object := response.GetObject()
 			Expect(object).ToNot(BeNil())
 			Expect(object.GetId()).ToNot(BeEmpty())
+		})
+
+		It("Returns 'already exists' when creating object with existing identifier", func() {
+			// Create an object with a specific identifier:
+			id := uuid.New()
+			_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: id,
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my_hub",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Try to create another object with the same identifier:
+			_, err = server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: id,
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my_template",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my_hub",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.AlreadyExists))
+			Expect(status.Message()).To(Equal(fmt.Sprintf("object with identifier '%s' already exists", id)))
 		})
 
 		It("List objects", func() {

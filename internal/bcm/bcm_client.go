@@ -14,6 +14,7 @@ language governing permissions and limitations under the License.
 package bcm
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -30,64 +31,79 @@ import (
 // Client is the interface for interacting with the BCM API.
 type Client interface {
 	// GetDevices retrieves all devices from BCM.
-	GetDevices(ctx context.Context) ([]Device, error)
+	GetDevices(ctx context.Context) ([]*Device, error)
 
-	// GetRacksByUuids retrieves racks by their UUIDs.
-	GetRacksByUuids(ctx context.Context, uuids []string) ([]Rack, error)
+	// GetRacks retrieves all racks from BCM.
+	GetRacks(ctx context.Context) ([]*Rack, error)
 
-	// GetNetworksByUuids retrieves networks by their UUIDs.
-	GetNetworksByUuids(ctx context.Context, uuids []string) ([]Network, error)
+	// GetNetworks retrieves all networks from BCM.
+	GetNetworks(ctx context.Context) ([]*Network, error)
 
 	// GetCategories retrieves all categories from BCM.
-	GetCategories(ctx context.Context) ([]Category, error)
+	GetCategories(ctx context.Context) ([]*Category, error)
 
 	// GetCategoriesByUuids retrieves categories by their UUIDs.
-	GetCategoriesByUuids(ctx context.Context, uuids []string) ([]Category, error)
+	GetCategoriesByUuids(ctx context.Context, uuids ...string) ([]Category, error)
+}
+
+type Entity struct {
+	BaseType  string `json:"baseType"`
+	ChildType string `json:"childType"`
+	Uuid      string `json:"uuid"`
 }
 
 // Device represents a device in BCM.
 type Device struct {
-	Uuid         string         `json:"uuid"`
-	ChildType    string         `json:"childType"`
-	Hostname     string         `json:"hostname"`
-	Interfaces   []Interface    `json:"interfaces"`
-	BMCSettings  BMCSettings    `json:"bmcSettings"`
-	RackPosition RackPosition   `json:"rackPosition"`
-	Category     string         `json:"category"` // UUID of the category
-	RawData      map[string]any `json:"-"`        // Store the raw JSON for debugging
+	Entity
+
+	Hostname     string       `json:"hostname"`
+	Interfaces   []Interface  `json:"interfaces"`
+	BMCSettings  BMCSettings  `json:"bmcSettings"`
+	RackPosition RackPosition `json:"rackPosition"`
+	Category     string       `json:"category"` // UUID of the category
 }
 
 // Interface represents a network interface.
 type Interface struct {
-	ChildType string `json:"childType"`
-	Name      string `json:"name"`
-	IP        string `json:"ip"`
+	Entity
+
+	Name string `json:"name"`
+	IP   string `json:"ip"`
 }
 
 // BMCSettings contains BMC authentication details.
 type BMCSettings struct {
+	Entity
+
 	UserName string `json:"userName"`
 	Password string `json:"password"`
 }
 
 // RackPosition contains rack location information.
 type RackPosition struct {
+	Entity
+
 	Rack string `json:"rack"` // UUID of the rack
 }
 
 // Rack represents a rack in BCM.
 type Rack struct {
+	Entity
+
 	Name string `json:"name"`
 }
 
 // Network represents a network in BCM.
 type Network struct {
+	Entity
+
 	Name string `json:"name"`
 }
 
 // Category represents a category in BCM.
 type Category struct {
-	Uuid string `json:"uuid"`
+	Entity
+
 	Name string `json:"name"`
 }
 
@@ -216,7 +232,7 @@ func (b *ClientBuilder) Build() (Client, error) {
 }
 
 // GetDevices retrieves all devices from BCM.
-func (c *clientImpl) GetDevices(ctx context.Context) ([]Device, error) {
+func (c *clientImpl) GetDevices(ctx context.Context) ([]*Device, error) {
 	c.logger.DebugContext(ctx, "Fetching devices from BCM")
 
 	// Prepare the request:
@@ -228,7 +244,7 @@ func (c *clientImpl) GetDevices(ctx context.Context) ([]Device, error) {
 	}
 
 	// Make the API call:
-	var devices []Device
+	var devices []*Device
 	err := c.call(ctx, request, &devices)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get devices: %w", err)
@@ -243,68 +259,70 @@ func (c *clientImpl) GetDevices(ctx context.Context) ([]Device, error) {
 	return devices, nil
 }
 
-// GetRacksByUuids retrieves racks by their UUIDs.
-func (c *clientImpl) GetRacksByUuids(ctx context.Context, uuids []string) ([]Rack, error) {
-	if len(uuids) == 0 {
-		return []Rack{}, nil
-	}
+// GetRacks retrieves all racks from BCM.
+func (c *clientImpl) GetRacks(ctx context.Context) ([]*Rack, error) {
+	c.logger.DebugContext(ctx, "Fetching all racks from BCM")
 
-	c.logger.DebugContext(
-		ctx,
-		"Fetching racks from BCM",
-		slog.Int("count", len(uuids)),
-	)
-
-	// Prepare the request:
+	// Prepare the request. According to the BCM API documentation, getRacksByUuids returns all racks
+	// regardless of the passed UUIDs, so we call it with an empty list to get all racks.
 	request := map[string]any{
 		"service": "cmpart",
 		"call":    "getRacksByUuids",
 		"minify":  true,
-		"args":    []any{uuids},
+		"args": []any{
+			[]string{},
+		},
 	}
 
 	// Make the API call:
-	var racks []Rack
+	var racks []*Rack
 	err := c.call(ctx, request, &racks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get racks: %w", err)
 	}
 
+	c.logger.DebugContext(
+		ctx,
+		"Fetched racks from BCM",
+		slog.Int("count", len(racks)),
+	)
+
 	return racks, nil
 }
 
-// GetNetworksByUuids retrieves networks by their UUIDs.
-func (c *clientImpl) GetNetworksByUuids(ctx context.Context, uuids []string) ([]Network, error) {
-	if len(uuids) == 0 {
-		return []Network{}, nil
-	}
+// GetNetworks retrieves all networks from BCM.
+func (c *clientImpl) GetNetworks(ctx context.Context) ([]*Network, error) {
+	c.logger.DebugContext(ctx, "Fetching all networks from BCM")
 
-	c.logger.DebugContext(
-		ctx,
-		"Fetching networks from BCM",
-		slog.Int("count", len(uuids)),
-	)
-
-	// Prepare the request:
+	// Prepare the request. According to the BCM API documentation, getNetworksByUuids returns all networks
+	// regardless of the passed UUIDs, so we call it with an empty list to get all networks.
 	request := map[string]any{
 		"service": "cmnet",
 		"call":    "getNetworksByUuids",
 		"minify":  true,
-		"args":    []any{uuids},
+		"args": []any{
+			[]string{},
+		},
 	}
 
 	// Make the API call:
-	var networks []Network
+	var networks []*Network
 	err := c.call(ctx, request, &networks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get networks: %w", err)
 	}
 
+	c.logger.DebugContext(
+		ctx,
+		"Fetched networks from BCM",
+		slog.Int("count", len(networks)),
+	)
+
 	return networks, nil
 }
 
 // GetCategories retrieves all categories from BCM.
-func (c *clientImpl) GetCategories(ctx context.Context) ([]Category, error) {
+func (c *clientImpl) GetCategories(ctx context.Context) ([]*Category, error) {
 	c.logger.DebugContext(ctx, "Fetching categories from BCM")
 
 	// Prepare the request to search for Category entities:
@@ -316,7 +334,7 @@ func (c *clientImpl) GetCategories(ctx context.Context) ([]Category, error) {
 	}
 
 	// Make the API call:
-	var categories []Category
+	var categories []*Category
 	err := c.call(ctx, request, &categories)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get categories: %w", err)
@@ -332,45 +350,39 @@ func (c *clientImpl) GetCategories(ctx context.Context) ([]Category, error) {
 }
 
 // GetCategoriesByUuids retrieves categories by their UUIDs.
-func (c *clientImpl) GetCategoriesByUuids(ctx context.Context, uuids []string) ([]Category, error) {
-	if len(uuids) == 0 {
-		return []Category{}, nil
-	}
-
+func (c *clientImpl) GetCategoriesByUuids(ctx context.Context, uuids ...string) (result []Category, err error) {
 	c.logger.DebugContext(
 		ctx,
 		"Fetching categories from BCM",
 		slog.Int("count", len(uuids)),
 	)
-
-	// Prepare the request:
 	request := map[string]any{
 		"service": "cmentity",
 		"call":    "getCategoriesByUuids",
 		"minify":  true,
-		"args":    []any{uuids},
+		"args": []any{
+			uuids,
+		},
 	}
-
-	// Make the API call:
-	var categories []Category
-	err := c.call(ctx, request, &categories)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get categories: %w", err)
-	}
-
-	return categories, nil
+	err = c.call(ctx, request, &result)
+	return
 }
 
 // call makes a generic API call to BCM.
 func (c *clientImpl) call(ctx context.Context, request map[string]any, result any) error {
 	// Marshal the request:
+	c.logger.DebugContext(
+		ctx,
+		"Marshalling request",
+		slog.Any("request", request),
+	)
 	body, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	// Create the HTTP request:
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

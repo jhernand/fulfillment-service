@@ -213,6 +213,9 @@ func (s *PrivateClustersServer) setDefaults(cluster *privatev1.Cluster) {
 
 func (s *PrivateClustersServer) lookupTemplate(ctx context.Context,
 	key string) (result *privatev1.ClusterTemplate, err error) {
+	if key == "" {
+		return
+	}
 	key = strconv.Quote(key)
 	response, err := s.templatesDao.List(ctx, dao.ListRequest{
 		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", key),
@@ -242,6 +245,9 @@ func (s *PrivateClustersServer) lookupTemplate(ctx context.Context,
 
 func (s *PrivateClustersServer) lookupHostClass(ctx context.Context,
 	key string) (result *privatev1.HostClass, err error) {
+	if key == "" {
+		return
+	}
 	key = strconv.Quote(key)
 	response, err := s.hostClassesDao.List(ctx, dao.ListRequest{
 		Filter: fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", key),
