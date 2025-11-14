@@ -393,10 +393,11 @@ func (t *synchronizerTask) deviceToHost(ctx context.Context, device *Device) (
 			Name: device.Hostname,
 		}.Build(),
 		Spec: privatev1.HostSpec_builder{
-			Class: device.Category,
+			Class:   device.Category,
+			BootMac: device.Mac,
 			Bmc: privatev1.BMC_builder{
-				User:     device.BMCSettings.UserName,
-				Password: device.BMCSettings.Password,
+				User:     device.BmcSettings.UserName,
+				Password: device.BmcSettings.Password,
 				Insecure: true,
 			}.Build(),
 		}.Build(),
@@ -410,8 +411,8 @@ func (t *synchronizerTask) deviceToHost(ctx context.Context, device *Device) (
 				url, err := t.buildRedfishUrl(
 					ctx,
 					iface.IP,
-					device.BMCSettings.UserName,
-					device.BMCSettings.Password,
+					device.BmcSettings.UserName,
+					device.BmcSettings.Password,
 					device.Hostname,
 				)
 				if err != nil {
@@ -445,7 +446,6 @@ func (t *synchronizerTask) deviceToHost(ctx context.Context, device *Device) (
 	return host, nil
 }
 
-// createOrUpdateHost creates a new host or updates an existing one.
 func (t *synchronizerTask) createOrUpdateHost(ctx context.Context, host *privatev1.Host) error {
 	// Try to create the host:
 	_, err := t.hostsClient.Create(ctx, privatev1.HostsCreateRequest_builder{
@@ -528,7 +528,6 @@ func (t *synchronizerTask) synchronizeCategory(ctx context.Context, category *Ca
 	return nil
 }
 
-// createOrUpdateHostClass creates a new host class or updates an existing one.
 func (t *synchronizerTask) createOrUpdateHostClass(ctx context.Context, hostClass *privatev1.HostClass) error {
 	// Try to create the host class:
 	_, err := t.hostClassesClient.Create(ctx, &privatev1.HostClassesCreateRequest{

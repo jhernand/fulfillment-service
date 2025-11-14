@@ -19,21 +19,23 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"sort"
 	"strconv"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
-	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
-	"github.com/innabox/fulfillment-service/internal/utils"
 )
 
 // objectPrefix is the prefix that will be used in the `generateName` field of the resources created in the hub.
@@ -56,11 +58,10 @@ type function struct {
 }
 
 type task struct {
-	r            *function
-	cluster      *privatev1.Cluster
-	hubId        string
-	hubNamespace string
-	hubClient    clnt.Client
+	r         *function
+	cluster   *privatev1.Cluster
+	hub       *privatev1.Hub
+	hubClient clnt.Client
 }
 
 // NewFunction creates a new builder that can then be used to create a new cluster reconciler function.
@@ -142,8 +143,20 @@ func (t *task) update(ctx context.Context) error {
 	// Set the default values:
 	t.setDefaults()
 
+	// Shortcuts for the cluster metadata and spec:
+	clusterMeta := t.cluster.GetMetadata()
+	clusterStatus := t.cluster.GetStatus()
+
+	// Add a finalizer to ensure that the cluster isn't completely deleted before we have time to delete the
+	// resources in the hub.
+	finalizers := clusterMeta.GetFinalizers()
+	if !slices.Contains(finalizers, clusterFinalizer) {
+		finalizers = append(finalizers, clusterFinalizer)
+	}
+	clusterMeta.SetFinalizers(finalizers)
+
 	// Do nothing if the order isn't progressing:
-	if t.cluster.GetStatus().GetState() != privatev1.ClusterState_CLUSTER_STATE_PROGRESSING {
+	if clusterStatus.GetState() != privatev1.ClusterState_CLUSTER_STATE_PROGRESSING {
 		return nil
 	}
 
@@ -151,11 +164,6 @@ func (t *task) update(ctx context.Context) error {
 	err := t.checkHostAssignment(ctx)
 	if err != nil {
 		return err
-	}
-
-	// TODO: Skip the rest of the logic for now, as we just want to test the hosts assignment.
-	if true {
-		return nil
 	}
 
 	// Select the hub, and if no hubs are available, update the condition to inform the user that creation is
@@ -179,66 +187,141 @@ func (t *task) update(ctx context.Context) error {
 	}
 
 	// Save the selected hub in the private data of the cluster:
-	t.cluster.GetStatus().SetHub(t.hubId)
+	clusterStatus.SetHub(t.hub.GetId())
 
-	// Get the K8S object:
-	object, err := t.getKubeObject(ctx)
+	// Ensure that the pull secret exists:
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: t.hub.GetNamespace(),
+			Name:      fmt.Sprintf("%s-pull-secret", clusterMeta.GetName()),
+		},
+	}
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, pullSecret, func() error {
+		pullSecret.Type = corev1.SecretTypeDockerConfigJson
+		if pullSecret.Data == nil {
+			pullSecret.Data = make(map[string][]byte)
+		}
+		pullSecret.Data[corev1.DockerConfigJsonKey] = []byte(t.hub.GetPullSecret())
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 
-	// Prepare the changes to the spec:
-	nodeRequests := t.prepareNodeRequests()
-	templateParameters, err := utils.ConvertTemplateParametersToJSON(t.cluster.GetSpec().GetTemplateParameters())
+	// Ensure that the SSH key secret exists:
+	sshKeySecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: t.hub.GetNamespace(),
+			Name:      fmt.Sprintf("%s-ssh", clusterMeta.GetName()),
+		},
+	}
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, sshKeySecret, func() error {
+		sshKeySecret.Type = corev1.SecretTypeOpaque
+		if sshKeySecret.StringData == nil {
+			sshKeySecret.StringData = make(map[string]string)
+		}
+		sshKeySecret.StringData["id_rsa.pub"] = t.hub.GetSshPublicKey()
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	spec := map[string]any{
-		"templateID":         t.cluster.GetSpec().GetTemplate(),
-		"templateParameters": templateParameters,
-		"nodeRequests":       nodeRequests,
-	}
 
-	// Create or update the Kubernetes object:
-	if object == nil {
-		object := &unstructured.Unstructured{}
-		object.SetGroupVersionKind(gvks.ClusterOrder)
-		object.SetNamespace(t.hubNamespace)
-		object.SetGenerateName(objectPrefix)
-		object.SetLabels(map[string]string{
-			labels.ClusterOrderUuid: t.cluster.GetId(),
-		})
-		err = unstructured.SetNestedField(object.Object, spec, "spec")
-		if err != nil {
-			return err
+	// Ensure that the hosted cluster exists:
+	hostedCluster := &unstructured.Unstructured{}
+	hostedCluster.SetGroupVersionKind(gvks.HostedCluster)
+	hostedCluster.SetNamespace(t.hub.GetNamespace())
+	hostedCluster.SetName(clusterMeta.GetName())
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, hostedCluster, func() error {
+		spec := map[string]any{
+			"clusterID":                    t.cluster.GetId(),
+			"controllerAvailabilityPolicy": "SingleReplica",
+			"dns": map[string]any{
+				"baseDomain": "internal.demo",
+			},
+			"etcd": map[string]any{
+				"managed": map[string]any{
+					"storage": map[string]any{
+						"persistentVolume": map[string]any{
+							"size": "8Gi",
+						},
+						"type": "PersistentVolume",
+					},
+					"managementType": "Managed",
+				},
+			},
+			"fips":                             false,
+			"infraID":                          t.cluster.GetId(),
+			"infrastructureAvailabilityPolicy": "SingleReplica",
+			"issuerURL":                        "https://kubernetes.default.svc",
+			"networking": map[string]any{
+				"clusterNetwork": []map[string]any{
+					{
+						"cidr": "10.132.0.0/14",
+					},
+				},
+				"networkType": "OVNKubernetes",
+				"serviceNetwork": []map[string]any{
+					{
+						"cidr": "172.31.0.0/16",
+					},
+				},
+			},
+			"olmCatalogPlacement": "guest",
+			"platform": map[string]any{
+				"agent": map[string]any{
+					"agentNamespace": t.hub.GetNamespace(),
+				},
+				"type": "Agent",
+			},
+			"pullSecret": map[string]any{
+				"name": pullSecret.GetName(),
+			},
+			"release": map[string]any{
+				"image": "quay.io/openshift-release-dev/ocp-release:4.19.18-x86_64",
+			},
+			"services": []map[string]any{
+				{
+					"service": "APIServer",
+					"servicePublishingStrategy": map[string]any{
+						"nodePort": map[string]any{
+							"address": "lb.internal.demo",
+							"port":    30000,
+						},
+						"type": "NodePort",
+					},
+				},
+				{
+					"service": "OAuthServer",
+					"servicePublishingStrategy": map[string]any{
+						"type": "Route",
+					},
+				},
+				{
+					"service": "OIDC",
+					"servicePublishingStrategy": map[string]any{
+						"type": "Route",
+					},
+				},
+				{
+					"service": "Konnectivity",
+					"servicePublishingStrategy": map[string]any{
+						"type": "Route",
+					},
+				},
+				{
+					"service": "Ignition",
+					"servicePublishingStrategy": map[string]any{
+						"type": "Route",
+					},
+				},
+			},
+			"sshKey": map[string]any{
+				"name": sshKeySecret.GetName(),
+			},
 		}
-		err = t.hubClient.Create(ctx, object)
-		if err != nil {
-			return err
-		}
-		t.r.logger.DebugContext(
-			ctx,
-			"Created cluster order",
-			slog.String("namespace", object.GetNamespace()),
-			slog.String("name", object.GetName()),
-		)
-	} else {
-		update := object.DeepCopy()
-		err = unstructured.SetNestedField(update.Object, spec, "spec")
-		if err != nil {
-			return err
-		}
-		err = t.hubClient.Patch(ctx, update, clnt.MergeFrom(object))
-		if err != nil {
-			return err
-		}
-		t.r.logger.DebugContext(
-			ctx,
-			"Updated cluster order",
-			slog.String("namespace", object.GetNamespace()),
-			slog.String("name", object.GetName()),
-		)
-	}
+		return unstructured.SetNestedMap(hostedCluster.Object, spec, "spec")
+	})
 
 	return err
 }
@@ -291,22 +374,6 @@ func (t *task) setConditionDefaults(value privatev1.ClusterConditionType) {
 	}
 }
 
-func (t *task) prepareNodeRequests() any {
-	var nodeRequests []any
-	for _, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
-		nodeRequest := t.prepareNodeRequest(nodeSet)
-		nodeRequests = append(nodeRequests, nodeRequest)
-	}
-	return nodeRequests
-}
-
-func (t *task) prepareNodeRequest(nodeSet *privatev1.ClusterNodeSet) any {
-	return map[string]any{
-		"resourceClass": nodeSet.GetHostClass(),
-		"numberOfNodes": int64(nodeSet.GetSize()),
-	}
-}
-
 func (t *task) delete(ctx context.Context) error {
 	// Unassign all the hosts from the cluster:
 	for _, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
@@ -322,38 +389,14 @@ func (t *task) delete(ctx context.Context) error {
 	}
 
 	// Do nothing if we don't know the hub yet:
-	t.hubId = t.cluster.GetStatus().GetHub()
-	if t.hubId == "" {
+	hub := t.cluster.GetStatus().GetHub()
+	if hub == "" {
 		return nil
 	}
 	err := t.getHub(ctx)
 	if err != nil {
 		return err
 	}
-
-	// Delete the K8S object:
-	object, err := t.getKubeObject(ctx)
-	if err != nil {
-		return err
-	}
-	if object == nil {
-		t.r.logger.DebugContext(
-			ctx,
-			"Cluster order doesn't exist",
-			slog.String("id", t.cluster.GetId()),
-		)
-		return nil
-	}
-	err = t.hubClient.Delete(ctx, object)
-	if err != nil {
-		return err
-	}
-	t.r.logger.DebugContext(
-		ctx,
-		"Deleted cluster order",
-		slog.String("namespace", object.GetNamespace()),
-		slog.String("name", object.GetName()),
-	)
 
 	return err
 }
@@ -544,8 +587,8 @@ func (t *task) lookupHostClass(ctx context.Context, key string) (result string, 
 }
 
 func (t *task) selectHub(ctx context.Context) error {
-	t.hubId = t.cluster.GetStatus().GetHub()
-	if t.hubId == "" {
+	hub := t.cluster.GetStatus().GetHub()
+	if hub == "" {
 		response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
 		if err != nil {
 			return err
@@ -553,59 +596,33 @@ func (t *task) selectHub(ctx context.Context) error {
 		if len(response.Items) == 0 {
 			return errors.New("there are no hubs")
 		}
-		t.hubId = response.Items[rand.IntN(len(response.Items))].GetId()
+		t.hub = response.Items[rand.IntN(len(response.Items))]
 	}
 	t.r.logger.DebugContext(
 		ctx,
 		"Selected hub",
-		slog.String("id", t.hubId),
+		slog.String("name", t.hub.GetMetadata().GetName()),
+		slog.String("id", t.hub.GetId()),
 	)
-	hubEntry, err := t.r.hubCache.Get(ctx, t.hubId)
+	entry, err := t.r.hubCache.Get(ctx, t.hub.GetId())
 	if err != nil {
 		return err
 	}
-	t.hubNamespace = hubEntry.Namespace
-	t.hubClient = hubEntry.Client
+	t.hubClient = entry.Client
 	return nil
 }
 
 func (t *task) getHub(ctx context.Context) error {
-	t.hubId = t.cluster.GetStatus().GetHub()
-	hubEntry, err := t.r.hubCache.Get(ctx, t.hubId)
+	hub := t.cluster.GetStatus().GetHub()
+	if hub == "" {
+		return errors.New("hub is not set")
+	}
+	entry, err := t.r.hubCache.Get(ctx, hub)
 	if err != nil {
 		return err
 	}
-	t.hubNamespace = hubEntry.Namespace
-	t.hubClient = hubEntry.Client
+	t.hubClient = entry.Client
 	return nil
-}
-
-func (t *task) getKubeObject(ctx context.Context) (result *unstructured.Unstructured, err error) {
-	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(gvks.ClusterOrderList)
-	err = t.hubClient.List(
-		ctx, list,
-		clnt.InNamespace(t.hubNamespace),
-		clnt.MatchingLabels{
-			labels.ClusterOrderUuid: t.cluster.GetId(),
-		},
-	)
-	if err != nil {
-		return
-	}
-	items := list.Items
-	count := len(items)
-	if count > 1 {
-		err = fmt.Errorf(
-			"expected at most one cluster order with identifer '%s' but found %d",
-			t.cluster.GetId(), count,
-		)
-		return
-	}
-	if count > 0 {
-		result = &items[0]
-	}
-	return
 }
 
 // updateCondition updates or creates a condition with the specified type, status, reason, and message.
@@ -635,3 +652,7 @@ func (t *task) updateCondition(conditionType privatev1.ClusterConditionType, sta
 	}
 	t.cluster.GetStatus().SetConditions(conditions)
 }
+
+// clusterFinalizer is the finalizer that will be used to ensure that the cluster isn't completely deleted before we have
+// time clean up the other resources that depend on it.
+const clusterFinalizer = "fulfillment-controller"

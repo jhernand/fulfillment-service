@@ -40,6 +40,9 @@ message HostSpec {
 
   // Identifier of the host class for this host.
   string class = 4;
+
+  // MAC address of the network interface used for initial network boot.
+  string boot_mac = 5;
 }
 
 // BMC contains the details of the Baseboard Management Controller for a host.
@@ -68,6 +71,9 @@ message HostStatus {
 
   // Identifier of the cluster that this host is assigned to.
   string cluster = 5;
+
+  // Identifier of the hub that was selected to manage this host.
+  string hub = 6;
 }
 
 enum HostState {

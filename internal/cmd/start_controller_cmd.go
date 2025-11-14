@@ -36,6 +36,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/cluster"
 	"github.com/innabox/fulfillment-service/internal/controllers/host"
+	"github.com/innabox/fulfillment-service/internal/controllers/hub"
 	"google.golang.org/grpc"
 )
 
@@ -242,6 +243,41 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 			r.logger.InfoContext(
 				ctx,
 				"Host reconciler failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
+
+	// Create the hub reconciler:
+	r.logger.InfoContext(ctx, "Creating hub reconciler")
+	hubReconcilerFunction, err := hub.NewFunction().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create hub reconciler function: %w", err)
+	}
+	hubReconciler, err := controllers.NewReconciler[*privatev1.Hub]().
+		SetLogger(r.logger).
+		SetClient(r.client).
+		SetFunction(hubReconcilerFunction).
+		SetEventFilter("has(event.hub)").
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create hub reconciler: %w", err)
+	}
+
+	// Start the hub reconciler:
+	r.logger.InfoContext(ctx, "Starting hub reconciler")
+	go func() {
+		err := hubReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			r.logger.InfoContext(ctx, "Hub reconciler finished")
+		} else {
+			r.logger.InfoContext(
+				ctx,
+				"Hub reconciler failed",
 				slog.Any("error", err),
 			)
 		}
