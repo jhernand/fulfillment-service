@@ -26,7 +26,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	privateapi "github.com/innabox/fulfillment-service/internal/api/private/v1"
+	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 )
 
 // SynchronizerBuilder is used to build synchronizers using the builder pattern.
@@ -41,9 +41,21 @@ type SynchronizerBuilder struct {
 type Synchronizer struct {
 	logger            *slog.Logger
 	bcmClient         Client
-	hostsClient       privateapi.HostsClient
-	hostClassesClient privateapi.HostClassesClient
+	hostsClient       privatev1.HostsClient
+	hostClassesClient privatev1.HostClassesClient
 	interval          time.Duration
+}
+
+// synchronizerTask contains the data and logic needed for an individual synchronization cycle.
+type synchronizerTask struct {
+	logger            *slog.Logger
+	bcmClient         Client
+	hostsClient       privatev1.HostsClient
+	hostClassesClient privatev1.HostClassesClient
+	racksByUuid       map[string]*Rack
+	networksByUuid    map[string]*Network
+	categoriesByUuid  map[string]*Category
+	devicesByUuid     map[string]*Device
 }
 
 // NewSynchronizer creates a new synchronizer builder.
@@ -101,8 +113,8 @@ func (b *SynchronizerBuilder) Build() (result *Synchronizer, err error) {
 	result = &Synchronizer{
 		logger:            b.logger,
 		bcmClient:         b.bcmClient,
-		hostsClient:       privateapi.NewHostsClient(b.grpcConn),
-		hostClassesClient: privateapi.NewHostClassesClient(b.grpcConn),
+		hostsClient:       privatev1.NewHostsClient(b.grpcConn),
+		hostClassesClient: privatev1.NewHostClassesClient(b.grpcConn),
 		interval:          interval,
 	}
 	return
@@ -151,79 +163,185 @@ func (s *Synchronizer) Run(ctx context.Context) error {
 	}
 }
 
-// synchronize performs a single synchronization cycle.
 func (s *Synchronizer) synchronize(ctx context.Context) error {
-	s.logger.InfoContext(ctx, "Starting synchronization cycle")
+	task := &synchronizerTask{
+		logger:            s.logger,
+		bcmClient:         s.bcmClient,
+		hostsClient:       s.hostsClient,
+		hostClassesClient: s.hostClassesClient,
+		racksByUuid:       map[string]*Rack{},
+		networksByUuid:    map[string]*Network{},
+		categoriesByUuid:  map[string]*Category{},
+		devicesByUuid:     map[string]*Device{},
+	}
+	return task.run(ctx)
+}
+
+func (t *synchronizerTask) run(ctx context.Context) error {
+	// Take note of the start time:
+	start := time.Now()
+	t.logger.InfoContext(
+		ctx,
+		"Starting synchronization cycle",
+	)
+
+	// Load networks, racks, categories, and devices:
+	t.loadNetworks(ctx)
+	t.loadRacks(ctx)
+	t.loadCategories(ctx)
+	t.loadDevices(ctx)
 
 	// Synchronize categories as host classes:
-	err := s.synchronizeCategories(ctx)
+	err := t.synchronizeCategories(ctx)
 	if err != nil {
-		s.logger.WarnContext(
+		t.logger.WarnContext(
 			ctx,
 			"Failed to synchronize categories",
 			slog.Any("error", err),
 		)
-		// Continue despite the error
 	}
 
-	// Get devices from BCM:
-	devices, err := s.bcmClient.GetDevices(ctx)
+	// Synchronize devices as hosts:
+	err = t.synchronizeDevices(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get devices from BCM: %w", err)
+		t.logger.WarnContext(
+			ctx,
+			"Failed to synchronize devices",
+			slog.Any("error", err),
+		)
 	}
 
-	s.logger.InfoContext(
+	// Log the results:
+	duration := time.Since(start)
+	t.logger.InfoContext(
+		ctx,
+		"Synchronization cycle completed",
+		slog.Int("categories", len(t.categoriesByUuid)),
+		slog.Int("devices", len(t.devicesByUuid)),
+		slog.Duration("duration", duration),
+	)
+
+	return nil
+}
+
+func (t *synchronizerTask) loadRacks(ctx context.Context) {
+	racks, err := t.bcmClient.GetRacks(ctx)
+	if err != nil {
+		t.logger.WarnContext(
+			ctx,
+			"Failed to get racks from BCM",
+			slog.Any("error", err),
+		)
+		return
+	}
+	for _, rack := range racks {
+		t.racksByUuid[rack.Uuid] = rack
+	}
+	t.logger.InfoContext(
+		ctx,
+		"Retrieved racks from BCM",
+		slog.Int("count", len(racks)),
+	)
+}
+
+func (t *synchronizerTask) loadNetworks(ctx context.Context) {
+	networks, err := t.bcmClient.GetNetworks(ctx)
+	if err != nil {
+		t.logger.WarnContext(
+			ctx,
+			"Failed to get networks from BCM",
+			slog.Any("error", err),
+		)
+		return
+	}
+	for _, network := range networks {
+		t.networksByUuid[network.Uuid] = network
+	}
+	t.logger.InfoContext(
+		ctx,
+		"Retrieved networks from BCM",
+		slog.Int("count", len(networks)),
+	)
+}
+
+func (t *synchronizerTask) loadCategories(ctx context.Context) {
+	categories, err := t.bcmClient.GetCategories(ctx)
+	if err != nil {
+		t.logger.WarnContext(
+			ctx,
+			"Failed to get categories from BCM",
+			slog.Any("error", err),
+		)
+		return
+	}
+	for _, category := range categories {
+		t.categoriesByUuid[category.Uuid] = category
+	}
+	t.logger.InfoContext(
+		ctx,
+		"Retrieved categories from BCM",
+		slog.Int("count", len(categories)),
+	)
+}
+
+func (t *synchronizerTask) loadDevices(ctx context.Context) {
+	devices, err := t.bcmClient.GetDevices(ctx)
+	if err != nil {
+		t.logger.WarnContext(
+			ctx,
+			"Failed to get devices from BCM",
+			slog.Any("error", err),
+		)
+		return
+	}
+	for _, device := range devices {
+		t.devicesByUuid[device.Uuid] = device
+	}
+	t.logger.InfoContext(
 		ctx,
 		"Retrieved devices from BCM",
 		slog.Int("count", len(devices)),
 	)
+}
 
-	// Process each device:
-	for _, device := range devices {
-		// Skip non-physical nodes:
+func (t *synchronizerTask) synchronizeDevices(ctx context.Context) error {
+	for _, device := range t.devicesByUuid {
 		if device.ChildType != "PhysicalNode" {
 			continue
 		}
-
-		// Convert the device to a host:
-		host, err := s.deviceToHost(ctx, &device)
+		err := t.synchronizeDevice(ctx, device)
 		if err != nil {
-			s.logger.WarnContext(
+			t.logger.WarnContext(
 				ctx,
-				"Failed to convert device to host",
+				"Failed to synchronize device",
 				slog.String("hostname", device.Hostname),
 				slog.Any("error", err),
 			)
-			continue
 		}
-
-		// Create or update the host:
-		err = s.createOrUpdateHost(ctx, host)
-		if err != nil {
-			s.logger.ErrorContext(
-				ctx,
-				"Failed to create or update host",
-				slog.String("hostname", device.Hostname),
-				slog.Any("error", err),
-			)
-			continue
-		}
-
-		s.logger.DebugContext(
-			ctx,
-			"Synchronized host",
-			slog.String("id", host.Id),
-			slog.String("hostname", device.Hostname),
-		)
 	}
+	return nil
+}
 
-	s.logger.InfoContext(ctx, "Synchronization cycle completed")
+func (t *synchronizerTask) synchronizeDevice(ctx context.Context, device *Device) error {
+	host, err := t.deviceToHost(ctx, device)
+	if err != nil {
+		return fmt.Errorf("failed to convert device to host: %w", err)
+	}
+	err = t.createOrUpdateHost(ctx, host)
+	if err != nil {
+		return fmt.Errorf("failed to create or update host: %w", err)
+	}
+	t.logger.DebugContext(
+		ctx,
+		"Synchronized device",
+		slog.String("hostname", device.Hostname),
+	)
 	return nil
 }
 
 // buildRedfishUrl connects to a Redfish server, finds the system ID matching the device name, and builds a virtual
 // media URL.
-func (s *Synchronizer) buildRedfishUrl(ctx context.Context, address, username, password, device string) (result string,
+func (t *synchronizerTask) buildRedfishUrl(ctx context.Context, address, username, password, device string) (result string,
 	err error) {
 	// Connect to the server. Yes, using insecure mode because BCM doesn't contain the CA certificates to use.
 	config := gofish.ClientConfig{
@@ -266,21 +384,30 @@ func (s *Synchronizer) buildRedfishUrl(ctx context.Context, address, username, p
 }
 
 // deviceToHost converts a BCM device to a fulfillment service host.
-func (s *Synchronizer) deviceToHost(ctx context.Context, device *Device) (
-	*privateapi.Host, error) {
-	// Prepare BMC information:
-	bmc := &privateapi.BMC{
-		User:     device.BMCSettings.UserName,
-		Password: device.BMCSettings.Password,
-	}
+func (t *synchronizerTask) deviceToHost(ctx context.Context, device *Device) (
+	*privatev1.Host, error) {
+	// Create the host with the basic data:
+	host := privatev1.Host_builder{
+		Id: device.Uuid,
+		Metadata: privatev1.Metadata_builder{
+			Name: device.Hostname,
+		}.Build(),
+		Spec: privatev1.HostSpec_builder{
+			Class: device.Category,
+			Bmc: privatev1.BMC_builder{
+				User:     device.BMCSettings.UserName,
+				Password: device.BMCSettings.Password,
+				Insecure: true,
+			}.Build(),
+		}.Build(),
+	}.Build()
 
 	// Find the BMC network interface in order to build the BMC URL:
 	for _, iface := range device.Interfaces {
 		if iface.ChildType == "NetworkBmcInterface" {
 			switch {
 			case redfishInterfaceRegex.MatchString(iface.Name):
-				var err error
-				bmc.Url, err = s.buildRedfishUrl(
+				url, err := t.buildRedfishUrl(
 					ctx,
 					iface.IP,
 					device.BMCSettings.UserName,
@@ -288,16 +415,18 @@ func (s *Synchronizer) deviceToHost(ctx context.Context, device *Device) (
 					device.Hostname,
 				)
 				if err != nil {
-					s.logger.ErrorContext(
+					t.logger.ErrorContext(
 						ctx,
 						"Failed to build Redfish URL",
 						slog.String("interface", iface.Name),
 						slog.String("ip", iface.IP),
 						slog.Any("error", err),
 					)
+				} else {
+					host.GetSpec().GetBmc().SetUrl(url)
 				}
 			default:
-				s.logger.ErrorContext(
+				t.logger.ErrorContext(
 					ctx,
 					"Unsupported BMC interface type",
 					slog.String("interface", iface.Name),
@@ -307,76 +436,35 @@ func (s *Synchronizer) deviceToHost(ctx context.Context, device *Device) (
 		}
 	}
 
-	// Get the rack name if available:
-	var rack string
-	if device.RackPosition.Rack != "" {
-		racks, err := s.bcmClient.GetRacksByUuids(ctx, []string{device.RackPosition.Rack})
-		if err != nil {
-			s.logger.WarnContext(
-				ctx,
-				"Failed to get rack information",
-				slog.String("rack", device.RackPosition.Rack),
-				slog.Any("error", err),
-			)
-		} else if len(racks) > 0 {
-			rack = racks[0].Name
-		}
-	}
-
-	// Create the host object:
-	host := &privateapi.Host{
-		Id: device.Uuid,
-		Metadata: &privateapi.Metadata{
-			Name: device.Hostname,
-		},
-		Spec: &privateapi.HostSpec{
-			Bmc:  bmc,
-			Rack: rack,
-		},
-	}
-
-	// Set the class field from the category:
-	if device.Category != "" {
-		host.Spec.Class = device.Category
+	// Set the rack:
+	rack := t.racksByUuid[device.RackPosition.Rack]
+	if rack != nil {
+		host.GetSpec().SetRack(rack.Name)
 	}
 
 	return host, nil
 }
 
 // createOrUpdateHost creates a new host or updates an existing one.
-func (s *Synchronizer) createOrUpdateHost(ctx context.Context, host *privateapi.Host) error {
-	// Try to get the existing host:
-	_, err := s.hostsClient.Get(ctx, &privateapi.HostsGetRequest{
-		Id: host.GetId(),
-	})
-	if grpcstatus.Code(err) == grpccodes.NotFound {
-		// Host doesn't exist, create it:
-		s.logger.InfoContext(
+func (t *synchronizerTask) createOrUpdateHost(ctx context.Context, host *privatev1.Host) error {
+	// Try to create the host:
+	_, err := t.hostsClient.Create(ctx, privatev1.HostsCreateRequest_builder{
+		Object: host,
+	}.Build())
+	if err == nil {
+		t.logger.InfoContext(
 			ctx,
-			"Creating new host",
+			"Created new host",
 			slog.String("id", host.GetId()),
 		)
-		_, err = s.hostsClient.Create(ctx, privateapi.HostsCreateRequest_builder{
-			Object: host,
-		}.Build())
-		if err != nil {
-			return fmt.Errorf("failed to create host: %w", err)
-		}
 		return nil
 	}
-	if err != nil {
-		return err
+	if grpcstatus.Code(err) != grpccodes.AlreadyExists {
+		return fmt.Errorf("failed to create host: %w", err)
 	}
 
-	// Host exists, update it:
-	s.logger.InfoContext(
-		ctx,
-		"Updating existing host",
-		slog.String("id", host.GetId()),
-	)
-
-	// Update the host:
-	_, err = s.hostsClient.Update(ctx, &privateapi.HostsUpdateRequest{
+	// Try to update the host:
+	_, err = t.hostsClient.Update(ctx, &privatev1.HostsUpdateRequest{
 		Object: host,
 		UpdateMask: &fieldmaskpb.FieldMask{
 			Paths: []string{
@@ -388,94 +476,78 @@ func (s *Synchronizer) createOrUpdateHost(ctx context.Context, host *privateapi.
 	if err != nil {
 		return fmt.Errorf("failed to update host: %w", err)
 	}
+	t.logger.InfoContext(
+		ctx,
+		"Updated existing host",
+		slog.String("id", host.GetId()),
+	)
 
 	return nil
 }
 
-// synchronizeCategories synchronizes categories from BCM as host classes.
-func (s *Synchronizer) synchronizeCategories(ctx context.Context) error {
-	s.logger.InfoContext(ctx, "Starting category synchronization")
-
-	// Get categories from BCM:
-	categories, err := s.bcmClient.GetCategories(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get categories from BCM: %w", err)
-	}
-
-	s.logger.InfoContext(
-		ctx,
-		"Retrieved categories from BCM",
-		slog.Int("count", len(categories)),
-	)
-
-	// Process each category:
-	for _, category := range categories {
-		// Convert the category to a host class:
-		hostClass := privateapi.HostClass_builder{
-			Id: category.Uuid,
-			Metadata: privateapi.Metadata_builder{
-				Name: category.Name,
-			}.Build(),
-			Title:       fmt.Sprintf("BCM `%s` category", category.Name),
-			Description: fmt.Sprintf("Extracted from BCM device category `%s`.", category.Name),
-		}.Build()
-
-		// Create or update the host class:
-		err = s.createOrUpdateHostClass(ctx, hostClass)
+func (t *synchronizerTask) synchronizeCategories(ctx context.Context) error {
+	for _, category := range t.categoriesByUuid {
+		err := t.synchronizeCategory(ctx, category)
 		if err != nil {
-			s.logger.WarnContext(
+			t.logger.WarnContext(
 				ctx,
-				"Failed to create or update host class",
+				"Failed to synchronize category",
 				slog.String("id", category.Uuid),
 				slog.String("name", category.Name),
 				slog.Any("error", err),
 			)
 			continue
 		}
-
-		s.logger.DebugContext(
-			ctx,
-			"Synchronized host class",
-			slog.String("id", category.Uuid),
-			slog.String("name", category.Name),
-		)
 	}
+	return nil
+}
 
-	s.logger.InfoContext(ctx, "Category synchronization completed")
+func (t *synchronizerTask) synchronizeCategory(ctx context.Context, category *Category) error {
+	// Convert the category to a host class:
+	hostClass := privatev1.HostClass_builder{
+		Id: category.Uuid,
+		Metadata: privatev1.Metadata_builder{
+			Name: category.Name,
+		}.Build(),
+		Title:       fmt.Sprintf("BCM `%s` category", category.Name),
+		Description: fmt.Sprintf("Extracted from BCM device category `%s`.", category.Name),
+	}.Build()
+
+	// Create or update the host class:
+	err := t.createOrUpdateHostClass(ctx, hostClass)
+	if err != nil {
+		return fmt.Errorf("failed to create or update host class: %w", err)
+	}
+	t.logger.DebugContext(
+		ctx,
+		"Synchronized host class",
+		slog.String("id", category.Uuid),
+		slog.String("name", category.Name),
+	)
+
 	return nil
 }
 
 // createOrUpdateHostClass creates a new host class or updates an existing one.
-func (s *Synchronizer) createOrUpdateHostClass(ctx context.Context, hostClass *privateapi.HostClass) error {
-	// Try to get the existing host class, and create it if it doesn't exist yet:
-	_, err := s.hostClassesClient.Get(ctx, &privateapi.HostClassesGetRequest{
-		Id: hostClass.GetId(),
+func (t *synchronizerTask) createOrUpdateHostClass(ctx context.Context, hostClass *privatev1.HostClass) error {
+	// Try to create the host class:
+	_, err := t.hostClassesClient.Create(ctx, &privatev1.HostClassesCreateRequest{
+		Object: hostClass,
 	})
-	if grpcstatus.Code(err) == grpccodes.NotFound {
-		s.logger.InfoContext(
+	if err == nil {
+		t.logger.InfoContext(
 			ctx,
-			"Creating new host class",
+			"Created new host class",
 			slog.String("id", hostClass.GetId()),
 		)
-		_, err = s.hostClassesClient.Create(ctx, &privateapi.HostClassesCreateRequest{
-			Object: hostClass,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create host class: %w", err)
-		}
 		return nil
 	}
-	if err != nil {
-		return err
+	if grpcstatus.Code(err) != grpccodes.AlreadyExists {
+		return fmt.Errorf("failed to create host class: %w", err)
 	}
 
-	// Host class exists, update it:
-	s.logger.InfoContext(
-		ctx,
-		"Updating existing host class",
-		slog.String("id", hostClass.GetId()),
-	)
-	_, err = s.hostClassesClient.Update(ctx, &privateapi.HostClassesUpdateRequest{
+	// Try to update the host class:
+	_, err = t.hostClassesClient.Update(ctx, &privatev1.HostClassesUpdateRequest{
 		Object: hostClass,
 		UpdateMask: &fieldmaskpb.FieldMask{
 			Paths: []string{
@@ -488,11 +560,14 @@ func (s *Synchronizer) createOrUpdateHostClass(ctx context.Context, hostClass *p
 	if err != nil {
 		return fmt.Errorf("failed to update host class: %w", err)
 	}
-
+	t.logger.InfoContext(
+		ctx,
+		"Updated existing host class",
+		slog.String("id", hostClass.GetId()),
+	)
 	return nil
 }
 
-// Regular expressions to match BMC network interfaces by type.
 var (
 	redfishInterfaceRegex = regexp.MustCompile(`^rf\d+$`)
 )

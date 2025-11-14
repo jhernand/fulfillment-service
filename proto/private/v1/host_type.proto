@@ -52,6 +52,9 @@ message BMC {
 
   // Password for authenticating with the BMC.
   string password = 3;
+
+  // Insecure indicates if TLS certicates and host names shouldn't be verified when connecting to the BMC.
+  bool insecure = 4;
 }
 
 message HostStatus {
