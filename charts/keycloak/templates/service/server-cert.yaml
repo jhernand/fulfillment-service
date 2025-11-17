@@ -23,3 +23,5 @@ spec:
   dnsNames:
   - {{ required "hostname is required" .Values.hostname }}
   secretName: keycloak-tls-cert
+  privateKey:
+    rotationPolicy: Always

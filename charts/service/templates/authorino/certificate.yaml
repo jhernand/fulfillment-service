@@ -25,3 +25,5 @@ spec:
   - authorino-authorino-authorization.{{ .Release.Namespace }}
   - authorino-authorino-authorization.{{ .Release.Namespace }}.svc.cluster.local
   secretName: authorino-tls
+  privateKey:
+    rotationPolicy: Always

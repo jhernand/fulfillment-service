@@ -25,3 +25,5 @@ spec:
   - fulfillment-database.{{ .Release.Namespace }}
   - fulfillment-database.{{ .Release.Namespace }}.svc.cluster.local
   secretName: fulfillment-database-server-cert
+  privateKey:
+    rotationPolicy: Always

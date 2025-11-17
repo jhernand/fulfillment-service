@@ -26,3 +26,5 @@ spec:
   - keycloak-database.{{ .Release.Namespace }}
   - keycloak-database.{{ .Release.Namespace }}.svc.cluster.local
   secretName: keycloak-database-server-cert
+  privateKey:
+    rotationPolicy: Always
