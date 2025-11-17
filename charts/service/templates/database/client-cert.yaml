@@ -24,3 +24,5 @@ spec:
   - client auth
   commonName: client
   secretName: fulfillment-database-client-cert
+  privateKey:
+    rotationPolicy: Always

@@ -26,5 +26,6 @@ spec:
   secretName: keycloak-database-client-cert
   privateKey:
     encoding: PKCS8
+    rotationPolicy: Always
   additionalOutputFormats:
   - type: DER

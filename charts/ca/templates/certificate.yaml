@@ -23,3 +23,5 @@ spec:
     kind: Issuer
     name: {{ .Values.issuerName }}
   secretName: {{ .Values.issuerName }}
+  privateKey:
+    rotationPolicy: Always
