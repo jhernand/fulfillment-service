@@ -27,7 +27,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -35,6 +34,7 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
+	"github.com/innabox/fulfillment-service/internal/json"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 )
 
@@ -58,10 +58,14 @@ type function struct {
 }
 
 type task struct {
-	r         *function
-	cluster   *privatev1.Cluster
-	hub       *privatev1.Hub
-	hubClient clnt.Client
+	r             *function
+	cluster       *privatev1.Cluster
+	hub           *privatev1.Hub
+	hubClient     clnt.Client
+	pullSecret    *corev1.Secret
+	sshSecret     *corev1.Secret
+	hostedCluster *unstructured.Unstructured
+	nodePools     map[string]*unstructured.Unstructured
 }
 
 // NewFunction creates a new builder that can then be used to create a new cluster reconciler function.
@@ -152,8 +156,8 @@ func (t *task) update(ctx context.Context) error {
 	finalizers := clusterMeta.GetFinalizers()
 	if !slices.Contains(finalizers, clusterFinalizer) {
 		finalizers = append(finalizers, clusterFinalizer)
+		clusterMeta.SetFinalizers(finalizers)
 	}
-	clusterMeta.SetFinalizers(finalizers)
 
 	// Do nothing if the order isn't progressing:
 	if clusterStatus.GetState() != privatev1.ClusterState_CLUSTER_STATE_PROGRESSING {
@@ -190,140 +194,276 @@ func (t *task) update(ctx context.Context) error {
 	clusterStatus.SetHub(t.hub.GetId())
 
 	// Ensure that the pull secret exists:
-	pullSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: t.hub.GetNamespace(),
-			Name:      fmt.Sprintf("%s-pull-secret", clusterMeta.GetName()),
-		},
-	}
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, pullSecret, func() error {
-		pullSecret.Type = corev1.SecretTypeDockerConfigJson
-		if pullSecret.Data == nil {
-			pullSecret.Data = make(map[string][]byte)
-		}
-		pullSecret.Data[corev1.DockerConfigJsonKey] = []byte(t.hub.GetPullSecret())
-		return nil
-	})
+	t.pullSecret = &corev1.Secret{}
+	t.pullSecret.SetNamespace(t.hub.GetNamespace())
+	t.pullSecret.SetName(fmt.Sprintf("%s-pull", clusterMeta.GetName()))
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.pullSecret, t.mutatePullSecret)
 	if err != nil {
 		return err
 	}
 
 	// Ensure that the SSH key secret exists:
-	sshKeySecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: t.hub.GetNamespace(),
-			Name:      fmt.Sprintf("%s-ssh", clusterMeta.GetName()),
-		},
-	}
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, sshKeySecret, func() error {
-		sshKeySecret.Type = corev1.SecretTypeOpaque
-		if sshKeySecret.StringData == nil {
-			sshKeySecret.StringData = make(map[string]string)
-		}
-		sshKeySecret.StringData["id_rsa.pub"] = t.hub.GetSshPublicKey()
-		return nil
-	})
+	t.sshSecret = &corev1.Secret{}
+	t.sshSecret.SetNamespace(t.hub.GetNamespace())
+	t.sshSecret.SetName(fmt.Sprintf("%s-ssh", clusterMeta.GetName()))
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.sshSecret, t.mutateSshSecret)
 	if err != nil {
 		return err
 	}
 
 	// Ensure that the hosted cluster exists:
-	hostedCluster := &unstructured.Unstructured{}
-	hostedCluster.SetGroupVersionKind(gvks.HostedCluster)
-	hostedCluster.SetNamespace(t.hub.GetNamespace())
-	hostedCluster.SetName(clusterMeta.GetName())
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, hostedCluster, func() error {
-		spec := map[string]any{
-			"clusterID":                    t.cluster.GetId(),
-			"controllerAvailabilityPolicy": "SingleReplica",
-			"dns": map[string]any{
-				"baseDomain": "internal.demo",
-			},
-			"etcd": map[string]any{
-				"managed": map[string]any{
-					"storage": map[string]any{
-						"persistentVolume": map[string]any{
-							"size": "8Gi",
-						},
-						"type": "PersistentVolume",
-					},
-					"managementType": "Managed",
-				},
-			},
-			"fips":                             false,
-			"infraID":                          t.cluster.GetId(),
-			"infrastructureAvailabilityPolicy": "SingleReplica",
-			"issuerURL":                        "https://kubernetes.default.svc",
-			"networking": map[string]any{
-				"clusterNetwork": []map[string]any{
-					{
-						"cidr": "10.132.0.0/14",
-					},
-				},
-				"networkType": "OVNKubernetes",
-				"serviceNetwork": []map[string]any{
-					{
-						"cidr": "172.31.0.0/16",
-					},
-				},
-			},
-			"olmCatalogPlacement": "guest",
-			"platform": map[string]any{
-				"agent": map[string]any{
-					"agentNamespace": t.hub.GetNamespace(),
-				},
-				"type": "Agent",
-			},
-			"pullSecret": map[string]any{
-				"name": pullSecret.GetName(),
-			},
-			"release": map[string]any{
-				"image": "quay.io/openshift-release-dev/ocp-release:4.19.18-x86_64",
-			},
-			"services": []map[string]any{
-				{
-					"service": "APIServer",
-					"servicePublishingStrategy": map[string]any{
-						"nodePort": map[string]any{
-							"address": "lb.internal.demo",
-							"port":    30000,
-						},
-						"type": "NodePort",
-					},
-				},
-				{
-					"service": "OAuthServer",
-					"servicePublishingStrategy": map[string]any{
-						"type": "Route",
-					},
-				},
-				{
-					"service": "OIDC",
-					"servicePublishingStrategy": map[string]any{
-						"type": "Route",
-					},
-				},
-				{
-					"service": "Konnectivity",
-					"servicePublishingStrategy": map[string]any{
-						"type": "Route",
-					},
-				},
-				{
-					"service": "Ignition",
-					"servicePublishingStrategy": map[string]any{
-						"type": "Route",
-					},
-				},
-			},
-			"sshKey": map[string]any{
-				"name": sshKeySecret.GetName(),
-			},
-		}
-		return unstructured.SetNestedMap(hostedCluster.Object, spec, "spec")
-	})
+	t.hostedCluster = &unstructured.Unstructured{}
+	t.hostedCluster.SetGroupVersionKind(gvks.HostedCluster)
+	t.hostedCluster.SetNamespace(t.hub.GetNamespace())
+	t.hostedCluster.SetName(clusterMeta.GetName())
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.hostedCluster, t.mutateHostedCluster)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// Ensure that there is a node pool for each node set:
+	t.nodePools = map[string]*unstructured.Unstructured{}
+	for nodeSetName := range t.cluster.GetSpec().GetNodeSets() {
+		nodePool := &unstructured.Unstructured{}
+		nodePool.SetGroupVersionKind(gvks.NodePool)
+		nodePool.SetNamespace(t.hostedCluster.GetNamespace())
+		nodePool.SetName(fmt.Sprintf("%s-%s", t.hostedCluster.GetName(), nodeSetName))
+		t.nodePools[nodeSetName] = nodePool
+		_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, nodePool, func() error {
+			return t.mutateNodePool(nodeSetName)
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (t *task) mutatePullSecret() error {
+	t.pullSecret.Type = corev1.SecretTypeDockerConfigJson
+	if t.pullSecret.Data == nil {
+		t.pullSecret.Data = make(map[string][]byte)
+	}
+	t.pullSecret.Data[corev1.DockerConfigJsonKey] = []byte(t.hub.GetPullSecret())
+	return nil
+}
+
+func (t *task) mutateSshSecret() error {
+	t.sshSecret.Type = corev1.SecretTypeOpaque
+	if t.sshSecret.StringData == nil {
+		t.sshSecret.StringData = make(map[string]string)
+	}
+	t.sshSecret.StringData["id_rsa.pub"] = t.hub.GetSshPublicKey()
+	return nil
+}
+
+func (t *task) mutateHostedCluster() error {
+	spec, err := t.renderHostedClusterSpec()
+	if err != nil {
+		return err
+	}
+	return unstructured.SetNestedMap(t.hostedCluster.Object, spec, "spec")
+}
+
+func (t *task) renderHostedClusterSpec() (result json.Object, err error) {
+	dnsSpec, err := t.renderHostedClusterDns()
+	if err != nil {
+		return
+	}
+	etcdSpec, err := t.renderHostedClusterEtcd()
+	if err != nil {
+		return
+	}
+	networkingSpec, err := t.renderHostedClusterNetworking()
+	if err != nil {
+		return
+	}
+	platformSpec, err := t.renderHostedClusterPlatform()
+	if err != nil {
+		return
+	}
+	releaseSpec, err := t.renderRelease()
+	if err != nil {
+		return
+	}
+	servicesSpec, err := t.renderHostedClusterServices()
+	if err != nil {
+		return
+	}
+	pullSecretRef := json.Object{
+		"name": t.pullSecret.GetName(),
+	}
+	sshKeyRef := json.Object{
+		"name": t.sshSecret.GetName(),
+	}
+	result = json.Object{
+		"clusterID":                        t.cluster.GetId(),
+		"controllerAvailabilityPolicy":     "SingleReplica",
+		"dns":                              dnsSpec,
+		"etcd":                             etcdSpec,
+		"infraID":                          t.cluster.GetId(),
+		"infrastructureAvailabilityPolicy": "SingleReplica",
+		"issuerURL":                        "https://kubernetes.default.svc",
+		"networking":                       networkingSpec,
+		"olmCatalogPlacement":              "guest",
+		"platform":                         platformSpec,
+		"pullSecret":                       pullSecretRef,
+		"release":                          releaseSpec,
+		"services":                         servicesSpec,
+		"sshKey":                           sshKeyRef,
+	}
+	return
+}
+
+func (t *task) renderHostedClusterDns() (result json.Object, err error) {
+	result = json.Object{
+		"baseDomain": "internal.demo",
+	}
+	return
+}
+
+func (t *task) renderHostedClusterEtcd() (result json.Object, err error) {
+	result = json.Object{
+		"managed": json.Object{
+			"storage": json.Object{
+				"type": "PersistentVolume",
+				"persistentVolume": json.Object{
+					"size": "8Gi",
+				},
+			},
+		},
+		"managementType": "Managed",
+	}
+	return
+}
+
+func (t *task) renderHostedClusterNetworking() (result json.Object, err error) {
+	result = json.Object{
+		"clusterNetwork": json.List{
+			json.Object{
+				"cidr": "10.132.0.0/14",
+			},
+		},
+		"networkType": "OVNKubernetes",
+		"serviceNetwork": json.List{
+			json.Object{
+				"cidr": "172.31.0.0/16",
+			},
+		},
+	}
+	return
+}
+
+func (t *task) renderHostedClusterPlatform() (result json.Object, err error) {
+	result = json.Object{
+		"agent": json.Object{
+			"agentNamespace": t.hub.GetNamespace(),
+		},
+		"type": "Agent",
+	}
+	return
+}
+
+func (t *task) renderHostedClusterServices() (result json.List, err error) {
+	result = json.List{
+		json.Object{
+			"service": "APIServer",
+			"servicePublishingStrategy": json.Object{
+				"nodePort": json.Object{
+					"address": "lb.internal.demo",
+					"port":    int64(30000),
+				},
+				"type": "NodePort",
+			},
+		},
+		json.Object{
+			"service": "OAuthServer",
+			"servicePublishingStrategy": json.Object{
+				"type": "Route",
+			},
+		},
+		json.Object{
+			"service": "OIDC",
+			"servicePublishingStrategy": json.Object{
+				"type": "Route",
+			},
+		},
+		json.Object{
+			"service": "Konnectivity",
+			"servicePublishingStrategy": json.Object{
+				"type": "Route",
+			},
+		},
+		json.Object{
+			"service": "Ignition",
+			"servicePublishingStrategy": json.Object{
+				"type": "Route",
+			},
+		},
+	}
+	return
+}
+
+func (t *task) mutateNodePool(nodeSetName string) error {
+	nodeSet := t.cluster.GetSpec().GetNodeSets()[nodeSetName]
+	if nodeSet == nil {
+		return fmt.Errorf("node set '%s' not found", nodeSetName)
+	}
+	spec, err := t.renderNodePoolSpec(nodeSet)
+	if err != nil {
+		return err
+	}
+	nodePool := t.nodePools[nodeSetName]
+	return unstructured.SetNestedMap(nodePool.Object, spec, "spec")
+}
+
+func (t *task) renderNodePoolSpec(nodeSet *privatev1.ClusterNodeSet) (result json.Object, err error) {
+	platformSpec, err := t.renderNodePoolPlatform()
+	if err != nil {
+		return
+	}
+	managementSpec, err := t.renderNodePoolManagement()
+	if err != nil {
+		return
+	}
+	releaseSpec, err := t.renderRelease()
+	if err != nil {
+		return
+	}
+	result = json.Object{
+		"arch":        "amd64",
+		"clusterName": t.hostedCluster.GetName(),
+		"management":  managementSpec,
+		"platform":    platformSpec,
+		"release":     releaseSpec,
+		"replicas":    int64(nodeSet.GetSize()),
+	}
+	return
+}
+
+func (t *task) renderNodePoolPlatform() (result json.Object, err error) {
+	result = json.Object{
+		"type": "Agent",
+		"agent": json.Object{
+			"agentLabelSelector": json.Object{},
+		},
+	}
+	return
+}
+
+func (t *task) renderNodePoolManagement() (result json.Object, err error) {
+	result = json.Object{
+		"upgradeType": "Replace",
+	}
+	return
+}
+
+func (t *task) renderRelease() (result json.Object, err error) {
+	result = json.Object{
+		"image": "quay.io/openshift-release-dev/ocp-release:4.19.18-x86_64",
+	}
+	return
 }
 
 func (t *task) setDefaults() {
@@ -453,6 +593,8 @@ func (t *task) checkNodeSetHostAssignment(ctx context.Context, nodeSetName strin
 
 	// If the delta is positive, we need to assign new hosts, if it is negative, we need to unassign hosts.
 	switch {
+	case deltaCount == 0:
+		break
 	case deltaCount > 0:
 		err = t.assignHosts(ctx, desiredClass, deltaCount)
 		if err != nil {
@@ -465,9 +607,9 @@ func (t *task) checkNodeSetHostAssignment(ctx context.Context, nodeSetName strin
 		}
 	}
 
-	// If the delta wasn't zero, then check again the hosts assigned to the cluster, as the above code should have
-	// changed it. Note that this time we do want' the complete list of hosts, so that we can get the identifiers
-	// and add them to the details of the node set.
+	// Check again the hosts assigned to the cluster, as the above code should have changed it. Note that we do
+	// want' the complete list of hosts, so that we can get the identifiers and add them to the details of the
+	// node set.
 	assignedResponse, err = t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
 		Filter: &assignedFilter,
 		Limit:  proto.Int32(int32(deltaCount)),
@@ -484,8 +626,7 @@ func (t *task) checkNodeSetHostAssignment(ctx context.Context, nodeSetName strin
 	sort.Strings(assignedIds)
 
 	// Update the status of the cluster to reflect the new number and identifiers of the hosts actually assigned to
-	// the cluster. Note that we don't need to check or create the node set in the status, becauase we always check
-	// and set it in the method that sets the defaults.
+	// the cluster.
 	statusNodeSet := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
 	statusNodeSet.SetSize(int32(assignedCount))
 	statusNodeSet.SetHosts(assignedIds)
@@ -596,18 +737,19 @@ func (t *task) selectHub(ctx context.Context) error {
 		if len(response.Items) == 0 {
 			return errors.New("there are no hubs")
 		}
-		t.hub = response.Items[rand.IntN(len(response.Items))]
+		hub = response.Items[rand.IntN(len(response.Items))].GetId()
+		t.r.logger.DebugContext(
+			ctx,
+			"Selected hub",
+			slog.String("name", t.hub.GetMetadata().GetName()),
+			slog.String("id", t.hub.GetId()),
+		)
 	}
-	t.r.logger.DebugContext(
-		ctx,
-		"Selected hub",
-		slog.String("name", t.hub.GetMetadata().GetName()),
-		slog.String("id", t.hub.GetId()),
-	)
-	entry, err := t.r.hubCache.Get(ctx, t.hub.GetId())
+	entry, err := t.r.hubCache.Get(ctx, hub)
 	if err != nil {
 		return err
 	}
+	t.hub = entry.Hub
 	t.hubClient = entry.Client
 	return nil
 }
@@ -621,6 +763,7 @@ func (t *task) getHub(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	t.hub = entry.Hub
 	t.hubClient = entry.Client
 	return nil
 }

@@ -31,6 +31,14 @@ var HostedCluster = schema.GroupVersionKind{
 
 var HostedClusterList = listGVK(HostedCluster)
 
+var NodePool = schema.GroupVersionKind{
+	Group:   "hypershift.openshift.io",
+	Version: "v1beta1",
+	Kind:    "NodePool",
+}
+
+var NodePoolList = listGVK(NodePool)
+
 var VirtualMachine = schema.GroupVersionKind{
 	Group:   "cloudkit.openshift.io",
 	Version: "v1alpha1",
