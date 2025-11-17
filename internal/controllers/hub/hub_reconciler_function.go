@@ -18,6 +18,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -189,7 +190,7 @@ func (t *task) update(ctx context.Context) error {
 			"pullSecretRef": map[string]any{
 				"name": pullSecret.GetName(),
 			},
-			"sshAuthorizedKey": t.hub.GetSshPublicKey(),
+			"sshAuthorizedKey": strings.TrimSpace(t.hub.GetSshPublicKey()),
 		}
 		return unstructured.SetNestedField(infraEnv.Object, spec, "spec")
 	})
