@@ -24,7 +24,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -32,6 +31,7 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
+	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 )
 
 // FunctionBuilder contains the data and logic needed to build a function that reconciles hosts.
@@ -50,10 +50,12 @@ type function struct {
 }
 
 type task struct {
-	r         *function
-	host      *privatev1.Host
-	hub       *privatev1.Hub
-	hubClient clnt.Client
+	parent        *function
+	host          *privatev1.Host
+	hub           *privatev1.Hub
+	hubClient     clnt.Client
+	bmcSecret     *corev1.Secret
+	bareMetalHost *unstructured.Unstructured
 }
 
 // NewFunction creates a new builder that can then be used to create a new host reconciler function.
@@ -107,11 +109,11 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 	return
 }
 
-func (r *function) run(ctx context.Context, host *privatev1.Host) error {
+func (f *function) run(ctx context.Context, host *privatev1.Host) error {
 	oldHost := proto.Clone(host).(*privatev1.Host)
 	t := task{
-		r:    r,
-		host: host,
+		parent: f,
+		host:   host,
 	}
 	var err error
 	if host.GetMetadata().HasDeletionTimestamp() {
@@ -123,7 +125,7 @@ func (r *function) run(ctx context.Context, host *privatev1.Host) error {
 		return err
 	}
 	if !proto.Equal(host, oldHost) {
-		_, err = r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
+		_, err = f.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
 			Object: host,
 		}.Build())
 	}
@@ -148,64 +150,107 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Shortcuts for the host metadata and spec:
-	hostMeta := t.host.GetMetadata()
-	hostSpec := t.host.GetSpec()
-	hostBmc := hostSpec.GetBmc()
-
 	// Ensure tha the BMC credentials secret exists:
-	bmcSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: t.hub.GetNamespace(),
-			Name:      fmt.Sprintf("%s-bmc", hostMeta.GetName()),
-		},
-	}
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, bmcSecret, func() error {
-		bmcSecret.Type = corev1.SecretTypeBasicAuth
-		if bmcSecret.Data == nil {
-			bmcSecret.Data = make(map[string][]byte)
-		}
-		bmcSecret.Data[corev1.BasicAuthUsernameKey] = []byte(hostBmc.GetUser())
-		bmcSecret.Data[corev1.BasicAuthPasswordKey] = []byte(hostBmc.GetPassword())
-		return nil
-	})
+	t.bmcSecret = &corev1.Secret{}
+	t.bmcSecret.SetNamespace(t.hub.GetNamespace())
+	t.bmcSecret.SetName(fmt.Sprintf("%s-bmc", t.host.GetMetadata().GetName()))
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.bmcSecret, t.mutateBmcSecret)
 	if err != nil {
 		return err
 	}
 
 	// Ensure that the bare metal host exists:
-	bareMetalHost := &unstructured.Unstructured{}
-	bareMetalHost.SetGroupVersionKind(gvks.BareMetalHost)
-	bareMetalHost.SetNamespace(t.hub.GetNamespace())
-	bareMetalHost.SetName(hostMeta.GetName())
-	bareMetalHost.SetLabels(map[string]string{
-		"infraenvs.agent-install.openshift.io": t.hub.GetNamespace(),
-	})
-	bareMetalHost.SetAnnotations(map[string]string{
-		"bmac.agent-install.openshift.io/hostname": hostMeta.GetName(),
-		"inspect.metal3.io":                        "disabled",
-	})
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, bareMetalHost, func() error {
-		spec := map[string]any{
-			"automatedCleaningMode": "disabled",
-			"bmc": map[string]any{
-				"address":                        hostBmc.GetUrl(),
-				"credentialsName":                bmcSecret.GetName(),
-				"disableCertificateVerification": hostBmc.GetInsecure(),
-			},
-			"bootMACAddress": hostSpec.GetBootMac(),
-			"customDeploy": map[string]any{
-				"method": "start_assisted_install",
-			},
-			"online": true,
-		}
-		return unstructured.SetNestedField(bareMetalHost.Object, spec, "spec")
-	})
+	t.bareMetalHost = &unstructured.Unstructured{}
+	t.bareMetalHost.SetGroupVersionKind(gvks.BareMetalHost)
+	t.bareMetalHost.SetNamespace(t.hub.GetNamespace())
+	t.bareMetalHost.SetName(t.host.GetMetadata().GetName())
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.bareMetalHost, t.mutateBareMetalHost)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (t *task) mutateBmcSecret() error {
+	t.mutateLabels(t.bmcSecret)
+	t.bmcSecret.Type = corev1.SecretTypeBasicAuth
+	if t.bmcSecret.Data == nil {
+		t.bmcSecret.Data = map[string][]byte{}
+	}
+	t.bmcSecret.Data[corev1.BasicAuthUsernameKey] = []byte(t.host.GetSpec().GetBmc().GetUser())
+	t.bmcSecret.Data[corev1.BasicAuthPasswordKey] = []byte(t.host.GetSpec().GetBmc().GetPassword())
+	return nil
+}
+
+func (t *task) mutateBareMetalHost() error {
+	// Set labels and annotations
+	t.mutateLabels(t.bareMetalHost)
+	t.mutateAnnotations(t.bareMetalHost)
+
+	// Set the spec:
+	spec := map[string]any{
+		"automatedCleaningMode": "disabled",
+		"bmc": map[string]any{
+			"address":                        t.host.GetSpec().GetBmc().GetUrl(),
+			"credentialsName":                t.bmcSecret.GetName(),
+			"disableCertificateVerification": t.host.GetSpec().GetBmc().GetInsecure(),
+		},
+		"bootMACAddress": t.host.GetSpec().GetBootMac(),
+		"customDeploy": map[string]any{
+			"method": "start_assisted_install",
+		},
+		"online": true,
+	}
+	err := unstructured.SetNestedField(t.bareMetalHost.Object, spec, "spec")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *task) mutateLabels(object clnt.Object) {
+	// Make sure the labels map is initialized:
+	values := object.GetLabels()
+	if values == nil {
+		values = map[string]string{}
+	}
+
+	// Add labels to simplify identification of the host:
+	values[labels.HostId] = t.host.GetId()
+	values[labels.HostName] = t.host.GetMetadata().GetName()
+
+	// Add the label that indicates the infrastructure envirionment that this host belongs to, which should be
+	// the one inside the namespace of the hub, and with the same name:
+	values["infraenvs.agent-install.openshift.io"] = t.hub.GetNamespace()
+
+	// If the host is assiged to a cluster, then add the label with the cluster identifier, otherwise remove it, in
+	// case it was added in the past.
+	cluster := t.host.GetStatus().GetCluster()
+	if cluster != "" {
+		values[labels.ClusterId] = cluster
+	} else {
+		delete(values, labels.ClusterId)
+	}
+
+	// Save the labels:
+	object.SetLabels(values)
+}
+
+func (t *task) mutateAnnotations(object clnt.Object) {
+	// Make sure the annotations map is initialized:
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	// Add the annotation that indicates the hostname of the host:
+	annotations["bmac.agent-install.openshift.io/hostname"] = t.host.GetMetadata().GetName()
+	annotations["inspect.metal3.io"] = "disabled"
+
+	// Save the annotations:
+	object.SetAnnotations(annotations)
 }
 
 func (t *task) setDefaults() {
@@ -228,7 +273,7 @@ func (t *task) delete(ctx context.Context) error {
 func (t *task) selectHub(ctx context.Context) error {
 	hub := t.host.GetStatus().GetHub()
 	if hub == "" {
-		response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+		response, err := t.parent.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
 		if err != nil {
 			return err
 		}
@@ -237,13 +282,13 @@ func (t *task) selectHub(ctx context.Context) error {
 		}
 		t.hub = response.Items[rand.IntN(len(response.Items))]
 	}
-	t.r.logger.DebugContext(
+	t.parent.logger.DebugContext(
 		ctx,
 		"Selected hub",
 		slog.String("name", t.hub.GetMetadata().GetName()),
 		slog.String("id", t.hub.GetId()),
 	)
-	entry, err := t.r.hubCache.Get(ctx, t.hub.GetId())
+	entry, err := t.parent.hubCache.Get(ctx, t.hub.GetId())
 	if err != nil {
 		return err
 	}

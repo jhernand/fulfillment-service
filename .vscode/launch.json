@@ -90,7 +90,11 @@
                                 "--grpc-server-address=fulfillment-api-innabox.apps.sno.internal.demo:443",
                                 "--grpc-server-insecure",
                                 "--grpc-keep-alive=5m",
-                                "--token-file=token.txt"
+                                "--token-file=token.txt",
+                                "--dns-server=head.internal.demo:53",
+                                "--dns-zone=my.demo",
+                                "--dns-key-name=fulfillment-service",
+                                "--dns-key-secret=nY8PWPZIzTU9jwCmF52gaLugtWEcL9MndXREiyRmHxw="
                         ]
                 },
                 {
@@ -106,9 +110,9 @@
                                 "--log-headers=true",
                                 "--log-bodies=true",
                                 "--bcm-url=https://head.internal.demo:8081",
-                                "--bcm-crt=admin.pem",
-                                "--bcm-key=admin.key",
-                                "--ca-file=bundle.pem",
+                                "--bcm-crt=../admin.pem",
+                                "--bcm-key=../admin.key",
+                                "--ca-file=../bundle.pem",
                                 "--sync-interval=10s",
                                 "--grpc-server-address=fulfillment-api-innabox.apps.sno.internal.demo:443",
                                 "--grpc-server-insecure",

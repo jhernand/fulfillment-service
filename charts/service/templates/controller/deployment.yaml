@@ -20,7 +20,7 @@ spec:
   selector:
     matchLabels:
       app: fulfillment-controller
-  replicas: 1
+  replicas: 0
   template:
     metadata:
       labels:
@@ -33,6 +33,11 @@ spec:
         configMap:
           name: {{ .Values.certs.caBundle.configMap }}
       {{- end }}
+      {{- if .Values.dns.secret }}
+      - name: dns-secret
+        secret:
+          secretName: {{ .Values.dns.secret }}
+      {{- end }}
       containers:
       - name: controller
         image: {{ .Values.images.service }}
@@ -40,6 +45,11 @@ spec:
         {{- if .Values.certs.caBundle.configMap }}
         - name: cas
           mountPath: /etc/fulfillment-controller/tls/cas
+        {{- end }}
+        {{- if .Values.dns.secret }}
+        - name: dns-secret
+          mountPath: /etc/fulfillment-controller/dns
+          readOnly: true
         {{- end }}
         command:
         - /usr/local/bin/fulfillment-service
@@ -55,3 +65,13 @@ spec:
         - --grpc-server-network=tcp
         - --grpc-server-address=fulfillment-api:8000
         - --grpc-keep-alive=5m
+        {{- if .Values.dns.server }}
+        - --dns-server={{ .Values.dns.server }}
+        {{- end }}
+        {{- if .Values.dns.zone }}
+        - --dns-zone={{ .Values.dns.zone }}
+        {{- end }}
+        {{- if .Values.dns.secret }}
+        - --dns-key-name-file=/etc/fulfillment-controller/dns/key
+        - --dns-key-secret-file=/etc/fulfillment-controller/dns/secret
+        {{- end }}

@@ -24,7 +24,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -32,6 +31,7 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
+	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 )
 
 // FunctionBuilder contains the data and logic needed to build a function that reconciles hubs.
@@ -48,9 +48,13 @@ type function struct {
 }
 
 type task struct {
-	r         *function
-	hub       *privatev1.Hub
-	hubClient clnt.Client
+	parent           *function
+	hub              *privatev1.Hub
+	hubClient        clnt.Client
+	namespace        *corev1.Namespace
+	pullSecret       *corev1.Secret
+	infraEnv         *unstructured.Unstructured
+	capiProviderRole *rbacv1.Role
 }
 
 // NewFunction creates a new builder that can then be used to create a new hub reconciler function.
@@ -102,11 +106,11 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 	return
 }
 
-func (r *function) run(ctx context.Context, hub *privatev1.Hub) error {
+func (f *function) run(ctx context.Context, hub *privatev1.Hub) error {
 	oldHub := proto.Clone(hub).(*privatev1.Hub)
 	t := task{
-		r:   r,
-		hub: hub,
+		parent: f,
+		hub:    hub,
 	}
 	var err error
 	if hub.GetMetadata().HasDeletionTimestamp() {
@@ -118,7 +122,7 @@ func (r *function) run(ctx context.Context, hub *privatev1.Hub) error {
 		return err
 	}
 	if !proto.Equal(hub, oldHub) {
-		_, err = r.hubsClient.Update(ctx, privatev1.HubsUpdateRequest_builder{
+		_, err = f.hubsClient.Update(ctx, privatev1.HubsUpdateRequest_builder{
 			Object: hub,
 		}.Build())
 	}
@@ -138,84 +142,44 @@ func (t *task) update(ctx context.Context) error {
 	hubMeta.SetFinalizers(finalizers)
 
 	// Get the hub client from the cache:
-	entry, err := t.r.hubCache.Get(ctx, t.hub.GetId())
+	entry, err := t.parent.hubCache.Get(ctx, t.hub.GetId())
 	if err != nil {
 		return err
 	}
 	t.hubClient = entry.Client
 
 	// Ensure that the namespace exists:
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: t.hub.GetNamespace(),
-		},
-	}
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, namespace, func() error {
-		return nil
-	})
+	t.namespace = &corev1.Namespace{}
+	t.namespace.SetName(t.hub.GetNamespace())
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.namespace, t.mutateNamespace)
 	if err != nil {
 		return err
 	}
 
 	// Ensure that the pull secret exists:
-	pullSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: t.hub.GetNamespace(),
-			Name:      "pull-secret",
-		},
-	}
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, pullSecret, func() error {
-		pullSecret.Type = corev1.SecretTypeDockerConfigJson
-		if pullSecret.Data == nil {
-			pullSecret.Data = make(map[string][]byte)
-		}
-		pullSecret.Data[corev1.DockerConfigJsonKey] = []byte(t.hub.GetPullSecret())
-		return nil
-	})
+	t.pullSecret = &corev1.Secret{}
+	t.pullSecret.SetNamespace(t.hub.GetNamespace())
+	t.pullSecret.SetName("pull-secret")
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.pullSecret, t.mutatePullSecret)
 	if err != nil {
 		return err
 	}
 
 	// Ensure that the infrastructure environment exists:
-	infraEnv := &unstructured.Unstructured{}
-	infraEnv.SetGroupVersionKind(gvks.InfraEnv)
-	infraEnv.SetNamespace(t.hub.GetNamespace())
-	infraEnv.SetName(t.hub.GetMetadata().GetName())
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, infraEnv, func() error {
-		infraEnv.SetLabels(map[string]string{
-			"networkType": "dhcp",
-		})
-		spec := map[string]any{
-			"cpuArchitecture": "x86_64",
-			"pullSecretRef": map[string]any{
-				"name": pullSecret.GetName(),
-			},
-			"sshAuthorizedKey": strings.TrimSpace(t.hub.GetSshPublicKey()),
-		}
-		return unstructured.SetNestedField(infraEnv.Object, spec, "spec")
-	})
+	t.infraEnv = &unstructured.Unstructured{}
+	t.infraEnv.SetGroupVersionKind(gvks.InfraEnv)
+	t.infraEnv.SetNamespace(t.hub.GetNamespace())
+	t.infraEnv.SetName(t.hub.GetNamespace())
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.infraEnv, t.mutateInfraEnv)
 	if err != nil {
 		return err
 	}
 
 	// Ensure that the CAPI provider role exists:
-	capiProviderRole := &rbacv1.Role{}
-	capiProviderRole.SetNamespace(t.hub.GetNamespace())
-	capiProviderRole.SetName("capi-provider-role")
-	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, capiProviderRole, func() error {
-		capiProviderRole.Rules = []rbacv1.PolicyRule{{
-			APIGroups: []string{
-				"agent-install.openshift.io",
-			},
-			Resources: []string{
-				"agents",
-			},
-			Verbs: []string{
-				"*",
-			},
-		}}
-		return nil
-	})
+	t.capiProviderRole = &rbacv1.Role{}
+	t.capiProviderRole.SetNamespace(t.hub.GetNamespace())
+	t.capiProviderRole.SetName("capi-provider-role")
+	_, err = controllerutil.CreateOrPatch(ctx, t.hubClient, t.capiProviderRole, t.mutateCapiProviderRole)
 	if err != nil {
 		return err
 	}
@@ -223,14 +187,80 @@ func (t *task) update(ctx context.Context) error {
 	return nil
 }
 
+func (t *task) mutateNamespace() error {
+	t.mutateLabels(t.namespace)
+	return nil
+}
+
+func (t *task) mutatePullSecret() error {
+	t.mutateLabels(t.pullSecret)
+	t.pullSecret.Type = corev1.SecretTypeDockerConfigJson
+	if t.pullSecret.Data == nil {
+		t.pullSecret.Data = make(map[string][]byte)
+	}
+	t.pullSecret.Data[corev1.DockerConfigJsonKey] = []byte(t.hub.GetPullSecret())
+	return nil
+}
+
+func (t *task) mutateInfraEnv() error {
+	// Set the labels:
+	t.mutateLabels(t.infraEnv)
+	labels := t.infraEnv.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels["networkType"] = "dhcp"
+
+	// Set the spec:
+	spec := map[string]any{
+		"cpuArchitecture": "x86_64",
+		"pullSecretRef": map[string]any{
+			"name": t.pullSecret.GetName(),
+		},
+		"sshAuthorizedKey": strings.TrimSpace(t.hub.GetSshPublicKey()),
+	}
+	err := unstructured.SetNestedField(t.infraEnv.Object, spec, "spec")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *task) mutateLabels(object clnt.Object) {
+	values := object.GetLabels()
+	if values == nil {
+		values = map[string]string{}
+	}
+	values[labels.HubId] = t.hub.GetId()
+	values[labels.HubName] = t.hub.GetMetadata().GetName()
+	object.SetLabels(values)
+}
+
+func (t *task) mutateCapiProviderRole() error {
+	t.mutateLabels(t.capiProviderRole)
+	t.capiProviderRole.Rules = []rbacv1.PolicyRule{{
+		APIGroups: []string{
+			"agent-install.openshift.io",
+		},
+		Resources: []string{
+			"agents",
+		},
+		Verbs: []string{
+			"*",
+		},
+	}}
+	return nil
+}
+
 func (t *task) delete(ctx context.Context) error {
 	// Remove the hub from the cache:
-	t.r.logger.DebugContext(
+	t.parent.logger.DebugContext(
 		ctx,
 		"Removing hub from cache",
 		slog.String("hub_id", t.hub.GetId()),
 	)
-	t.r.hubCache.Remove(t.hub.GetId())
+	t.parent.hubCache.Remove(t.hub.GetId())
 
 	return nil
 }

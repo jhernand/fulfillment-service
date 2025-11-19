@@ -67,3 +67,18 @@ images:
 # Database configuration:
 database:
   storageSize: 10Gi
+
+# DNS configuration for dynamic updates:
+dns:
+
+  # This defines the DNS server address for dynamic updates (e.g., "my-dns-server.com:53"). If not set, DNS updates
+  # will be disabled.
+  server:
+
+  # This defines the DNS zone for dynamic updates (e.g., "my.demo."). If not set, DNS updates will be disabled.
+  zone:
+
+  # This defines the name of a Kubernetes secret containing the TSIG key name and secret for DNS authentication. The
+  # secret should contain two keys: 'key' (the TSIG key name) and 'secret' (the TSIG key secret value). If not set,
+  # DNS updates will be performed without TSIG authentication.
+  secret:

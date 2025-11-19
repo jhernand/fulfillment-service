@@ -437,6 +437,14 @@ func (t *synchronizerTask) deviceToHost(ctx context.Context, device *Device) (
 		}
 	}
 
+	// Find the boot network interface in order to extract the boot IP address:
+	for _, iface := range device.Interfaces {
+		if iface.Name == "BOOTIF" {
+			host.GetSpec().SetBootIp(iface.IP)
+			break
+		}
+	}
+
 	// Set the rack:
 	rack := t.racksByUuid[device.RackPosition.Rack]
 	if rack != nil {

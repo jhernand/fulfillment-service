@@ -19,10 +19,13 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"slices"
-	"sort"
 	"strconv"
+	"strings"
+	"time"
 
+	"github.com/miekg/dns"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -36,16 +39,18 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/json"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
+	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 )
-
-// objectPrefix is the prefix that will be used in the `generateName` field of the resources created in the hub.
-const objectPrefix = "order-"
 
 // FunctionBuilder contains the data and logic needed to build a function that reconciles clustes.
 type FunctionBuilder struct {
-	logger     *slog.Logger
-	connection *grpc.ClientConn
-	hubCache   *controllers.HubCache
+	logger       *slog.Logger
+	connection   *grpc.ClientConn
+	hubCache     *controllers.HubCache
+	dnsServer    string
+	dnsZone      string
+	dnsKeyName   string
+	dnsKeySecret string
 }
 
 type function struct {
@@ -55,12 +60,25 @@ type function struct {
 	hubsClient        privatev1.HubsClient
 	hostClassesClient privatev1.HostClassesClient
 	hostsClient       privatev1.HostsClient
+	dnsServer         string
+	dnsZone           string
+	dnsZoneFq         string
+	dnsKeyName        string
+	dnsKeyNameFq      string
+	dnsKeySecret      string
+	dnsClient         *dns.Client
 }
 
 type task struct {
-	r             *function
+	parent        *function
 	cluster       *privatev1.Cluster
+	hosts         map[string]*privatev1.Host
 	hub           *privatev1.Hub
+	alias         string
+	baseDomain    string
+	apiDomain     string
+	apiIntDomain  string
+	ingressDomain string
 	hubClient     clnt.Client
 	pullSecret    *corev1.Secret
 	sshSecret     *corev1.Secret
@@ -91,6 +109,60 @@ func (b *FunctionBuilder) SetHubCache(value *controllers.HubCache) *FunctionBuil
 	return b
 }
 
+// SetDnsServer sets the DNS server address for dynamic updates (e.g., "my-dns-server.com:53"). This is optional.
+func (b *FunctionBuilder) SetDnsServer(value string) *FunctionBuilder {
+	b.dnsServer = value
+	return b
+}
+
+// SetDnsZone sets the DNS zone for dynamic updates (e.g., "my.demo"). This is optional.
+func (b *FunctionBuilder) SetDnsZone(value string) *FunctionBuilder {
+	b.dnsZone = value
+	return b
+}
+
+// SetDnsKeyName sets the name of the TSIG key for authentication. This is optional.
+//
+// For example, to generate a TSIG key for use wit the 'bind' DNS server you can use the follwing command:
+//
+//	tsig-keygen -a hmac-sha256 fulfillment-service
+//
+// It will generate something like this:
+//
+//	key "my-key" {
+//		algorithm hmac-sha256;
+//		secret "...";
+//	};
+//
+// That needs to be included in the 'named.confg' configuration file.
+//
+// You will also need a zone with update permissions for this key, something like this:
+//
+//	zone "my.demo" in {
+//		type master;
+//		file "my.demo.zone";
+//		update-policy {
+//			grant my-key zonesub ANY;
+//		};
+//	};
+//
+// The you will need to reload the DNS server to apply the changes.
+//
+// The key name, 'my-key' in this example, is what should be passed to the SetDnsKeyName function. The secret is what
+// should be passed to the SetDnsKeySecret function.
+func (b *FunctionBuilder) SetDnsKeyName(value string) *FunctionBuilder {
+	b.dnsKeyName = value
+	return b
+}
+
+// SetDnsKeySecret sets the secret value of the TSIG key for authentication. This is optional.
+//
+// See the SetDnsKeyName function for more information.
+func (b *FunctionBuilder) SetDnsKeySecret(value string) *FunctionBuilder {
+	b.dnsKeySecret = value
+	return b
+}
+
 // Build uses the information stored in the buidler to create a new cluster reconciler.
 func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privatev1.Cluster], err error) {
 	// Check parameters:
@@ -107,6 +179,25 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		return
 	}
 
+	// The DNS library that we use requires fully qualified domain names, but HyperShift chokes on the training
+	// dot, so we need to have both flavours.
+	dnsZoneFq := dns.Fqdn(b.dnsZone)
+	dnsKeyNameFq := dns.Fqdn(b.dnsKeyName)
+
+	// Create DNS client if DNS server is provided:
+	var dnsClient *dns.Client
+	if b.dnsServer != "" {
+		dnsClient = &dns.Client{
+			Net:     "tcp",
+			Timeout: 5 * time.Second,
+		}
+		if b.dnsKeyName != "" && b.dnsKeySecret != "" {
+			dnsClient.TsigSecret = map[string]string{
+				dnsKeyNameFq: b.dnsKeySecret,
+			}
+		}
+	}
+
 	// Create and populate the object:
 	object := &function{
 		logger:            b.logger,
@@ -115,15 +206,22 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		hostsClient:       privatev1.NewHostsClient(b.connection),
 		hostClassesClient: privatev1.NewHostClassesClient(b.connection),
 		hubCache:          b.hubCache,
+		dnsServer:         b.dnsServer,
+		dnsZone:           b.dnsZone,
+		dnsZoneFq:         dnsZoneFq,
+		dnsKeyName:        b.dnsKeyName,
+		dnsKeyNameFq:      dnsKeyNameFq,
+		dnsKeySecret:      b.dnsKeySecret,
+		dnsClient:         dnsClient,
 	}
 	result = object.run
 	return
 }
 
-func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
+func (f *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	oldCluster := proto.Clone(cluster).(*privatev1.Cluster)
 	t := task{
-		r:       r,
+		parent:  f,
 		cluster: cluster,
 	}
 	var err error
@@ -136,7 +234,7 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 		return err
 	}
 	if !proto.Equal(cluster, oldCluster) {
-		_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+		_, err = f.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
 			Object: cluster,
 		}.Build())
 	}
@@ -164,8 +262,14 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
+	// Load the hosts that are assigned to the cluster:
+	err := t.loadHosts(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Check if hosts need to be assigned or unassigned:
-	err := t.checkHostAssignment(ctx)
+	err = t.checkHostAssignment(ctx)
 	if err != nil {
 		return err
 	}
@@ -175,7 +279,7 @@ func (t *task) update(ctx context.Context) error {
 	// implementation detail, so keep the message generic enough to not reveal that information.
 	err = t.selectHub(ctx)
 	if err != nil {
-		t.r.logger.ErrorContext(
+		t.parent.logger.ErrorContext(
 			ctx,
 			"Failed to select hub",
 			slog.String("error", err.Error()),
@@ -192,6 +296,32 @@ func (t *task) update(ctx context.Context) error {
 
 	// Save the selected hub in the private data of the cluster:
 	clusterStatus.SetHub(t.hub.GetId())
+
+	// Select an alias for the cluster:
+	err = t.selectAlias(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Calculate and create the DNS records for the API:
+	t.baseDomain = fmt.Sprintf("%s.%s", clusterMeta.GetName(), t.parent.dnsZone)
+	t.apiDomain = fmt.Sprintf("api.%s", t.baseDomain)
+	t.apiIntDomain = fmt.Sprintf("api-int.%s", t.baseDomain)
+	err = t.parent.createDnsARecord(ctx, t.apiDomain, "192.168.101.3")
+	if err != nil {
+		return err
+	}
+	err = t.parent.createDnsARecord(ctx, t.apiIntDomain, "192.168.101.3")
+	if err != nil {
+		return err
+	}
+
+	// Calculate and create the DNS record for the ingress:
+	t.ingressDomain = fmt.Sprintf("*.apps.%s", t.baseDomain)
+	err = t.parent.createDnsARecord(ctx, t.ingressDomain, "192.168.101.3")
+	if err != nil {
+		return err
+	}
 
 	// Ensure that the pull secret exists:
 	t.pullSecret = &corev1.Secret{}
@@ -240,7 +370,33 @@ func (t *task) update(ctx context.Context) error {
 	return nil
 }
 
+func (t *task) loadHosts(ctx context.Context) error {
+	var hostIds []string
+	for _, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
+		hostIds = append(hostIds, nodeSet.GetHosts()...)
+	}
+	for i, hostId := range hostIds {
+		hostIds[i] = strconv.Quote(hostId)
+	}
+	hostIdList := strings.Join(hostIds, ", ")
+	hostFilter := fmt.Sprintf("this.id in [%s]", hostIdList)
+	hostListResponse, err := t.parent.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: &hostFilter,
+		Limit:  proto.Int32(int32(len(hostIds))),
+	}.Build())
+	if err != nil {
+		return err
+	}
+	t.hosts = map[string]*privatev1.Host{}
+	for _, host := range hostListResponse.GetItems() {
+		hostId := host.GetId()
+		t.hosts[hostId] = host
+	}
+	return nil
+}
+
 func (t *task) mutatePullSecret() error {
+	t.mutateLabels(t.pullSecret)
 	t.pullSecret.Type = corev1.SecretTypeDockerConfigJson
 	if t.pullSecret.Data == nil {
 		t.pullSecret.Data = make(map[string][]byte)
@@ -250,6 +406,7 @@ func (t *task) mutatePullSecret() error {
 }
 
 func (t *task) mutateSshSecret() error {
+	t.mutateLabels(t.sshSecret)
 	t.sshSecret.Type = corev1.SecretTypeOpaque
 	if t.sshSecret.StringData == nil {
 		t.sshSecret.StringData = make(map[string]string)
@@ -259,11 +416,17 @@ func (t *task) mutateSshSecret() error {
 }
 
 func (t *task) mutateHostedCluster() error {
+	t.mutateLabels(t.hostedCluster)
 	spec, err := t.renderHostedClusterSpec()
 	if err != nil {
 		return err
 	}
-	return unstructured.SetNestedMap(t.hostedCluster.Object, spec, "spec")
+	err = unstructured.SetNestedMap(t.hostedCluster.Object, spec, "spec")
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (t *task) renderHostedClusterSpec() (result json.Object, err error) {
@@ -318,7 +481,7 @@ func (t *task) renderHostedClusterSpec() (result json.Object, err error) {
 
 func (t *task) renderHostedClusterDns() (result json.Object, err error) {
 	result = json.Object{
-		"baseDomain": "internal.demo",
+		"baseDomain": t.parent.dnsZone,
 	}
 	return
 }
@@ -370,11 +533,11 @@ func (t *task) renderHostedClusterServices() (result json.List, err error) {
 		json.Object{
 			"service": "APIServer",
 			"servicePublishingStrategy": json.Object{
+				"type": "NodePort",
 				"nodePort": json.Object{
-					"address": "lb.internal.demo",
+					"address": t.apiDomain,
 					"port":    int64(30000),
 				},
-				"type": "NodePort",
 			},
 		},
 		json.Object{
@@ -406,6 +569,7 @@ func (t *task) renderHostedClusterServices() (result json.List, err error) {
 }
 
 func (t *task) mutateNodePool(nodeSetName string) error {
+	t.mutateLabels(t.nodePools[nodeSetName])
 	nodeSet := t.cluster.GetSpec().GetNodeSets()[nodeSetName]
 	if nodeSet == nil {
 		return fmt.Errorf("node set '%s' not found", nodeSetName)
@@ -415,7 +579,12 @@ func (t *task) mutateNodePool(nodeSetName string) error {
 		return err
 	}
 	nodePool := t.nodePools[nodeSetName]
-	return unstructured.SetNestedMap(nodePool.Object, spec, "spec")
+	err = unstructured.SetNestedMap(nodePool.Object, spec, "spec")
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (t *task) renderNodePoolSpec(nodeSet *privatev1.ClusterNodeSet) (result json.Object, err error) {
@@ -464,6 +633,16 @@ func (t *task) renderRelease() (result json.Object, err error) {
 		"image": "quay.io/openshift-release-dev/ocp-release:4.19.18-x86_64",
 	}
 	return
+}
+
+func (t *task) mutateLabels(object clnt.Object) {
+	values := object.GetLabels()
+	if values == nil {
+		values = map[string]string{}
+	}
+	values[labels.ClusterId] = t.cluster.GetId()
+	values[labels.ClusterName] = t.cluster.GetMetadata().GetName()
+	object.SetLabels(values)
 }
 
 func (t *task) setDefaults() {
@@ -553,108 +732,73 @@ func (t *task) checkHostAssignment(ctx context.Context) error {
 }
 
 func (t *task) checkNodeSetHostAssignment(ctx context.Context, nodeSetName string, nodeSet *privatev1.ClusterNodeSet) error {
-	// The user may have specified the host class by identifier or by name, so we need to look it up to make sure
-	// that we have the identifier, as that is what is used internally to avoid ambiguity.
-	desiredClass, err := t.lookupHostClass(ctx, nodeSet.GetHostClass())
-	if err != nil {
-		return err
-	}
-
 	// Get the desired number of hosts for this node set:
-	desiredCount := int(nodeSet.GetSize())
+	desiredSize := int(nodeSet.GetSize())
 
-	// Find the number of hots already assigned to this cluster. Note tha twe set the limit to zero don't care
-	// about the items, we only want the count.
-	assignedFilter := fmt.Sprintf(
-		"!has(this.metadata.deletion_timestamp) && "+
-			"this.spec.class == '%s' && "+
-			"has(this.status.cluster) && this.status.cluster == '%s'",
-		desiredClass, t.cluster.GetId(),
-	)
-	assignedResponse, err := t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
-		Filter: &assignedFilter,
-		Limit:  proto.Int32(0),
-	}.Build())
-	if err != nil {
-		return err
+	// The complete list of hosts assigned to this cluster has been already loaded, so we only need to iterate
+	// over it and count the ones that are assigned to this node set.
+	actualSize := 0
+	for _, hostId := range nodeSet.GetHosts() {
+		host := t.hosts[hostId]
+		if host != nil {
+			actualSize++
+		}
 	}
-	assignedCount := int(assignedResponse.GetTotal())
 
 	// Calculate the delta, which can be zero, positive or negative:
-	deltaCount := desiredCount - assignedCount
-	t.r.logger.DebugContext(
+	deltaSize := desiredSize - actualSize
+	t.parent.logger.DebugContext(
 		ctx,
 		"Host assignment delta",
 		slog.String("node_set", nodeSetName),
-		slog.Int("desired", desiredCount),
-		slog.Int("assigned", assignedCount),
-		slog.Int("delta", deltaCount),
+		slog.Int("desired", desiredSize),
+		slog.Int("actual", actualSize),
+		slog.Int("delta", deltaSize),
 	)
 
 	// If the delta is positive, we need to assign new hosts, if it is negative, we need to unassign hosts.
 	switch {
-	case deltaCount == 0:
-		break
-	case deltaCount > 0:
-		err = t.assignHosts(ctx, desiredClass, deltaCount)
+	case deltaSize > 0:
+		err := t.assignHosts(ctx, nodeSetName, deltaSize)
 		if err != nil {
 			return err
 		}
-	case deltaCount < 0:
-		err = t.unassignHosts(ctx, desiredClass, -deltaCount)
+	case deltaSize < 0:
+		err := t.unassignHosts(ctx, nodeSetName, -deltaSize)
 		if err != nil {
 			return err
 		}
 	}
-
-	// Check again the hosts assigned to the cluster, as the above code should have changed it. Note that we do
-	// want' the complete list of hosts, so that we can get the identifiers and add them to the details of the
-	// node set.
-	assignedResponse, err = t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
-		Filter: &assignedFilter,
-		Limit:  proto.Int32(int32(deltaCount)),
-	}.Build())
-	if err != nil {
-		return err
-	}
-	assignedHosts := assignedResponse.GetItems()
-	assignedCount = len(assignedHosts)
-	assignedIds := make([]string, assignedCount)
-	for i, assignedHost := range assignedHosts {
-		assignedIds[i] = assignedHost.GetId()
-	}
-	sort.Strings(assignedIds)
-
-	// Update the status of the cluster to reflect the new number and identifiers of the hosts actually assigned to
-	// the cluster.
-	statusNodeSet := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
-	statusNodeSet.SetSize(int32(assignedCount))
-	statusNodeSet.SetHosts(assignedIds)
 
 	return nil
 }
 
-func (t *task) assignHosts(ctx context.Context, hostClass string, hostCount int) error {
-	// Find available hosts with matching class:
-	availableFilter := fmt.Sprintf(
+func (t *task) assignHosts(ctx context.Context, nodeSetName string, hostCount int) error {
+	// Get the nodeSetSpec and status of the node set:
+	nodeSetSpec := t.cluster.GetSpec().GetNodeSets()[nodeSetName]
+	nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
+
+	// Find available hosts with matching hostClassId:
+	hostClassId := nodeSetSpec.GetHostClass()
+	hostFilter := fmt.Sprintf(
 		"!has(this.metadata.deletion_timestamp) && "+
 			"this.spec.class == '%s' && "+
 			"!has(this.status.cluster)",
-		hostClass,
+		hostClassId,
 	)
-	availableResponse, err := t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
-		Filter: &availableFilter,
+	hostListResponse, err := t.parent.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: &hostFilter,
 		Limit:  proto.Int32(int32(hostCount)),
 	}.Build())
 	if err != nil {
 		return err
 	}
-	availableHosts := availableResponse.GetItems()
+	hosts := hostListResponse.GetItems()
 
-	// Assign the hosts:
-	for _, host := range availableHosts {
+	// Add the hosts to the node set:
+	for _, host := range hosts {
 		host.GetStatus().SetCluster(t.cluster.GetId())
-		_, err = t.r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
+		_, err = t.parent.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
 			Object: host,
 			UpdateMask: &fieldmaskpb.FieldMask{
 				Paths: []string{
@@ -665,33 +809,47 @@ func (t *task) assignHosts(ctx context.Context, hostClass string, hostCount int)
 		if err != nil {
 			return err
 		}
+		hostId := host.GetId()
+		hostIds := nodeSetStatus.GetHosts()
+		if !slices.Contains(hostIds, hostId) {
+			hostIds = append(hostIds, hostId)
+			nodeSetStatus.SetHosts(hostIds)
+		}
+	}
+
+	// Add the new hosts to the list of loaded hosts:
+	for _, host := range hosts {
+		hostId := host.GetId()
+		t.hosts[hostId] = host
 	}
 
 	return nil
 }
 
-func (t *task) unassignHosts(ctx context.Context, hostClass string, hostCount int) error {
-	// Find the hosts that are assigned to this cluster and have the matching class:
-	assignedFilter := fmt.Sprintf(
-		"!has(this.metadata.deletion_timestamp) && "+
-			"this.spec.class == '%s' && "+
-			"has(this.status.cluster) && this.status.cluster == '%s'",
-		hostClass, t.cluster.GetId(),
-	)
-	assignedResponse, err := t.r.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
-		Filter: &assignedFilter,
-		Limit:  proto.Int32(int32(hostCount)),
-	}.Build())
-	if err != nil {
-		return err
-	}
-	assignedHosts := assignedResponse.GetItems()
+func (t *task) unassignHosts(ctx context.Context, nodeSetName string, hostCount int) error {
+	// Get the node set spec and status:
+	nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
 
-	// Unassign the hosts:
-	for _, assignedHost := range assignedHosts {
-		assignedHost.GetStatus().SetCluster("")
-		_, err = t.r.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
-			Object: assignedHost,
+	// Randomly select the hosts to unassign:
+	allHostIds := nodeSetStatus.GetHosts()
+	selectedHostIds := make([]string, 0, hostCount)
+	for len(selectedHostIds) < hostCount {
+		randomIndex := rand.IntN(len(allHostIds))
+		randomHostId := allHostIds[randomIndex]
+		if !slices.Contains(selectedHostIds, randomHostId) {
+			selectedHostIds = append(selectedHostIds, randomHostId)
+		}
+	}
+
+	// Remove the reference to the cluster from the selected hosts:
+	for _, hostId := range selectedHostIds {
+		_, err := t.parent.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
+			Object: privatev1.Host_builder{
+				Id: hostId,
+				Status: privatev1.HostStatus_builder{
+					Cluster: "",
+				}.Build(),
+			}.Build(),
 			UpdateMask: &fieldmaskpb.FieldMask{
 				Paths: []string{
 					"status.cluster",
@@ -703,12 +861,20 @@ func (t *task) unassignHosts(ctx context.Context, hostClass string, hostCount in
 		}
 	}
 
+	// Update the status of the node set:
+	nodeSetStatus.SetHosts(allHostIds)
+
+	// Remove the unassigned hosts from the list of loaded hosts:
+	for _, hostId := range selectedHostIds {
+		delete(t.hosts, hostId)
+	}
+
 	return nil
 }
 
 func (t *task) lookupHostClass(ctx context.Context, key string) (result string, err error) {
 	filter := fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(key))
-	response, err := t.r.hostClassesClient.List(ctx, privatev1.HostClassesListRequest_builder{
+	response, err := t.parent.hostClassesClient.List(ctx, privatev1.HostClassesListRequest_builder{
 		Filter: &filter,
 		Limit:  proto.Int32(1),
 	}.Build())
@@ -730,7 +896,7 @@ func (t *task) lookupHostClass(ctx context.Context, key string) (result string, 
 func (t *task) selectHub(ctx context.Context) error {
 	hub := t.cluster.GetStatus().GetHub()
 	if hub == "" {
-		response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
+		response, err := t.parent.hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
 		if err != nil {
 			return err
 		}
@@ -738,14 +904,14 @@ func (t *task) selectHub(ctx context.Context) error {
 			return errors.New("there are no hubs")
 		}
 		hub = response.Items[rand.IntN(len(response.Items))].GetId()
-		t.r.logger.DebugContext(
+		t.parent.logger.DebugContext(
 			ctx,
 			"Selected hub",
 			slog.String("name", t.hub.GetMetadata().GetName()),
 			slog.String("id", t.hub.GetId()),
 		)
 	}
-	entry, err := t.r.hubCache.Get(ctx, hub)
+	entry, err := t.parent.hubCache.Get(ctx, hub)
 	if err != nil {
 		return err
 	}
@@ -754,12 +920,32 @@ func (t *task) selectHub(ctx context.Context) error {
 	return nil
 }
 
+func (t *task) selectAlias(ctx context.Context) error {
+	// If the alias is already set, do nothing:
+	t.alias = t.cluster.GetStatus().GetAlias()
+	if t.alias != "" {
+		return nil
+	}
+
+	// Try to use the name of the cluster as the alias:
+	t.alias = t.cluster.GetMetadata().GetName()
+	if t.alias != "" {
+		t.cluster.GetStatus().SetAlias(t.alias)
+		return nil
+	}
+
+	// Try to use the identifier of the cluster as the alias:
+	t.alias = t.cluster.GetId()
+	t.cluster.GetStatus().SetAlias(t.alias)
+	return nil
+}
+
 func (t *task) getHub(ctx context.Context) error {
 	hub := t.cluster.GetStatus().GetHub()
 	if hub == "" {
 		return errors.New("hub is not set")
 	}
-	entry, err := t.r.hubCache.Get(ctx, hub)
+	entry, err := t.parent.hubCache.Get(ctx, hub)
 	if err != nil {
 		return err
 	}
@@ -794,6 +980,75 @@ func (t *task) updateCondition(conditionType privatev1.ClusterConditionType, sta
 		}.Build())
 	}
 	t.cluster.GetStatus().SetConditions(conditions)
+}
+
+// createDnsARecord creates a new DNS A record using RFC 2136 dynamic update.
+func (f *function) createDnsARecord(ctx context.Context, domain string, address string) error {
+	// Ensure the domain name is fully qualified:
+	domain = dns.Fqdn(domain)
+
+	// Log the operation:
+	f.logger.DebugContext(
+		ctx,
+		"Creating DNS record",
+		slog.String("domain", domain),
+		slog.String("zone", f.dnsZone),
+		slog.String("ip", address),
+		slog.String("server", f.dnsServer),
+	)
+
+	// Create the DNS update message:
+	msg := &dns.Msg{}
+	msg.SetUpdate(f.dnsZoneFq)
+
+	// Create the A record:
+	record := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   domain,
+			Ttl:    300,
+			Class:  dns.ClassINET,
+			Rrtype: dns.TypeA,
+		},
+		A: net.ParseIP(address),
+	}
+	msg.Insert([]dns.RR{record})
+
+	// Sign the message with TSIG if configured:
+	if f.dnsKeyName != "" && f.dnsKeySecret != "" {
+		msg.SetTsig(f.dnsKeyNameFq, dns.HmacSHA256, 300, time.Now().Unix())
+	}
+
+	// Send the update to the DNS server:
+	response, _, err := f.dnsClient.Exchange(msg, f.dnsServer)
+	if err != nil {
+		f.logger.ErrorContext(
+			ctx,
+			"Failed to send DNS update",
+			slog.Any("error", err),
+			slog.String("server", f.dnsServer),
+		)
+		return fmt.Errorf("failed to send DNS update to %s: %w", f.dnsServer, err)
+	}
+
+	// Check the response:
+	if response.Rcode != dns.RcodeSuccess {
+		f.logger.ErrorContext(
+			ctx,
+			"DNS update failed",
+			slog.String("rcode", dns.RcodeToString[response.Rcode]),
+			slog.Int("rcode_value", response.Rcode),
+		)
+		return fmt.Errorf("DNS update failed with rcode: %s", dns.RcodeToString[response.Rcode])
+	}
+
+	f.logger.InfoContext(
+		ctx,
+		"DNS record created successfully",
+		slog.String("domain", domain),
+		slog.String("ip", address),
+	)
+
+	return nil
 }
 
 // clusterFinalizer is the finalizer that will be used to ensure that the cluster isn't completely deleted before we have

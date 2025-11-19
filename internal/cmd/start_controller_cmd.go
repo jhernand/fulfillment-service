@@ -62,6 +62,54 @@ func NewStartControllerCommand() *cobra.Command {
 		"",
 		"File containing the token to use for authentication.",
 	)
+	flags.StringVar(
+		&runner.args.dnsServer,
+		"dns-server",
+		"",
+		"DNS server address for dynamic updates (e.g., \"my-dns-server.com:53\").",
+	)
+	flags.StringVar(
+		&runner.args.dnsServerFile,
+		"dns-server-file",
+		"",
+		"File containing the DNS server address.",
+	)
+	flags.StringVar(
+		&runner.args.dnsZone,
+		"dns-zone",
+		"",
+		"DNS zone for dynamic updates (e.g., \"my.demo\").",
+	)
+	flags.StringVar(
+		&runner.args.dnsZoneFile,
+		"dns-zone-file",
+		"",
+		"File containing the DNS zone.",
+	)
+	flags.StringVar(
+		&runner.args.dnsKeyName,
+		"dns-key-name",
+		"",
+		"Name of the TSIG key for DNS authentication.",
+	)
+	flags.StringVar(
+		&runner.args.dnsKeyNameFile,
+		"dns-key-name-file",
+		"",
+		"File containing the name of the TSIG key.",
+	)
+	flags.StringVar(
+		&runner.args.dnsKeySecret,
+		"dns-key-secret",
+		"",
+		"Secret value of the TSIG key for DNS authentication.",
+	)
+	flags.StringVar(
+		&runner.args.dnsKeySecretFile,
+		"dns-key-secret-file",
+		"",
+		"File containing the secret value of the TSIG key.",
+	)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	return command
 }
@@ -71,8 +119,16 @@ type startControllerRunner struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	args   struct {
-		caFiles   []string
-		tokenFile string
+		caFiles          []string
+		tokenFile        string
+		dnsServer        string
+		dnsServerFile    string
+		dnsZone          string
+		dnsZoneFile      string
+		dnsKeyName       string
+		dnsKeyNameFile   string
+		dnsKeySecret     string
+		dnsKeySecretFile string
 	}
 	client *grpc.ClientConn
 }
@@ -141,12 +197,34 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create hub cache: %w", err)
 	}
 
+	// Load DNS configuration:
+	dnsServer, err := r.loadValue("DNS server", r.args.dnsServer, r.args.dnsServerFile)
+	if err != nil {
+		return err
+	}
+	dnsZone, err := r.loadValue("DNS zone", r.args.dnsZone, r.args.dnsZoneFile)
+	if err != nil {
+		return err
+	}
+	dnsKeyName, err := r.loadValue("DNS key name", r.args.dnsKeyName, r.args.dnsKeyNameFile)
+	if err != nil {
+		return err
+	}
+	dnsKeySecret, err := r.loadValue("DNS key secret", r.args.dnsKeySecret, r.args.dnsKeySecretFile)
+	if err != nil {
+		return err
+	}
+
 	// Create the cluster reconciler:
 	r.logger.InfoContext(ctx, "Creating cluster reconciler")
 	clusterReconcilerFunction, err := cluster.NewFunction().
 		SetLogger(r.logger).
 		SetConnection(r.client).
 		SetHubCache(hubCache).
+		SetDnsServer(dnsServer).
+		SetDnsZone(dnsZone).
+		SetDnsKeyName(dnsKeyName).
+		SetDnsKeySecret(dnsKeySecret).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create cluster reconciler function: %w", err)
@@ -358,4 +436,26 @@ func (r *startControllerRunner) waitForServer(ctx context.Context) error {
 		case <-time.After(interval):
 		}
 	}
+}
+
+// loadValue loads a configuration value from either a direct value or a file. If both are provided, the direct value
+// takes precedence. If neither is provided, an empty string is returned.
+func (r *startControllerRunner) loadValue(name string, directValue string, filePath string) (string, error) {
+	// If a direct value is provided, use it:
+	if directValue != "" {
+		return directValue, nil
+	}
+
+	// If a file path is provided, read from the file:
+	if filePath != "" {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read %s from file '%s': %w", name, filePath, err)
+		}
+		// Trim whitespace and newlines:
+		return string(data), nil
+	}
+
+	// If neither is provided, return empty string:
+	return "", nil
 }
