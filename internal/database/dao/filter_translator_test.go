@@ -237,5 +237,10 @@ var _ = Describe("Filter translator", func() {
 			`'my_tenant' in this.metadata.tenants`,
 			`tenants @> array['my_tenant']`,
 		),
+		Entry(
+			"Translates 'in' with empty list into false",
+			"this.id in []",
+			"false",
+		),
 	)
 })
