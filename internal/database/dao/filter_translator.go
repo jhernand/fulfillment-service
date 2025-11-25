@@ -506,11 +506,17 @@ func (t *FilterTranslator[O]) translateIn(args []ast.Expr) (result filterTransla
 }
 
 func (t *FilterTranslator[O]) translateInList(key ast.Expr, list ast.ListExpr) (result filterTranslatorResult, err error) {
+	values := list.Elements()
+	if len(values) == 0 {
+		result.sql = "false"
+		result.kind = filterTranslatorBooleanKind
+		result.precedence = filterTranslatorMaxPrecedence
+		return
+	}
 	keyTr, err := t.translate(key)
 	if err != nil {
 		return
 	}
-	values := list.Elements()
 	valueTrs := make([]filterTranslatorResult, len(values))
 	for i, value := range values {
 		if value.Kind() != ast.LiteralKind {
