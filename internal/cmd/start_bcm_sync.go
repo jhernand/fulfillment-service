@@ -168,6 +168,7 @@ func (r *startBcmSyncRunner) run(cmd *cobra.Command, argv []string) error {
 	r.logger.InfoContext(ctx, "Creating synchronizer")
 	synchronizer, err := bcm.NewSynchronizer().
 		SetLogger(r.logger).
+		SetBcmUrl(r.args.bcmUrl).
 		SetBcmClient(bcmClient).
 		SetGrpcClient(grpcClient).
 		SetInterval(r.args.syncInterval).
