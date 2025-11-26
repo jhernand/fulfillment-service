@@ -36,7 +36,6 @@ import (
 	"github.com/innabox/fulfillment-service/internal/database/dao"
 	"github.com/innabox/fulfillment-service/internal/jq"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
-	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 )
 
 type ClustersServerBuilder struct {
@@ -572,27 +571,11 @@ func (s *ClustersServer) getHostedClusterSecret(ctx context.Context, clusterId s
 		return
 	}
 
-	// Get the cluster order from the hub:
-	order, err := s.getKubeClusterOrder(ctx, hubClient, hub.Namespace, cluster.GetId())
-	if err != nil {
-		return
-	}
-
-	// Extract the location of the hosted cluster:
-	hcKey := clnt.ObjectKey{}
-	err = s.jqTool.Evaluate(
-		`.status.clusterReference | {
-			Namespace: .namespace,
-			Name: .hostedClusterName
-		}`,
-		order.Object, &hcKey,
-	)
-	if err != nil {
-		return
-	}
-
 	// Get the hosted cluster from the hub:
-	hc, err := s.getKubeHostedCluster(ctx, hubClient, hcKey)
+	hc, err := s.getKubeHostedCluster(ctx, hubClient, clnt.ObjectKey{
+		Namespace: hub.GetNamespace(),
+		Name:      cluster.GetStatus().GetAlias(),
+	})
 	if err != nil || hc == nil {
 		return
 	}
@@ -632,32 +615,6 @@ func (s *ClustersServer) createKubeClient(ctx context.Context, hub *privatev1.Hu
 		return
 	}
 	result, err = clnt.New(config, clnt.Options{})
-	return
-}
-
-func (s *ClustersServer) getKubeClusterOrder(ctx context.Context, client clnt.Client,
-	namespace string, id string) (result *unstructured.Unstructured, err error) {
-	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(gvks.ClusterOrderList)
-	err = client.List(
-		ctx, list,
-		clnt.InNamespace(namespace),
-		clnt.MatchingLabels{
-			labels.ClusterOrderUuid: id,
-		},
-	)
-	if err != nil {
-		return
-	}
-	items := list.Items
-	if len(items) != 1 {
-		err = fmt.Errorf(
-			"expected exactly one cluster order with identifier '%s' but found %d",
-			id, len(items),
-		)
-		return
-	}
-	result = &items[0]
 	return
 }
 
