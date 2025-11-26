@@ -396,9 +396,12 @@ The fulfillment service implements a hard-coded tenancy logic that determines:
 
 ### Tenancy Logic Implementation
 
-The tenancy logic is implemented differently based on the authentication method:
+The tenancy logic can be configured using the `--tenancy-logic` command-line flag when starting the fulfillment
+service. The following implementations are available:
 
-#### For JWT-Authenticated Users (Keycloak)
+#### Default (JWT-Authenticated Users)
+
+Use `--tenancy-logic=default` for JWT-authenticated users (Keycloak):
 
 - **Assigned Tenants**: Resources are assigned to the user's groups (from the `groups` claim in the JWT token)
 - **Visible Tenants**: Users can see resources from:
@@ -412,7 +415,9 @@ Example:
 - When `alice` lists clusters:
   - She can see clusters from: `["team-a", "team-b", "shared"]`
 
-#### For Service Account Users
+#### Service Account
+
+Use `--tenancy-logic=serviceaccount` for service account authentication:
 
 - **Assigned Tenants**: Resources are assigned to a tenant matching the service account's namespace
 - **Visible Tenants**: Service accounts can see resources from:
@@ -425,6 +430,34 @@ Example:
   - Assigned to tenant: `["innabox"]`
 - When listing resources:
   - Can see resources from: `["innabox", "shared"]`
+
+#### Guest
+
+Use `--tenancy-logic=guest` for guest user access:
+
+- **Assigned Tenants**: All resources are assigned to the `guest` tenant, regardless of the user's identity
+- **Visible Tenants**: Users can see resources from:
+  - The `guest` tenant
+  - The `shared` tenant
+
+This is intended only for development and testing environments, in combination with the `guest`
+authentication function.
+
+Example:
+- Any user (authenticated or guest)
+- When creating a resource:
+  - Assigned to tenant: `["guest"]`
+- When listing resources:
+  - Can see resources from: `["guest", "shared"]`
+
+#### Empty
+
+Use `--tenancy-logic=empty` to disable tenant assignment and filtering:
+
+- **Assigned Tenants**: No tenants are assigned to resources
+- **Visible Tenants**: All resources are visible (no tenant filtering applied)
+
+This is primarily used for testing or development scenarios where tenancy should be disabled.
 
 ### Configuring Tenancy in Keycloak
 
@@ -444,10 +477,10 @@ To configure multi-tenant access in Keycloak:
 
 ### Future Enhancements
 
-The current tenancy logic is hard-coded. Future enhancements may include:
-- Configurable tenancy logic (allowing different mapping strategies)
+The tenancy logic is now configurable via the `--tenancy-logic` flag. Future enhancements may include:
 - Support for an additional "organization" layer (requiring development)
 - Custom tenant naming conventions
+- Additional tenancy logic implementations for specific use cases
 
 ## Authorization Configuration
 

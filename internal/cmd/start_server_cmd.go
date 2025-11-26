@@ -292,9 +292,16 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 		if err != nil {
 			return fmt.Errorf("failed to create service account tenancy logic: %w", err)
 		}
+	case "guest":
+		publicTenancyLogic, err = auth.NewGuestTenancyLogic().
+			SetLogger(c.logger).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create guest tenancy logic: %w", err)
+		}
 	default:
 		return fmt.Errorf(
-			"unknown tenancy logic '%s', valid values are 'default' and 'serviceaccount'",
+			"unknown tenancy logic '%s', valid values are 'default', 'serviceaccount', and 'guest'",
 			c.args.tenancyLogic,
 		)
 	}
