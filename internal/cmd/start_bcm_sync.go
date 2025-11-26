@@ -146,6 +146,7 @@ func (r *startBcmSyncRunner) run(cmd *cobra.Command, argv []string) error {
 		SetCertFile(r.args.bcmCertFile).
 		SetKeyFile(r.args.bcmKeyFile).
 		SetCaPool(caPool).
+		SetInsecure(true).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create BCM client: %w", err)
