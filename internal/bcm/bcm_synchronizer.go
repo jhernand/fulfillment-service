@@ -33,6 +33,7 @@ import (
 // SynchronizerBuilder is used to build synchronizers using the builder pattern.
 type SynchronizerBuilder struct {
 	logger    *slog.Logger
+	bcmUrl    string
 	bcmClient Client
 	grpcConn  *grpc.ClientConn
 	interval  time.Duration
@@ -41,6 +42,7 @@ type SynchronizerBuilder struct {
 // Synchronizer periodically synchronizes inventory from BCM to the fulfillment service.
 type Synchronizer struct {
 	logger            *slog.Logger
+	bcmUrl            string
 	bcmClient         Client
 	hostsClient       privatev1.HostsClient
 	hostClassesClient privatev1.HostClassesClient
@@ -49,6 +51,7 @@ type Synchronizer struct {
 
 // synchronizerTask contains the data and logic needed for an individual synchronization cycle.
 type synchronizerTask struct {
+	parent            *Synchronizer
 	logger            *slog.Logger
 	bcmClient         Client
 	hostsClient       privatev1.HostsClient
@@ -67,6 +70,12 @@ func NewSynchronizer() *SynchronizerBuilder {
 // SetLogger sets the logger for the synchronizer.
 func (b *SynchronizerBuilder) SetLogger(value *slog.Logger) *SynchronizerBuilder {
 	b.logger = value
+	return b
+}
+
+// SetBcmUrl sets the BCM URL.
+func (b *SynchronizerBuilder) SetBcmUrl(value string) *SynchronizerBuilder {
+	b.bcmUrl = value
 	return b
 }
 
@@ -113,6 +122,7 @@ func (b *SynchronizerBuilder) Build() (result *Synchronizer, err error) {
 	// Create and populate the object:
 	result = &Synchronizer{
 		logger:            b.logger,
+		bcmUrl:            b.bcmUrl,
 		bcmClient:         b.bcmClient,
 		hostsClient:       privatev1.NewHostsClient(b.grpcConn),
 		hostClassesClient: privatev1.NewHostClassesClient(b.grpcConn),
@@ -142,6 +152,7 @@ func (s *Synchronizer) Run(ctx context.Context) error {
 
 func (s *Synchronizer) sync(ctx context.Context) error {
 	task := &synchronizerTask{
+		parent:            s,
 		logger:            s.logger,
 		bcmClient:         s.bcmClient,
 		hostsClient:       s.hostsClient,
@@ -427,6 +438,9 @@ func (t *synchronizerTask) deviceToHost(ctx context.Context, device *Device) (
 	if rack != nil {
 		host.GetSpec().SetRack(rack.Name)
 	}
+
+	// Set the BCM link:
+	host.GetSpec().SetBcmLink(fmt.Sprintf("%s/base-view/device/%s", t.parent.bcmUrl, device.Uuid))
 
 	return host, nil
 }

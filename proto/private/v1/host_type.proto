@@ -46,6 +46,10 @@ message HostSpec {
 
   // IP address of the network interface used for initial network boot.
   string boot_ip = 6;
+
+  string title = 7;
+  string description = 8;
+  string bcm_link = 9;
 }
 
 // BMC contains the details of the Baseboard Management Controller for a host.
