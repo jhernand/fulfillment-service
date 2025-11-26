@@ -669,6 +669,113 @@ func (t *task) delete(ctx context.Context) (err error) {
 		}
 	}()
 
+	// Select the hub where the cluster was created so we can delete the resources:
+	hubId := t.cluster.GetStatus().GetHub()
+	if hubId != "" {
+		err := t.selectHub(ctx)
+		if err != nil {
+			t.parent.logger.ErrorContext(
+				ctx,
+				"Failed to select hub for deletion",
+				slog.Any("error", err),
+			)
+			return err
+		}
+
+		// Delete the HostedCluster if it exists:
+		clusterMeta := t.cluster.GetMetadata()
+		hostedCluster := &unstructured.Unstructured{}
+		hostedCluster.SetGroupVersionKind(gvks.HostedCluster)
+		hostedCluster.SetNamespace(t.hub.GetNamespace())
+		hostedCluster.SetName(clusterMeta.GetName())
+		err = t.hubClient.Delete(ctx, hostedCluster)
+		if clnt.IgnoreNotFound(err) != nil {
+			t.parent.logger.ErrorContext(
+				ctx,
+				"Failed to delete HostedCluster",
+				slog.Any("error", err),
+				slog.String("namespace", t.hub.GetNamespace()),
+				slog.String("name", clusterMeta.GetName()),
+			)
+			return err
+		}
+		t.parent.logger.InfoContext(
+			ctx,
+			"Deleted HostedCluster",
+			slog.String("namespace", t.hub.GetNamespace()),
+			slog.String("name", clusterMeta.GetName()),
+		)
+
+		// Delete the NodePools:
+		for nodeSetName := range t.cluster.GetSpec().GetNodeSets() {
+			nodePool := &unstructured.Unstructured{}
+			nodePool.SetGroupVersionKind(gvks.NodePool)
+			nodePool.SetNamespace(t.hub.GetNamespace())
+			nodePool.SetName(fmt.Sprintf("%s-%s", clusterMeta.GetName(), nodeSetName))
+			err = t.hubClient.Delete(ctx, nodePool)
+			if clnt.IgnoreNotFound(err) != nil {
+				t.parent.logger.ErrorContext(
+					ctx,
+					"Failed to delete NodePool",
+					slog.Any("error", err),
+					slog.String("namespace", t.hub.GetNamespace()),
+					slog.String("name", nodePool.GetName()),
+				)
+				return err
+			}
+			t.parent.logger.InfoContext(
+				ctx,
+				"Deleted NodePool",
+				slog.String("namespace", t.hub.GetNamespace()),
+				slog.String("name", nodePool.GetName()),
+			)
+		}
+
+		// Delete the pull secret:
+		pullSecret := &corev1.Secret{}
+		pullSecret.SetNamespace(t.hub.GetNamespace())
+		pullSecret.SetName(fmt.Sprintf("%s-pull", clusterMeta.GetName()))
+		err = t.hubClient.Delete(ctx, pullSecret)
+		if clnt.IgnoreNotFound(err) != nil {
+			t.parent.logger.ErrorContext(
+				ctx,
+				"Failed to delete pull secret",
+				slog.Any("error", err),
+				slog.String("namespace", t.hub.GetNamespace()),
+				slog.String("name", pullSecret.GetName()),
+			)
+			return err
+		}
+		t.parent.logger.InfoContext(
+			ctx,
+			"Deleted pull secret",
+			slog.String("namespace", t.hub.GetNamespace()),
+			slog.String("name", pullSecret.GetName()),
+		)
+
+		// Delete the SSH secret:
+		sshSecret := &corev1.Secret{}
+		sshSecret.SetNamespace(t.hub.GetNamespace())
+		sshSecret.SetName(fmt.Sprintf("%s-ssh", clusterMeta.GetName()))
+		err = t.hubClient.Delete(ctx, sshSecret)
+		if clnt.IgnoreNotFound(err) != nil {
+			t.parent.logger.ErrorContext(
+				ctx,
+				"Failed to delete SSH secret",
+				slog.Any("error", err),
+				slog.String("namespace", t.hub.GetNamespace()),
+				slog.String("name", sshSecret.GetName()),
+			)
+			return err
+		}
+		t.parent.logger.InfoContext(
+			ctx,
+			"Deleted SSH secret",
+			slog.String("namespace", t.hub.GetNamespace()),
+			slog.String("name", sshSecret.GetName()),
+		)
+	}
+
 	// Unassign all the hosts from the cluster:
 	for _, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
 		err := t.unassignHosts(ctx, nodeSet.GetHostClass(), int(nodeSet.GetSize()))

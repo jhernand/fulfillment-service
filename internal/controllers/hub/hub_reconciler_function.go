@@ -43,6 +43,7 @@ type FunctionBuilder struct {
 
 type function struct {
 	logger     *slog.Logger
+	connection *grpc.ClientConn
 	hubCache   *controllers.HubCache
 	hubsClient privatev1.HubsClient
 }
@@ -99,6 +100,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 	// Create and populate the object:
 	object := &function{
 		logger:     b.logger,
+		connection: b.connection,
 		hubsClient: privatev1.NewHubsClient(b.connection),
 		hubCache:   b.hubCache,
 	}
@@ -184,6 +186,12 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
+	// Ensure that the Kubernetes resource watcher is running:
+	err = t.ensureWatcher(ctx, entry)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -261,6 +269,59 @@ func (t *task) delete(ctx context.Context) error {
 		slog.String("hub_id", t.hub.GetId()),
 	)
 	t.parent.hubCache.Remove(t.hub.GetId())
+
+	return nil
+}
+
+// ensureWatcher ensures that a Kubernetes resource watcher is running for the hub.
+func (t *task) ensureWatcher(ctx context.Context, entry *controllers.HubEntry) error {
+	// Check if a watcher is already running:
+	if entry.Watcher != nil {
+		return nil
+	}
+
+	// Create a new watcher:
+	watcher, err := NewWatcher().
+		SetLogger(t.parent.logger).
+		SetHubId(t.hub.GetId()).
+		SetRestConfig(entry.RestConfig).
+		SetConnection(t.parent.connection).
+		SetHubClient(entry.Client).
+		Build()
+	if err != nil {
+		t.parent.logger.ErrorContext(
+			ctx,
+			"Failed to create Kubernetes resource watcher",
+			slog.String("hub_id", t.hub.GetId()),
+			slog.Any("error", err),
+		)
+		return err
+	}
+
+	// Store the watcher in the cache:
+	err = t.parent.hubCache.SetWatcher(t.hub.GetId(), watcher)
+	if err != nil {
+		return err
+	}
+
+	// Start the watcher in a goroutine:
+	go func() {
+		err := watcher.Start(context.Background())
+		if err != nil {
+			t.parent.logger.ErrorContext(
+				context.Background(),
+				"Kubernetes resource watcher failed",
+				slog.String("hub_id", t.hub.GetId()),
+				slog.Any("error", err),
+			)
+		}
+	}()
+
+	t.parent.logger.InfoContext(
+		ctx,
+		"Started Kubernetes resource watcher",
+		slog.String("hub_id", t.hub.GetId()),
+	)
 
 	return nil
 }

@@ -319,7 +319,7 @@ func (t *task) selectHub(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	t.hubNamespace = hubEntry.Namespace
+	t.hubNamespace = hubEntry.Hub.GetNamespace()
 	t.hubClient = hubEntry.Client
 	return nil
 }
@@ -329,7 +329,7 @@ func (t *task) getHub(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	t.hubNamespace = hubEntry.Namespace
+	t.hubNamespace = hubEntry.Hub.GetNamespace()
 	t.hubClient = hubEntry.Client
 	return nil
 }

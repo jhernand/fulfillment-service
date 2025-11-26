@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"google.golang.org/grpc"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -41,8 +42,16 @@ type HubCache struct {
 }
 
 type HubEntry struct {
-	Hub    *privatev1.Hub
-	Client clnt.Client
+	Hub        *privatev1.Hub
+	Client     clnt.Client
+	RestConfig *rest.Config
+	Watcher    HubWatcher
+}
+
+// HubWatcher is an interface for watchers that monitor Kubernetes resources in a hub cluster.
+type HubWatcher interface {
+	Start(ctx context.Context) error
+	Stop()
 }
 
 // NewHubCache creates a new builder that can then be used to create a new cluster order reconciler function.
@@ -102,7 +111,15 @@ func (r *HubCache) Get(ctx context.Context, id string) (result *HubEntry, err er
 func (r *HubCache) Remove(id string) {
 	r.entriesLock.Lock()
 	defer r.entriesLock.Unlock()
-	delete(r.entries, id)
+	entry, ok := r.entries[id]
+	if ok {
+		// Stop the watcher if it exists:
+		if entry.Watcher != nil {
+			entry.Watcher.Stop()
+		}
+		// Remove the entry from the cache:
+		delete(r.entries, id)
+	}
 }
 
 func (r *HubCache) create(ctx context.Context, id string) (result *HubEntry, err error) {
@@ -122,8 +139,22 @@ func (r *HubCache) create(ctx context.Context, id string) (result *HubEntry, err
 		return
 	}
 	result = &HubEntry{
-		Hub:    hub,
-		Client: client,
+		Hub:        hub,
+		Client:     client,
+		RestConfig: config,
+		Watcher:    nil, // Will be set by the reconciler
 	}
 	return
+}
+
+// SetWatcher sets the watcher for a hub entry.
+func (r *HubCache) SetWatcher(id string, watcher HubWatcher) error {
+	r.entriesLock.Lock()
+	defer r.entriesLock.Unlock()
+	entry, ok := r.entries[id]
+	if !ok {
+		return errors.New("hub entry not found")
+	}
+	entry.Watcher = watcher
+	return nil
 }
