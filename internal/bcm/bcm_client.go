@@ -123,12 +123,13 @@ func NewClient() *ClientBuilder {
 
 // ClientBuilder is used to build BCM clients using the builder pattern.
 type ClientBuilder struct {
-	logger  *slog.Logger
-	url     string
-	certPEM []byte
-	keyPEM  []byte
-	caPool  *x509.CertPool
-	timeout time.Duration
+	logger   *slog.Logger
+	url      string
+	certPEM  []byte
+	keyPEM   []byte
+	insecure bool
+	caPool   *x509.CertPool
+	timeout  time.Duration
 }
 
 // SetLogger sets the logger for the client.
@@ -158,6 +159,12 @@ func (b *ClientBuilder) SetKeyFile(path string) *ClientBuilder {
 	if err == nil {
 		b.keyPEM = data
 	}
+	return b
+}
+
+// SetInsecure sets the insecure flag for TLS verification.
+func (b *ClientBuilder) SetInsecure(value bool) *ClientBuilder {
+	b.insecure = value
 	return b
 }
 
@@ -204,15 +211,13 @@ func (b *ClientBuilder) Build() (Client, error) {
 
 	// Create TLS configuration:
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		// We disable verification because BCM certificates may not have proper Authority Key Identifier extensions
-		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: b.insecure,
 	}
 
 	// Use CA pool if provided:
 	if b.caPool != nil {
 		tlsConfig.RootCAs = b.caPool
-		tlsConfig.InsecureSkipVerify = false
 	}
 
 	// Create HTTP client:
