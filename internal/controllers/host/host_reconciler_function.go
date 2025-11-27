@@ -31,6 +31,7 @@ import (
 	privatev1 "github.com/innabox/fulfillment-service/internal/api/private/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/finalizers"
+	"github.com/innabox/fulfillment-service/internal/kubernetes/groups"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
 )
@@ -245,8 +246,18 @@ func (t *task) mutateAnnotations(object clnt.Object) {
 	}
 
 	// Add the annotation that indicates the hostname of the host:
-	annotations["bmac.agent-install.openshift.io/hostname"] = t.host.GetMetadata().GetName()
-	annotations["inspect.metal3.io"] = "disabled"
+	annotations[bmacHostnameAnnotation] = t.host.GetMetadata().GetName()
+
+	// Add the annotation that disables inspection of the host:
+	annotations[metal3AnnotationInspect] = "disabled"
+
+	// Add or remove the annotations that will be translated into labels for the agent:
+	clusterId := t.host.GetStatus().GetCluster()
+	if clusterId != "" {
+		annotations[clusterIdBmacAnnotation] = clusterId
+	} else {
+		delete(annotations, clusterIdBmacAnnotation)
+	}
 
 	// Save the annotations:
 	object.SetAnnotations(annotations)
@@ -321,3 +332,20 @@ func (t *task) removeFinalizer() {
 		t.host.GetMetadata().SetFinalizers(list)
 	}
 }
+
+// Annotations defined by the agent installer:
+const (
+	bmacAnnotationPrefix           = "bmac." + groups.AgentInstall
+	bmacAgentLabelAnnotationPrefix = bmacAnnotationPrefix + ".agent-label."
+	bmacHostnameAnnotation         = bmacAnnotationPrefix + "/hostname"
+)
+
+// Annotations defined by the metal3 opertor:
+const (
+	metal3AnnotationInspect = "inspect." + groups.Metal3
+)
+
+// Our annotations:
+const (
+	clusterIdBmacAnnotation = bmacAgentLabelAnnotationPrefix + labels.ClusterId
+)
