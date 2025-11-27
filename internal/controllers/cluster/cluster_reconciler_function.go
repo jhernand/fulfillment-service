@@ -581,7 +581,11 @@ func (t *task) renderNodePoolPlatform() (result json.Object, err error) {
 	result = json.Object{
 		"type": "Agent",
 		"agent": json.Object{
-			"agentLabelSelector": json.Object{},
+			"agentLabelSelector": json.Object{
+				"matchLabels": json.Object{
+					labels.ClusterId: t.cluster.GetId(),
+				},
+			},
 		},
 	}
 	return

@@ -13,7 +13,11 @@ language governing permissions and limitations under the License.
 
 package gvks
 
-import "k8s.io/apimachinery/pkg/runtime/schema"
+import (
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/innabox/fulfillment-service/internal/kubernetes/groups"
+)
 
 var ClusterOrder = schema.GroupVersionKind{
 	Group:   "cloudkit.openshift.io",
@@ -24,7 +28,7 @@ var ClusterOrder = schema.GroupVersionKind{
 var ClusterOrderList = listGVK(ClusterOrder)
 
 var HostedCluster = schema.GroupVersionKind{
-	Group:   "hypershift.openshift.io",
+	Group:   groups.Hypershift,
 	Version: "v1beta1",
 	Kind:    "HostedCluster",
 }
@@ -32,7 +36,7 @@ var HostedCluster = schema.GroupVersionKind{
 var HostedClusterList = listGVK(HostedCluster)
 
 var NodePool = schema.GroupVersionKind{
-	Group:   "hypershift.openshift.io",
+	Group:   groups.Hypershift,
 	Version: "v1beta1",
 	Kind:    "NodePool",
 }
@@ -40,7 +44,7 @@ var NodePool = schema.GroupVersionKind{
 var NodePoolList = listGVK(NodePool)
 
 var VirtualMachine = schema.GroupVersionKind{
-	Group:   "cloudkit.openshift.io",
+	Group:   groups.CloudKit,
 	Version: "v1alpha1",
 	Kind:    "VirtualMachine",
 }
@@ -48,7 +52,7 @@ var VirtualMachine = schema.GroupVersionKind{
 var VirtualMachineList = listGVK(VirtualMachine)
 
 var Host = schema.GroupVersionKind{
-	Group:   "cloudkit.openshift.io",
+	Group:   groups.CloudKit,
 	Version: "v1alpha1",
 	Kind:    "Host",
 }
@@ -56,7 +60,7 @@ var Host = schema.GroupVersionKind{
 var HostList = listGVK(Host)
 
 var HostPool = schema.GroupVersionKind{
-	Group:   "cloudkit.openshift.io",
+	Group:   groups.CloudKit,
 	Version: "v1alpha1",
 	Kind:    "HostPool",
 }
@@ -64,7 +68,7 @@ var HostPool = schema.GroupVersionKind{
 var HostPoolList = listGVK(HostPool)
 
 var BareMetalHost = schema.GroupVersionKind{
-	Group:   "metal3.io",
+	Group:   groups.Metal3,
 	Version: "v1alpha1",
 	Kind:    "BareMetalHost",
 }
@@ -72,7 +76,7 @@ var BareMetalHost = schema.GroupVersionKind{
 var BareMetalHostList = listGVK(BareMetalHost)
 
 var InfraEnv = schema.GroupVersionKind{
-	Group:   "agent-install.openshift.io",
+	Group:   groups.AgentInstall,
 	Version: "v1beta1",
 	Kind:    "InfraEnv",
 }
