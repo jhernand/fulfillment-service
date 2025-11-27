@@ -298,8 +298,12 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Calculate and create the DNS records for the API:
-	err = t.createDnsRecords(ctx)
+	// Calculate and synchronize the DNS records::
+	t.baseDomain = fmt.Sprintf("%s.%s", t.alias, t.parent.dnsZone)
+	t.apiDomain = fmt.Sprintf("api.%s", t.baseDomain)
+	t.apiIntDomain = fmt.Sprintf("api-int.%s", t.baseDomain)
+	t.ingressDomain = fmt.Sprintf("*.apps.%s", t.baseDomain)
+	err = t.syncDnsRecords(ctx)
 	if err != nil {
 		return err
 	}
@@ -601,104 +605,27 @@ func (t *task) mutateLabels(object clnt.Object) {
 	object.SetLabels(values)
 }
 
-func (t *task) createDnsRecords(ctx context.Context) error {
-	// Calculate the domain names:
-	t.baseDomain = fmt.Sprintf("%s.%s", t.alias, t.parent.dnsZone)
-	t.apiDomain = fmt.Sprintf("api.%s", t.baseDomain)
-	t.apiIntDomain = fmt.Sprintf("api-int.%s", t.baseDomain)
-	t.ingressDomain = fmt.Sprintf("*.apps.%s", t.baseDomain)
-
-	// Get the IP addresses of the nodes of the cluster:
-	var hostIds []string
-	for _, nodeSet := range t.cluster.GetStatus().GetNodeSets() {
-		hostIds = append(hostIds, nodeSet.GetHosts()...)
-	}
-	for i, hostId := range hostIds {
-		hostIds[i] = strconv.Quote(hostId)
-	}
-	hostsFilter := fmt.Sprintf("this.id in [%s]", strings.Join(hostIds, ","))
-	hostsResponse, err := t.parent.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
-		Filter: &hostsFilter,
-		Limit:  proto.Int32(int32(len(hostIds))),
-	}.Build())
+// syncDnsRecords synchronizes the DNS records for the cluster. It calculates the desired records, compares then with
+// the current records and sends the necessary updates to the DNS server.
+func (t *task) syncDnsRecords(ctx context.Context) error {
+	// Get the desired and current records and calculate the difference:
+	desiredRecords, err := t.desiredDnsRecords(ctx)
 	if err != nil {
 		return err
 	}
-	var hostIps []string
-	for _, host := range hostsResponse.GetItems() {
-		hostIp := host.GetSpec().GetBootIp()
-		if hostIp == "" {
-			continue
-		}
-		if !slices.Contains(hostIps, hostIp) {
-			hostIps = append(hostIps, hostIp)
-		}
+	currentRecords, err := t.currentDnsRecords(ctx)
+	if err != nil {
+		return err
 	}
-
-	// We will collect the DNS records here:
-	records := []dns.RR{}
-
-	// Create A records for each IP address in the ingress domain:
-	ingressDomainFq := dns.Fqdn(t.ingressDomain)
-	for _, hostIp := range hostIps {
-		ingressRecord := &dns.A{
-			Hdr: dns.RR_Header{
-				Name:   ingressDomainFq,
-				Ttl:    defaultDnsTtl,
-				Class:  dns.ClassINET,
-				Rrtype: dns.TypeA,
-			},
-			A: net.ParseIP(hostIp),
-		}
-		records = append(records, ingressRecord)
+	addedRecords, removedRecords, err := t.diffDnsRecords(ctx, currentRecords, desiredRecords)
+	if err != nil {
+		return err
 	}
-
-	// Create A records for the hub IP in the API domains:
-	hubIp := net.ParseIP(t.hub.GetIp())
-	apiDomainFq := dns.Fqdn(t.apiDomain)
-	apiRecord := &dns.A{
-		Hdr: dns.RR_Header{
-			Name:   apiDomainFq,
-			Ttl:    defaultDnsTtl,
-			Class:  dns.ClassINET,
-			Rrtype: dns.TypeA,
-		},
-		A: hubIp,
-	}
-	records = append(records, apiRecord)
-	apiIntDomainFq := dns.Fqdn(t.apiIntDomain)
-	apiIntRecord := &dns.A{
-		Hdr: dns.RR_Header{
-			Name:   apiIntDomainFq,
-			Ttl:    defaultDnsTtl,
-			Class:  dns.ClassINET,
-			Rrtype: dns.TypeA,
-		},
-		A: hubIp,
-	}
-	records = append(records, apiIntRecord)
-
-	// For each domainname create TXT record containing the cluster identifier:
-	for _, record := range records {
-		idRecord := &dns.TXT{
-			Hdr: dns.RR_Header{
-				Name:   record.Header().Name,
-				Ttl:    defaultDnsTtl,
-				Class:  dns.ClassINET,
-				Rrtype: dns.TypeTXT,
-			},
-			Txt: []string{
-				fmt.Sprintf("%s=%s", labels.ClusterId, t.cluster.GetId()),
-				fmt.Sprintf("%s=%s", labels.ClusterName, t.cluster.GetMetadata().GetName()),
-			},
-		}
-		records = append(records, idRecord)
-	}
-
 	// Prepare the update message:
 	request := &dns.Msg{}
 	request.SetUpdate(t.parent.dnsZoneFq)
-	request.Insert(records)
+	request.Insert(addedRecords)
+	request.Remove(removedRecords)
 
 	// Sign the message with TSIG if configured:
 	if t.parent.dnsKeyName != "" && t.parent.dnsKeySecret != "" {
@@ -738,6 +665,179 @@ func (t *task) createDnsRecords(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// desiredDnsRecords calculates the DNS records for the cluster.
+func (t *task) desiredDnsRecords(ctx context.Context) (result []dns.RR, err error) {
+	// Get the IP addresses of the nodes of the cluster:
+	var hostIds []string
+	for _, nodeSet := range t.cluster.GetStatus().GetNodeSets() {
+		hostIds = append(hostIds, nodeSet.GetHosts()...)
+	}
+	for i, hostId := range hostIds {
+		hostIds[i] = strconv.Quote(hostId)
+	}
+	hostsFilter := fmt.Sprintf("this.id in [%s]", strings.Join(hostIds, ","))
+	hostsResponse, err := t.parent.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: &hostsFilter,
+		Limit:  proto.Int32(int32(len(hostIds))),
+	}.Build())
+	if err != nil {
+		return
+	}
+	var hostIps []string
+	for _, host := range hostsResponse.GetItems() {
+		hostIp := host.GetSpec().GetBootIp()
+		if hostIp == "" {
+			continue
+		}
+		if !slices.Contains(hostIps, hostIp) {
+			hostIps = append(hostIps, hostIp)
+		}
+	}
+
+	// We will collect the DNS records here:
+	records := []dns.RR{}
+
+	// Calculate A records for each IP address in the ingress domain:
+	ingressDomainFq := dns.Fqdn(t.ingressDomain)
+	for _, hostIp := range hostIps {
+		ingressRecord := &dns.A{
+			Hdr: dns.RR_Header{
+				Name:   ingressDomainFq,
+				Ttl:    defaultDnsTtl,
+				Class:  dns.ClassINET,
+				Rrtype: dns.TypeA,
+			},
+			A: net.ParseIP(hostIp),
+		}
+		records = append(records, ingressRecord)
+	}
+
+	// Calculate A records for the hub IP in the API domains:
+	hubIp := net.ParseIP(t.hub.GetIp())
+	apiDomainFq := dns.Fqdn(t.apiDomain)
+	apiRecord := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   apiDomainFq,
+			Ttl:    defaultDnsTtl,
+			Class:  dns.ClassINET,
+			Rrtype: dns.TypeA,
+		},
+		A: hubIp,
+	}
+	records = append(records, apiRecord)
+	apiIntDomainFq := dns.Fqdn(t.apiIntDomain)
+	apiIntRecord := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   apiIntDomainFq,
+			Ttl:    defaultDnsTtl,
+			Class:  dns.ClassINET,
+			Rrtype: dns.TypeA,
+		},
+		A: hubIp,
+	}
+	records = append(records, apiIntRecord)
+
+	// Return the records:
+	result = records
+	return
+}
+
+// currentDnsRecords gets the DNS records for the given domain from the DNS server.
+//
+// TODO: This uses a complete zone transfer and then discards anything that isn't a sub-domain of the domain that we
+// are interested in. This is expensive, should be replaced by something better.
+func (t *task) currentDnsRecords(ctx context.Context) (records []dns.RR, err error) {
+	// Start the zone transfer:
+	baseDomainFq := dns.Fqdn(t.baseDomain)
+	t.parent.logger.DebugContext(
+		ctx,
+		"Attempting zone transfer",
+		slog.String("server", t.parent.dnsServer),
+		slog.String("zone", t.parent.dnsZoneFq),
+		slog.String("domain", baseDomainFq),
+	)
+	msg := &dns.Msg{}
+	msg.SetAxfr(t.parent.dnsZoneFq)
+	msg.SetTsig(t.parent.dnsKeyNameFq, dns.HmacSHA256, 300, time.Now().Unix())
+	transfer := &dns.Transfer{
+		TsigSecret: t.parent.dnsClient.TsigSecret,
+	}
+	channel, err := transfer.In(msg, t.parent.dnsServer)
+	if err != nil {
+		err = fmt.Errorf("failed to initiate zone transfer for domain '%s': %w", baseDomainFq, err)
+		return
+	}
+
+	// Process the incoming records, discarding anything that is not a sub-domain of the domain that we are
+	// interested in:
+	for envelope := range channel {
+		if envelope.Error != nil {
+			err = fmt.Errorf("zone transfer error for domain '%s': %w", baseDomainFq, envelope.Error)
+			return
+		}
+		t.parent.logger.DebugContext(
+			ctx,
+			"Received zone transfer envelope",
+			slog.Any("records", envelope.RR),
+		)
+		for _, record := range envelope.RR {
+			name := record.Header().Name
+			if strings.HasSuffix(name, baseDomainFq) {
+				records = append(records, record)
+			}
+		}
+	}
+
+	return
+}
+
+func (t *task) diffDnsRecords(ctx context.Context, current, desired []dns.RR) (add, remove []dns.RR, err error) {
+	// Calculate the keys to compare the records:
+	currentSet := map[string]dns.RR{}
+	for _, record := range current {
+		currentSet[t.dnsRecordDiffKey(record)] = record
+	}
+	desiredSet := map[string]dns.RR{}
+	for _, record := range desired {
+		desiredSet[t.dnsRecordDiffKey(record)] = record
+	}
+
+	// Find records that need to be added:
+	for key, record := range desiredSet {
+		_, ok := currentSet[key]
+		if !ok {
+			add = append(add, record)
+		}
+	}
+
+	// Find records that need to be removed:
+	for key, record := range currentSet {
+		_, ok := desiredSet[key]
+		if !ok {
+			remove = append(remove, record)
+		}
+	}
+
+	// Return the results:
+	t.parent.logger.DebugContext(
+		ctx,
+		"Calculated DNS diff",
+		slog.Any("add", add),
+		slog.Any("remove", remove),
+	)
+
+	return
+}
+
+// dnsRecordDiffKey returns a normalized string key for a DNS record, ignoring TTL, to use it as the key for
+// calculating the difference between two lists of records.
+func (t *task) dnsRecordDiffKey(record dns.RR) string {
+	// We make a copy and set the TTL to 0 to ignore it in comparisons.
+	copy := dns.Copy(record)
+	copy.Header().Ttl = 0
+	return copy.String()
 }
 
 func (t *task) setDefaults() {
