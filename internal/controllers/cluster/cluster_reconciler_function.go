@@ -21,6 +21,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -72,6 +73,7 @@ type function struct {
 
 type task struct {
 	parent        *function
+	logger        *slog.Logger
 	cluster       *privatev1.Cluster
 	hub           *privatev1.Hub
 	alias         string
@@ -219,9 +221,13 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (f *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
+	logger := f.logger.With(
+		slog.String("cluster", cluster.GetId()),
+	)
 	oldCluster := proto.Clone(cluster).(*privatev1.Cluster)
 	t := task{
 		parent:  f,
+		logger:  logger,
 		cluster: cluster,
 	}
 	var err error
@@ -257,18 +263,12 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
-	// Check if hosts need to be assigned or unassigned:
-	err := t.checkHostAssignment(ctx)
-	if err != nil {
-		return err
-	}
-
 	// Select the hub, and if no hubs are available, update the condition to inform the user that creation is
 	// pending. Note that we don't want to disclose the existence of hubs to the user, as that is a internal
 	// implementation detail, so keep the message generic enough to not reveal that information.
-	err = t.selectHub(ctx)
+	err := t.selectHub(ctx)
 	if err != nil {
-		t.parent.logger.ErrorContext(
+		t.logger.ErrorContext(
 			ctx,
 			"Failed to select hub",
 			slog.String("error", err.Error()),
@@ -350,6 +350,12 @@ func (t *task) update(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Scale the node sets up or down as needed:
+	err = t.scaleNodeSets(ctx)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -638,7 +644,7 @@ func (t *task) syncDnsRecords(ctx context.Context) error {
 	}
 
 	// Send the message to the DNS server:
-	t.parent.logger.DebugContext(
+	t.logger.DebugContext(
 		ctx,
 		"Sending DNS update request",
 		slog.String("server", t.parent.dnsServer),
@@ -648,14 +654,14 @@ func (t *task) syncDnsRecords(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	t.parent.logger.DebugContext(
+	t.logger.DebugContext(
 		ctx,
 		"Received DNS update response",
 		slog.String("server", t.parent.dnsServer),
 		slog.Any("response", response),
 	)
 	if response.Rcode != dns.RcodeSuccess {
-		t.parent.logger.ErrorContext(
+		t.logger.ErrorContext(
 			ctx,
 			"Failed to update DNS",
 			slog.String("server", t.parent.dnsServer),
@@ -751,7 +757,7 @@ func (t *task) desiredDnsRecords(ctx context.Context) (result []dns.RR, err erro
 func (t *task) currentDnsRecords(ctx context.Context) (records []dns.RR, err error) {
 	// Start the zone transfer:
 	baseDomainFq := dns.Fqdn(t.baseDomain)
-	t.parent.logger.DebugContext(
+	t.logger.DebugContext(
 		ctx,
 		"Attempting zone transfer",
 		slog.String("server", t.parent.dnsServer),
@@ -777,7 +783,7 @@ func (t *task) currentDnsRecords(ctx context.Context) (records []dns.RR, err err
 			err = fmt.Errorf("zone transfer error for domain '%s': %w", baseDomainFq, envelope.Error)
 			return
 		}
-		t.parent.logger.DebugContext(
+		t.logger.DebugContext(
 			ctx,
 			"Received zone transfer envelope",
 			slog.Any("records", envelope.RR),
@@ -821,7 +827,7 @@ func (t *task) diffDnsRecords(ctx context.Context, current, desired []dns.RR) (a
 	}
 
 	// Return the results:
-	t.parent.logger.DebugContext(
+	t.logger.DebugContext(
 		ctx,
 		"Calculated DNS diff",
 		slog.Any("add", add),
@@ -901,7 +907,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 	if hubId != "" {
 		err := t.selectHub(ctx)
 		if err != nil {
-			t.parent.logger.ErrorContext(
+			t.logger.ErrorContext(
 				ctx,
 				"Failed to select hub for deletion",
 				slog.Any("error", err),
@@ -917,7 +923,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 		hostedCluster.SetName(clusterMeta.GetName())
 		err = t.hubClient.Delete(ctx, hostedCluster)
 		if clnt.IgnoreNotFound(err) != nil {
-			t.parent.logger.ErrorContext(
+			t.logger.ErrorContext(
 				ctx,
 				"Failed to delete HostedCluster",
 				slog.Any("error", err),
@@ -926,7 +932,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 			)
 			return err
 		}
-		t.parent.logger.InfoContext(
+		t.logger.InfoContext(
 			ctx,
 			"Deleted HostedCluster",
 			slog.String("namespace", t.hub.GetNamespace()),
@@ -941,7 +947,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 			nodePool.SetName(fmt.Sprintf("%s-%s", clusterMeta.GetName(), nodeSetName))
 			err = t.hubClient.Delete(ctx, nodePool)
 			if clnt.IgnoreNotFound(err) != nil {
-				t.parent.logger.ErrorContext(
+				t.logger.ErrorContext(
 					ctx,
 					"Failed to delete NodePool",
 					slog.Any("error", err),
@@ -950,7 +956,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 				)
 				return err
 			}
-			t.parent.logger.InfoContext(
+			t.logger.InfoContext(
 				ctx,
 				"Deleted NodePool",
 				slog.String("namespace", t.hub.GetNamespace()),
@@ -964,7 +970,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 		pullSecret.SetName(fmt.Sprintf("%s-pull", clusterMeta.GetName()))
 		err = t.hubClient.Delete(ctx, pullSecret)
 		if clnt.IgnoreNotFound(err) != nil {
-			t.parent.logger.ErrorContext(
+			t.logger.ErrorContext(
 				ctx,
 				"Failed to delete pull secret",
 				slog.Any("error", err),
@@ -973,7 +979,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 			)
 			return err
 		}
-		t.parent.logger.InfoContext(
+		t.logger.InfoContext(
 			ctx,
 			"Deleted pull secret",
 			slog.String("namespace", t.hub.GetNamespace()),
@@ -986,7 +992,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 		sshSecret.SetName(fmt.Sprintf("%s-ssh", clusterMeta.GetName()))
 		err = t.hubClient.Delete(ctx, sshSecret)
 		if clnt.IgnoreNotFound(err) != nil {
-			t.parent.logger.ErrorContext(
+			t.logger.ErrorContext(
 				ctx,
 				"Failed to delete SSH secret",
 				slog.Any("error", err),
@@ -995,7 +1001,7 @@ func (t *task) delete(ctx context.Context) (err error) {
 			)
 			return err
 		}
-		t.parent.logger.InfoContext(
+		t.logger.InfoContext(
 			ctx,
 			"Deleted SSH secret",
 			slog.String("namespace", t.hub.GetNamespace()),
@@ -1003,9 +1009,10 @@ func (t *task) delete(ctx context.Context) (err error) {
 		)
 	}
 
-	// Unassign all the hosts from the cluster:
-	for _, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
-		err := t.unassignHosts(ctx, nodeSet.GetHostClass(), int(nodeSet.GetSize()))
+	// Scale down to zero all the node sets:
+	for nodeSetName, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
+		nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
+		err := t.scaleNodeSetDown(ctx, nodeSetName, nodeSet, nodeSetStatus)
 		if err != nil {
 			return err
 		}
@@ -1014,45 +1021,41 @@ func (t *task) delete(ctx context.Context) (err error) {
 	return
 }
 
-func (t *task) checkHostAssignment(ctx context.Context) error {
-	for nodeSetName, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
-		err := t.checkNodeSetHostAssignment(ctx, nodeSetName, nodeSet)
+func (t *task) scaleNodeSets(ctx context.Context) error {
+	for nodeSetName, nodeSetSpec := range t.cluster.GetSpec().GetNodeSets() {
+		nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
+		err := t.scaleNodeSet(ctx, nodeSetName, nodeSetSpec, nodeSetStatus)
 		if err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
-func (t *task) checkNodeSetHostAssignment(ctx context.Context, nodeSetName string, nodeSet *privatev1.ClusterNodeSet) error {
-	// Get the desired number of hosts:
-	desiredSize := int(nodeSet.GetSize())
-
-	// Get the actual number of hosts:
-	nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
-	actualSize := int(nodeSetStatus.GetSize())
-
-	// Calculate the delta, which can be zero, positive or negative:
-	deltaSize := desiredSize - actualSize
-	t.parent.logger.DebugContext(
+func (t *task) scaleNodeSet(ctx context.Context, nodeSetName string, nodeSetSpec *privatev1.ClusterNodeSet,
+	nodeSetStatus *privatev1.ClusterNodeSet) error {
+	// Get the desired and current number of hosts:
+	desiredSize := nodeSetSpec.GetSize()
+	currentSize := nodeSetStatus.GetSize()
+	deltaSize := desiredSize - currentSize
+	t.logger.DebugContext(
 		ctx,
-		"Host assignment delta",
-		slog.String("node_set", nodeSetName),
-		slog.Int("desired", desiredSize),
-		slog.Int("actual", actualSize),
-		slog.Int("delta", deltaSize),
+		"Node set scaling delta",
+		slog.String("set", nodeSetName),
+		slog.Int("desired", int(desiredSize)),
+		slog.Int("current", int(currentSize)),
+		slog.Int("delta", int(deltaSize)),
 	)
 
-	// If the delta is positive, we need to assign new hosts, if it is negative, we need to unassign hosts.
+	// Scale the node set up or down as needed:
 	switch {
 	case deltaSize > 0:
-		err := t.assignHosts(ctx, nodeSetName, deltaSize)
+		err := t.scaleNodeSetUp(ctx, nodeSetName, nodeSetSpec, nodeSetStatus)
 		if err != nil {
 			return err
 		}
 	case deltaSize < 0:
-		err := t.unassignHosts(ctx, nodeSetName, -deltaSize)
+		err := t.scaleNodeSetDown(ctx, nodeSetName, nodeSetSpec, nodeSetStatus)
 		if err != nil {
 			return err
 		}
@@ -1061,12 +1064,15 @@ func (t *task) checkNodeSetHostAssignment(ctx context.Context, nodeSetName strin
 	return nil
 }
 
-func (t *task) assignHosts(ctx context.Context, nodeSetName string, hostCount int) error {
-	// Get the nodeSetSpec and status of the node set:
-	nodeSetSpec := t.cluster.GetSpec().GetNodeSets()[nodeSetName]
-	nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
+func (t *task) scaleNodeSetUp(ctx context.Context, nodeSetName string, nodeSetSpec *privatev1.ClusterNodeSet,
+	nodeSetStatus *privatev1.ClusterNodeSet) error {
+	// Add the node set name to the logger:
+	logger := t.logger.With(
+		slog.String("set", nodeSetName),
+	)
 
 	// Find all the available hosts with the matching host class:
+	hostDelta := nodeSetSpec.GetSize() - nodeSetStatus.GetSize()
 	hostFilter := fmt.Sprintf(
 		"!has(this.metadata.deletion_timestamp) && "+
 			"this.spec.class == '%s' && "+
@@ -1075,18 +1081,34 @@ func (t *task) assignHosts(ctx context.Context, nodeSetName string, hostCount in
 	)
 	hostListResponse, err := t.parent.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
 		Filter: &hostFilter,
-		Limit:  proto.Int32(int32(hostCount)),
+		Limit:  proto.Int32(hostDelta),
 	}.Build())
 	if err != nil {
 		return err
 	}
-	hosts := hostListResponse.GetItems()
+	hostDelta = min(hostDelta, hostListResponse.GetSize())
+	hostList := hostListResponse.GetItems()
+	hostIds := make([]string, 0, hostDelta)
+	for _, host := range hostList {
+		hostIds = append(hostIds, host.GetId())
+	}
+	sort.Strings(hostIds)
+	logger.DebugContext(
+		ctx,
+		"Selected hosts to assign",
+		slog.Int("count", int(hostDelta)),
+		slog.Any("hosts", hostIds),
+	)
 
 	// Update the hosts to reflect that they are assigned to the cluster:
-	for _, host := range hosts {
-		host.GetStatus().SetCluster(t.cluster.GetId())
+	for _, hostId := range hostIds {
 		_, err = t.parent.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
-			Object: host,
+			Object: privatev1.Host_builder{
+				Id: hostId,
+				Status: privatev1.HostStatus_builder{
+					Cluster: t.cluster.GetId(),
+				}.Build(),
+			}.Build(),
 			UpdateMask: &fieldmaskpb.FieldMask{
 				Paths: []string{
 					"status.cluster",
@@ -1096,38 +1118,49 @@ func (t *task) assignHosts(ctx context.Context, nodeSetName string, hostCount in
 		if err != nil {
 			return err
 		}
+		logger.DebugContext(
+			ctx,
+			"Assigned host",
+			slog.String("host", hostId),
+		)
 	}
 
-	// Add the identifiers of the hosts to the node set status:
-	hostIds := nodeSetStatus.GetHosts()
-	for _, host := range hosts {
-		if !slices.Contains(hostIds, host.GetId()) {
-			hostIds = append(hostIds, host.GetId())
-		}
-	}
+	// Update the size and list of hosts of the status of the node set:
+	hostCount := nodeSetStatus.GetSize() + hostDelta
+	nodeSetStatus.SetSize(hostCount)
 	nodeSetStatus.SetHosts(hostIds)
-	nodeSetStatus.SetSize(int32(len(hostIds)))
 
 	return nil
 }
 
-func (t *task) unassignHosts(ctx context.Context, nodeSetName string, hostCount int) error {
-	// Get the node set spec and status:
-	nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
+func (t *task) scaleNodeSetDown(ctx context.Context, nodeSetName string, nodeSetSpec *privatev1.ClusterNodeSet,
+	nodeSetStatus *privatev1.ClusterNodeSet) error {
+	// Add the node set name to the logger:
+	logger := t.logger.With(
+		slog.String("set", nodeSetName),
+	)
 
-	// Randomly select the hosts to unassign:
-	allHostIds := nodeSetStatus.GetHosts()
-	selectedHostIds := make([]string, 0, hostCount)
-	for len(selectedHostIds) < hostCount {
-		randomIndex := rand.IntN(len(allHostIds))
-		randomHostId := allHostIds[randomIndex]
-		if !slices.Contains(selectedHostIds, randomHostId) {
-			selectedHostIds = append(selectedHostIds, randomHostId)
-		}
-	}
+	// Randomize the list of hosts of the cluster, so that we can randomly select the hosts to unassign.
+	hostIds := slices.Clone(nodeSetStatus.GetHosts())
+	rand.Shuffle(len(hostIds), func(i, j int) {
+		hostIds[i], hostIds[j] = hostIds[j], hostIds[i]
+	})
+
+	// Select the first hosts from the list:
+	hostDelta := nodeSetStatus.GetSize() - nodeSetSpec.GetSize()
+	hostDelta = min(hostDelta, int32(len(hostIds)))
+	hostIds = hostIds[:hostDelta]
+	sort.Strings(hostIds)
+	logger.DebugContext(
+		ctx,
+		"Selected hosts to unassign",
+		slog.String("set", nodeSetName),
+		slog.Int("count", int(hostDelta)),
+		slog.Any("hosts", hostIds),
+	)
 
 	// Remove the reference to the cluster from the selected hosts:
-	for _, hostId := range selectedHostIds {
+	for _, hostId := range hostIds {
 		_, err := t.parent.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
 			Object: privatev1.Host_builder{
 				Id: hostId,
@@ -1144,10 +1177,17 @@ func (t *task) unassignHosts(ctx context.Context, nodeSetName string, hostCount 
 		if err != nil {
 			return err
 		}
+		logger.DebugContext(
+			ctx,
+			"Unassigned host",
+			slog.String("host", hostId),
+		)
 	}
 
 	// Update the status of the node set:
-	nodeSetStatus.SetHosts(allHostIds)
+	hostCount := nodeSetStatus.GetSize() - hostDelta
+	nodeSetStatus.SetHosts(hostIds)
+	nodeSetStatus.SetSize(hostCount)
 
 	return nil
 }
@@ -1163,7 +1203,7 @@ func (t *task) selectHub(ctx context.Context) error {
 			return errors.New("there are no hubs")
 		}
 		hub = response.Items[rand.IntN(len(response.Items))].GetId()
-		t.parent.logger.DebugContext(
+		t.logger.DebugContext(
 			ctx,
 			"Selected hub",
 			slog.String("name", t.hub.GetMetadata().GetName()),
@@ -1195,18 +1235,17 @@ func (t *task) selectPort(ctx context.Context) error {
 	for _, cluster := range clusters.Items {
 		ports[cluster.GetStatus().GetPort()] = struct{}{}
 	}
-	var candidate int32
-	for candidate = 30000; candidate < 32768; candidate++ {
+	for candidate := int32(30000); candidate < 32768; candidate++ {
 		_, used := ports[candidate]
 		if used {
-			t.parent.logger.DebugContext(
+			t.logger.DebugContext(
 				ctx,
 				"Candidate port in use",
 				slog.Int("port", int(candidate)),
 			)
 			continue
 		}
-		t.parent.logger.DebugContext(
+		t.logger.DebugContext(
 			ctx,
 			"Candidate port available",
 			slog.Int("port", int(candidate)),
