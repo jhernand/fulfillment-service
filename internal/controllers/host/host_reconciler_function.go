@@ -197,6 +197,9 @@ func (t *task) mutateBareMetalHost() error {
 			"method": "start_assisted_install",
 		},
 		"online": true,
+		"rootDeviceHints": map[string]any{
+			"deviceName": "/dev/vda",
+		},
 	}
 	err := unstructured.SetNestedField(t.bareMetalHost.Object, spec, "spec")
 	if err != nil {
