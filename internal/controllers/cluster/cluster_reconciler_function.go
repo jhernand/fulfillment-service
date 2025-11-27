@@ -21,6 +21,8 @@ import (
 	"math/rand/v2"
 	"net"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/miekg/dns"
@@ -297,21 +299,7 @@ func (t *task) update(ctx context.Context) error {
 	}
 
 	// Calculate and create the DNS records for the API:
-	t.baseDomain = fmt.Sprintf("%s.%s", clusterMeta.GetName(), t.parent.dnsZone)
-	t.apiDomain = fmt.Sprintf("api.%s", t.baseDomain)
-	t.apiIntDomain = fmt.Sprintf("api-int.%s", t.baseDomain)
-	err = t.parent.createDnsARecord(ctx, t.apiDomain, t.hub.GetIp())
-	if err != nil {
-		return err
-	}
-	err = t.parent.createDnsARecord(ctx, t.apiIntDomain, t.hub.GetIp())
-	if err != nil {
-		return err
-	}
-
-	// Calculate and create the DNS record for the ingress:
-	t.ingressDomain = fmt.Sprintf("*.apps.%s", t.baseDomain)
-	err = t.parent.createDnsARecord(ctx, t.ingressDomain, t.hub.GetIp())
+	err = t.createDnsRecords(ctx)
 	if err != nil {
 		return err
 	}
@@ -611,6 +599,145 @@ func (t *task) mutateLabels(object clnt.Object) {
 	values[labels.ClusterId] = t.cluster.GetId()
 	values[labels.ClusterName] = t.cluster.GetMetadata().GetName()
 	object.SetLabels(values)
+}
+
+func (t *task) createDnsRecords(ctx context.Context) error {
+	// Calculate the domain names:
+	t.baseDomain = fmt.Sprintf("%s.%s", t.alias, t.parent.dnsZone)
+	t.apiDomain = fmt.Sprintf("api.%s", t.baseDomain)
+	t.apiIntDomain = fmt.Sprintf("api-int.%s", t.baseDomain)
+	t.ingressDomain = fmt.Sprintf("*.apps.%s", t.baseDomain)
+
+	// Get the IP addresses of the nodes of the cluster:
+	var hostIds []string
+	for _, nodeSet := range t.cluster.GetStatus().GetNodeSets() {
+		hostIds = append(hostIds, nodeSet.GetHosts()...)
+	}
+	for i, hostId := range hostIds {
+		hostIds[i] = strconv.Quote(hostId)
+	}
+	hostsFilter := fmt.Sprintf("this.id in [%s]", strings.Join(hostIds, ","))
+	hostsResponse, err := t.parent.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: &hostsFilter,
+		Limit:  proto.Int32(int32(len(hostIds))),
+	}.Build())
+	if err != nil {
+		return err
+	}
+	var hostIps []string
+	for _, host := range hostsResponse.GetItems() {
+		hostIp := host.GetSpec().GetBootIp()
+		if hostIp == "" {
+			continue
+		}
+		if !slices.Contains(hostIps, hostIp) {
+			hostIps = append(hostIps, hostIp)
+		}
+	}
+
+	// We will collect the DNS records here:
+	records := []dns.RR{}
+
+	// Create A records for each IP address in the ingress domain:
+	ingressDomainFq := dns.Fqdn(t.ingressDomain)
+	for _, hostIp := range hostIps {
+		ingressRecord := &dns.A{
+			Hdr: dns.RR_Header{
+				Name:   ingressDomainFq,
+				Ttl:    defaultDnsTtl,
+				Class:  dns.ClassINET,
+				Rrtype: dns.TypeA,
+			},
+			A: net.ParseIP(hostIp),
+		}
+		records = append(records, ingressRecord)
+	}
+
+	// Create A records for the hub IP in the API domains:
+	hubIp := net.ParseIP(t.hub.GetIp())
+	apiDomainFq := dns.Fqdn(t.apiDomain)
+	apiRecord := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   apiDomainFq,
+			Ttl:    defaultDnsTtl,
+			Class:  dns.ClassINET,
+			Rrtype: dns.TypeA,
+		},
+		A: hubIp,
+	}
+	records = append(records, apiRecord)
+	apiIntDomainFq := dns.Fqdn(t.apiIntDomain)
+	apiIntRecord := &dns.A{
+		Hdr: dns.RR_Header{
+			Name:   apiIntDomainFq,
+			Ttl:    defaultDnsTtl,
+			Class:  dns.ClassINET,
+			Rrtype: dns.TypeA,
+		},
+		A: hubIp,
+	}
+	records = append(records, apiIntRecord)
+
+	// For each domainname create TXT record containing the cluster identifier:
+	for _, record := range records {
+		idRecord := &dns.TXT{
+			Hdr: dns.RR_Header{
+				Name:   record.Header().Name,
+				Ttl:    defaultDnsTtl,
+				Class:  dns.ClassINET,
+				Rrtype: dns.TypeTXT,
+			},
+			Txt: []string{
+				fmt.Sprintf("%s=%s", labels.ClusterId, t.cluster.GetId()),
+				fmt.Sprintf("%s=%s", labels.ClusterName, t.cluster.GetMetadata().GetName()),
+			},
+		}
+		records = append(records, idRecord)
+	}
+
+	// Prepare the update message:
+	request := &dns.Msg{}
+	request.SetUpdate(t.parent.dnsZoneFq)
+	request.Insert(records)
+
+	// Sign the message with TSIG if configured:
+	if t.parent.dnsKeyName != "" && t.parent.dnsKeySecret != "" {
+		request.SetTsig(
+			t.parent.dnsKeyNameFq,
+			dns.HmacSHA256,
+			defaultDnsTtl,
+			time.Now().Unix(),
+		)
+	}
+
+	// Send the message to the DNS server:
+	t.parent.logger.DebugContext(
+		ctx,
+		"Sending DNS update request",
+		slog.String("server", t.parent.dnsServer),
+		slog.Any("request", request),
+	)
+	response, _, err := t.parent.dnsClient.Exchange(request, t.parent.dnsServer)
+	if err != nil {
+		return err
+	}
+	t.parent.logger.DebugContext(
+		ctx,
+		"Received DNS update response",
+		slog.String("server", t.parent.dnsServer),
+		slog.Any("response", response),
+	)
+	if response.Rcode != dns.RcodeSuccess {
+		t.parent.logger.ErrorContext(
+			ctx,
+			"Failed to update DNS",
+			slog.String("server", t.parent.dnsServer),
+			slog.Any("error", err),
+		)
+		return fmt.Errorf("failed to send DNS update to '%s': %w", t.parent.dnsServer, err)
+	}
+
+	return nil
 }
 
 func (t *task) setDefaults() {
@@ -1058,71 +1185,5 @@ func (t *task) removeFinalizer() {
 	}
 }
 
-// createDnsARecord creates a new DNS A record using RFC 2136 dynamic update.
-func (f *function) createDnsARecord(ctx context.Context, domain string, address string) error {
-	// Ensure the domain name is fully qualified:
-	domain = dns.Fqdn(domain)
-
-	// Log the operation:
-	f.logger.DebugContext(
-		ctx,
-		"Creating DNS record",
-		slog.String("domain", domain),
-		slog.String("zone", f.dnsZone),
-		slog.String("ip", address),
-		slog.String("server", f.dnsServer),
-	)
-
-	// Create the DNS update message:
-	msg := &dns.Msg{}
-	msg.SetUpdate(f.dnsZoneFq)
-
-	// Create the A record:
-	record := &dns.A{
-		Hdr: dns.RR_Header{
-			Name:   domain,
-			Ttl:    300,
-			Class:  dns.ClassINET,
-			Rrtype: dns.TypeA,
-		},
-		A: net.ParseIP(address),
-	}
-	msg.Insert([]dns.RR{record})
-
-	// Sign the message with TSIG if configured:
-	if f.dnsKeyName != "" && f.dnsKeySecret != "" {
-		msg.SetTsig(f.dnsKeyNameFq, dns.HmacSHA256, 300, time.Now().Unix())
-	}
-
-	// Send the update to the DNS server:
-	response, _, err := f.dnsClient.Exchange(msg, f.dnsServer)
-	if err != nil {
-		f.logger.ErrorContext(
-			ctx,
-			"Failed to send DNS update",
-			slog.Any("error", err),
-			slog.String("server", f.dnsServer),
-		)
-		return fmt.Errorf("failed to send DNS update to %s: %w", f.dnsServer, err)
-	}
-
-	// Check the response:
-	if response.Rcode != dns.RcodeSuccess {
-		f.logger.ErrorContext(
-			ctx,
-			"DNS update failed",
-			slog.String("rcode", dns.RcodeToString[response.Rcode]),
-			slog.Int("rcode_value", response.Rcode),
-		)
-		return fmt.Errorf("DNS update failed with rcode: %s", dns.RcodeToString[response.Rcode])
-	}
-
-	f.logger.InfoContext(
-		ctx,
-		"DNS record created successfully",
-		slog.String("domain", domain),
-		slog.String("ip", address),
-	)
-
-	return nil
-}
+// defaultDnsTtl is the default time to live for DNS records.
+const defaultDnsTtl = 300
