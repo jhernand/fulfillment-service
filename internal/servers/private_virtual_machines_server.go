@@ -155,6 +155,12 @@ func (s *PrivateVirtualMachinesServer) Delete(ctx context.Context,
 	return
 }
 
+func (s *PrivateVirtualMachinesServer) Signal(ctx context.Context,
+	request *privatev1.VirtualMachinesSignalRequest) (response *privatev1.VirtualMachinesSignalResponse, err error) {
+	err = s.generic.Signal(ctx, request, &response)
+	return
+}
+
 // validateTemplate validates the template ID and parameters in the virtual machine spec.
 func (s *PrivateVirtualMachinesServer) validateTemplate(ctx context.Context, vm *privatev1.VirtualMachine) error {
 	if vm == nil {

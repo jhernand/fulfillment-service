@@ -63,6 +63,12 @@ message HostPoolsUpdateResponse {
   HostPool object = 1;
 }
 
+message HostPoolsSignalRequest {
+  string id = 1;
+}
+
+message HostPoolsSignalResponse {}
+
 service HostPools {
   rpc List(HostPoolsListRequest) returns (HostPoolsListResponse) {
     option (google.api.http) = {
@@ -93,5 +99,9 @@ service HostPools {
       body: "object"
       response_body: "object"
     };
+  }
+
+  // Indicates that something changed in the object or the system that may require reconciling the object.
+  rpc Signal(HostPoolsSignalRequest) returns (HostPoolsSignalResponse) {
   }
 }

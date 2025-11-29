@@ -63,6 +63,12 @@ message HostsUpdateResponse {
   Host object = 1;
 }
 
+message HostsSignalRequest {
+  string id = 1;
+}
+
+message HostsSignalResponse {}
+
 service Hosts {
   rpc List(HostsListRequest) returns (HostsListResponse) {
     option (google.api.http) = {
@@ -93,5 +99,9 @@ service Hosts {
       body: "object"
       response_body: "object"
     };
+  }
+
+  // Indicates that something changed in the object or the system that may require reconciling the object.
+  rpc Signal(HostsSignalRequest) returns (HostsSignalResponse) {
   }
 }

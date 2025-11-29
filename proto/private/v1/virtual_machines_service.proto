@@ -62,6 +62,12 @@ message VirtualMachinesUpdateResponse {
   VirtualMachine object = 1;
 }
 
+message VirtualMachinesSignalRequest {
+  string id = 1;
+}
+
+message VirtualMachinesSignalResponse {}
+
 service VirtualMachines {
   rpc List(VirtualMachinesListRequest) returns (VirtualMachinesListResponse) {
     option (google.api.http) = {
@@ -92,5 +98,9 @@ service VirtualMachines {
       body: "object"
       response_body: "object"
     };
+  }
+
+  // Indicates that something changed in the object or the system that may require reconciling the object.
+  rpc Signal(VirtualMachinesSignalRequest) returns (VirtualMachinesSignalResponse) {
   }
 }

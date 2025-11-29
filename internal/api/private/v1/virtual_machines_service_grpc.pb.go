@@ -37,6 +37,7 @@ const (
 	VirtualMachines_Create_FullMethodName = "/private.v1.VirtualMachines/Create"
 	VirtualMachines_Delete_FullMethodName = "/private.v1.VirtualMachines/Delete"
 	VirtualMachines_Update_FullMethodName = "/private.v1.VirtualMachines/Update"
+	VirtualMachines_Signal_FullMethodName = "/private.v1.VirtualMachines/Signal"
 )
 
 // VirtualMachinesClient is the client API for VirtualMachines service.
@@ -48,6 +49,8 @@ type VirtualMachinesClient interface {
 	Create(ctx context.Context, in *VirtualMachinesCreateRequest, opts ...grpc.CallOption) (*VirtualMachinesCreateResponse, error)
 	Delete(ctx context.Context, in *VirtualMachinesDeleteRequest, opts ...grpc.CallOption) (*VirtualMachinesDeleteResponse, error)
 	Update(ctx context.Context, in *VirtualMachinesUpdateRequest, opts ...grpc.CallOption) (*VirtualMachinesUpdateResponse, error)
+	// Indicates that something changed in the object or the system that may require reconciling the object.
+	Signal(ctx context.Context, in *VirtualMachinesSignalRequest, opts ...grpc.CallOption) (*VirtualMachinesSignalResponse, error)
 }
 
 type virtualMachinesClient struct {
@@ -108,6 +111,16 @@ func (c *virtualMachinesClient) Update(ctx context.Context, in *VirtualMachinesU
 	return out, nil
 }
 
+func (c *virtualMachinesClient) Signal(ctx context.Context, in *VirtualMachinesSignalRequest, opts ...grpc.CallOption) (*VirtualMachinesSignalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VirtualMachinesSignalResponse)
+	err := c.cc.Invoke(ctx, VirtualMachines_Signal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VirtualMachinesServer is the server API for VirtualMachines service.
 // All implementations must embed UnimplementedVirtualMachinesServer
 // for forward compatibility.
@@ -117,6 +130,8 @@ type VirtualMachinesServer interface {
 	Create(context.Context, *VirtualMachinesCreateRequest) (*VirtualMachinesCreateResponse, error)
 	Delete(context.Context, *VirtualMachinesDeleteRequest) (*VirtualMachinesDeleteResponse, error)
 	Update(context.Context, *VirtualMachinesUpdateRequest) (*VirtualMachinesUpdateResponse, error)
+	// Indicates that something changed in the object or the system that may require reconciling the object.
+	Signal(context.Context, *VirtualMachinesSignalRequest) (*VirtualMachinesSignalResponse, error)
 	mustEmbedUnimplementedVirtualMachinesServer()
 }
 
@@ -141,6 +156,9 @@ func (UnimplementedVirtualMachinesServer) Delete(context.Context, *VirtualMachin
 }
 func (UnimplementedVirtualMachinesServer) Update(context.Context, *VirtualMachinesUpdateRequest) (*VirtualMachinesUpdateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
+}
+func (UnimplementedVirtualMachinesServer) Signal(context.Context, *VirtualMachinesSignalRequest) (*VirtualMachinesSignalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Signal not implemented")
 }
 func (UnimplementedVirtualMachinesServer) mustEmbedUnimplementedVirtualMachinesServer() {}
 func (UnimplementedVirtualMachinesServer) testEmbeddedByValue()                         {}
@@ -253,6 +271,24 @@ func _VirtualMachines_Update_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VirtualMachines_Signal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VirtualMachinesSignalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VirtualMachinesServer).Signal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VirtualMachines_Signal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VirtualMachinesServer).Signal(ctx, req.(*VirtualMachinesSignalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VirtualMachines_ServiceDesc is the grpc.ServiceDesc for VirtualMachines service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -279,6 +315,10 @@ var VirtualMachines_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Update",
 			Handler:    _VirtualMachines_Update_Handler,
+		},
+		{
+			MethodName: "Signal",
+			Handler:    _VirtualMachines_Signal_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

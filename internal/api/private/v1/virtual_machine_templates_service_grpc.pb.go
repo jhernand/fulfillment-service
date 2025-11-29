@@ -37,6 +37,7 @@ const (
 	VirtualMachineTemplates_Create_FullMethodName = "/private.v1.VirtualMachineTemplates/Create"
 	VirtualMachineTemplates_Delete_FullMethodName = "/private.v1.VirtualMachineTemplates/Delete"
 	VirtualMachineTemplates_Update_FullMethodName = "/private.v1.VirtualMachineTemplates/Update"
+	VirtualMachineTemplates_Signal_FullMethodName = "/private.v1.VirtualMachineTemplates/Signal"
 )
 
 // VirtualMachineTemplatesClient is the client API for VirtualMachineTemplates service.
@@ -48,6 +49,8 @@ type VirtualMachineTemplatesClient interface {
 	Create(ctx context.Context, in *VirtualMachineTemplatesCreateRequest, opts ...grpc.CallOption) (*VirtualMachineTemplatesCreateResponse, error)
 	Delete(ctx context.Context, in *VirtualMachineTemplatesDeleteRequest, opts ...grpc.CallOption) (*VirtualMachineTemplatesDeleteResponse, error)
 	Update(ctx context.Context, in *VirtualMachineTemplatesUpdateRequest, opts ...grpc.CallOption) (*VirtualMachineTemplatesUpdateResponse, error)
+	// Indicates that something changed in the object or the system that may require reconciling the object.
+	Signal(ctx context.Context, in *VirtualMachineTemplatesSignalRequest, opts ...grpc.CallOption) (*VirtualMachineTemplatesSignalResponse, error)
 }
 
 type virtualMachineTemplatesClient struct {
@@ -108,6 +111,16 @@ func (c *virtualMachineTemplatesClient) Update(ctx context.Context, in *VirtualM
 	return out, nil
 }
 
+func (c *virtualMachineTemplatesClient) Signal(ctx context.Context, in *VirtualMachineTemplatesSignalRequest, opts ...grpc.CallOption) (*VirtualMachineTemplatesSignalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(VirtualMachineTemplatesSignalResponse)
+	err := c.cc.Invoke(ctx, VirtualMachineTemplates_Signal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VirtualMachineTemplatesServer is the server API for VirtualMachineTemplates service.
 // All implementations must embed UnimplementedVirtualMachineTemplatesServer
 // for forward compatibility.
@@ -117,6 +130,8 @@ type VirtualMachineTemplatesServer interface {
 	Create(context.Context, *VirtualMachineTemplatesCreateRequest) (*VirtualMachineTemplatesCreateResponse, error)
 	Delete(context.Context, *VirtualMachineTemplatesDeleteRequest) (*VirtualMachineTemplatesDeleteResponse, error)
 	Update(context.Context, *VirtualMachineTemplatesUpdateRequest) (*VirtualMachineTemplatesUpdateResponse, error)
+	// Indicates that something changed in the object or the system that may require reconciling the object.
+	Signal(context.Context, *VirtualMachineTemplatesSignalRequest) (*VirtualMachineTemplatesSignalResponse, error)
 	mustEmbedUnimplementedVirtualMachineTemplatesServer()
 }
 
@@ -141,6 +156,9 @@ func (UnimplementedVirtualMachineTemplatesServer) Delete(context.Context, *Virtu
 }
 func (UnimplementedVirtualMachineTemplatesServer) Update(context.Context, *VirtualMachineTemplatesUpdateRequest) (*VirtualMachineTemplatesUpdateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
+}
+func (UnimplementedVirtualMachineTemplatesServer) Signal(context.Context, *VirtualMachineTemplatesSignalRequest) (*VirtualMachineTemplatesSignalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Signal not implemented")
 }
 func (UnimplementedVirtualMachineTemplatesServer) mustEmbedUnimplementedVirtualMachineTemplatesServer() {
 }
@@ -254,6 +272,24 @@ func _VirtualMachineTemplates_Update_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VirtualMachineTemplates_Signal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(VirtualMachineTemplatesSignalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VirtualMachineTemplatesServer).Signal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VirtualMachineTemplates_Signal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VirtualMachineTemplatesServer).Signal(ctx, req.(*VirtualMachineTemplatesSignalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VirtualMachineTemplates_ServiceDesc is the grpc.ServiceDesc for VirtualMachineTemplates service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -280,6 +316,10 @@ var VirtualMachineTemplates_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Update",
 			Handler:    _VirtualMachineTemplates_Update_Handler,
+		},
+		{
+			MethodName: "Signal",
+			Handler:    _VirtualMachineTemplates_Signal_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

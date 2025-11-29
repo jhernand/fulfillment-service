@@ -123,3 +123,9 @@ func (s *PrivateVirtualMachineTemplatesServer) Delete(ctx context.Context,
 	err = s.generic.Delete(ctx, request, &response)
 	return
 }
+
+func (s *PrivateVirtualMachineTemplatesServer) Signal(ctx context.Context,
+	request *privatev1.VirtualMachineTemplatesSignalRequest) (response *privatev1.VirtualMachineTemplatesSignalResponse, err error) {
+	err = s.generic.Signal(ctx, request, &response)
+	return
+}
