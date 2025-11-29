@@ -61,6 +61,7 @@ type Device struct {
 	Hostname     string       `json:"hostname"`
 	Interfaces   []Interface  `json:"interfaces"`
 	Mac          string       `json:"mac"`
+	Notes        string       `json:"notes"`
 	RackPosition RackPosition `json:"rackPosition"`
 }
 
@@ -98,14 +99,16 @@ type Rack struct {
 type Network struct {
 	Entity
 
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Notes string `json:"notes"`
 }
 
 // Category represents a category in BCM.
 type Category struct {
 	Entity
 
-	Name string `json:"name"`
+	Name  string `json:"name"`
+	Notes string `json:"notes"`
 }
 
 // clientImpl is the implementation of the Client interface.

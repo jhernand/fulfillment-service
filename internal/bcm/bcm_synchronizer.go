@@ -14,12 +14,19 @@ language governing permissions and limitations under the License.
 package bcm
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/adrg/frontmatter"
+	"github.com/gogo/protobuf/proto"
 	"github.com/stmcginnis/gofish"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
@@ -174,10 +181,10 @@ func (t *synchronizerTask) run(ctx context.Context) error {
 	)
 
 	// Load networks, racks, categories, and devices:
-	t.loadNetworks(ctx)
-	t.loadRacks(ctx)
 	t.loadCategories(ctx)
 	t.loadDevices(ctx)
+	t.loadNetworks(ctx)
+	t.loadRacks(ctx)
 
 	// Synchronize categories as host classes:
 	err := t.syncCategories(ctx)
@@ -210,6 +217,25 @@ func (t *synchronizerTask) run(ctx context.Context) error {
 	)
 
 	return nil
+}
+
+func (t *synchronizerTask) loadCategories(ctx context.Context) {
+	categories, err := t.bcmClient.GetCategories(ctx)
+	if err != nil {
+		t.logger.WarnContext(
+			ctx,
+			"Failed to get categories from BCM",
+			slog.Any("error", err),
+		)
+	}
+	for _, category := range categories {
+		t.categoriesByUuid[category.Uuid] = category
+	}
+	t.logger.InfoContext(
+		ctx,
+		"Retrieved categories from BCM",
+		slog.Int("count", len(categories)),
+	)
 }
 
 func (t *synchronizerTask) loadRacks(ctx context.Context) {
@@ -252,26 +278,6 @@ func (t *synchronizerTask) loadNetworks(ctx context.Context) {
 	)
 }
 
-func (t *synchronizerTask) loadCategories(ctx context.Context) {
-	categories, err := t.bcmClient.GetCategories(ctx)
-	if err != nil {
-		t.logger.WarnContext(
-			ctx,
-			"Failed to get categories from BCM",
-			slog.Any("error", err),
-		)
-		return
-	}
-	for _, category := range categories {
-		t.categoriesByUuid[category.Uuid] = category
-	}
-	t.logger.InfoContext(
-		ctx,
-		"Retrieved categories from BCM",
-		slog.Int("count", len(categories)),
-	)
-}
-
 func (t *synchronizerTask) loadDevices(ctx context.Context) {
 	devices, err := t.bcmClient.GetDevices(ctx)
 	if err != nil {
@@ -294,7 +300,7 @@ func (t *synchronizerTask) loadDevices(ctx context.Context) {
 
 func (t *synchronizerTask) syncDevices(ctx context.Context) error {
 	for _, device := range t.devicesByUuid {
-		if device.ChildType != "PhysicalNode" {
+		if device.ChildType != "LiteNode" {
 			continue
 		}
 		err := t.syncDevice(ctx, device)
@@ -311,10 +317,122 @@ func (t *synchronizerTask) syncDevices(ctx context.Context) error {
 }
 
 func (t *synchronizerTask) syncDevice(ctx context.Context, device *Device) error {
-	host, err := t.deviceToHost(ctx, device)
-	if err != nil {
-		return fmt.Errorf("failed to convert device to host: %w", err)
+	// Extract the title and description from the notes. Note that we don't have a place to store the host title
+	// and description yet, so we just ignore them.
+	type Matter struct {
+		HostClass string `yaml:"host_class"`
 	}
+	var matter Matter
+	_, _ = t.parseNotes(device.Notes, &matter)
+
+	// Try to find a host that matches the name or identifier of the device. If we find one then we will use it,
+	// otherwise we will create a new host with the same identifier than the device.
+	hostFilter := fmt.Sprintf(
+		"this.id == %s || this.metadata.name == %s",
+		strconv.Quote(device.Uuid),
+		strconv.Quote(device.Hostname),
+	)
+	hostsResponse, err := t.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
+		Filter: proto.String(hostFilter),
+		Limit:  proto.Int32(1),
+	}.Build())
+	if err != nil {
+		return fmt.Errorf("failed to find hosts: %w", err)
+	}
+	var host *privatev1.Host
+	if hostsResponse.GetSize() == 1 {
+		host = hostsResponse.GetItems()[0]
+	} else {
+		host = privatev1.Host_builder{
+			Id: device.Uuid,
+		}.Build()
+	}
+	hostMeta := host.GetMetadata()
+	if hostMeta == nil {
+		hostMeta = &privatev1.Metadata{}
+		host.SetMetadata(hostMeta)
+	}
+	hostSpec := host.GetSpec()
+	if hostSpec == nil {
+		hostSpec = &privatev1.HostSpec{}
+		host.SetSpec(hostSpec)
+	}
+
+	// Set the host name:
+	hostMeta.SetName(device.Hostname)
+
+	// If the matter species a host class then use it, otherwise use the device category:
+	hostClassId := matter.HostClass
+	if hostClassId == "" {
+		hostClassId = device.Category
+	}
+	hostSpec.SetClass(hostClassId)
+
+	// Set the boot MAC address:
+	hostSpec.SetBootMac(device.Mac)
+
+	// Set the BMC details:
+	hostBmc := hostSpec.GetBmc()
+	if hostBmc == nil {
+		hostBmc = &privatev1.BMC{}
+		hostSpec.SetBmc(hostBmc)
+	}
+	hostBmc.SetUser(device.BmcSettings.UserName)
+	hostBmc.SetPassword(device.BmcSettings.Password)
+	hostBmc.SetInsecure(true)
+
+	// Find the BMC network interface in order to build the BMC URL:
+	for _, iface := range device.Interfaces {
+		if iface.ChildType == "NetworkBmcInterface" {
+			switch {
+			case redfishInterfaceRegex.MatchString(iface.Name):
+				url, err := t.buildRedfishUrl(
+					ctx,
+					iface.IP,
+					device.BmcSettings.UserName,
+					device.BmcSettings.Password,
+					device.Hostname,
+				)
+				if err != nil {
+					t.logger.ErrorContext(
+						ctx,
+						"Failed to build Redfish URL",
+						slog.String("interface", iface.Name),
+						slog.String("ip", iface.IP),
+						slog.Any("error", err),
+					)
+				} else {
+					hostBmc.SetUrl(url)
+				}
+			default:
+				t.logger.ErrorContext(
+					ctx,
+					"Unsupported BMC interface type",
+					slog.String("interface", iface.Name),
+					slog.String("ip", iface.IP),
+				)
+			}
+		}
+	}
+
+	// Find the boot network interface in order to extract the boot IP address:
+	for _, iface := range device.Interfaces {
+		if iface.ChildType == "NetworkPhysicalInterface" && iface.Name == "BOOTIF" {
+			hostSpec.SetBootIp(iface.IP)
+			break
+		}
+	}
+
+	// Set the rack:
+	rack := t.racksByUuid[device.RackPosition.Rack]
+	if rack != nil {
+		hostSpec.SetRack(rack.Name)
+	}
+
+	// Set the BCM link:
+	hostSpec.SetBcmLink(fmt.Sprintf("%s/base-view/device/%s", t.parent.bcmUrl, device.Uuid))
+
+	// Create or update the host:
 	err = t.createOrUpdateHost(ctx, host)
 	if err != nil {
 		return fmt.Errorf("failed to create or update host: %w", err)
@@ -369,80 +487,6 @@ func (t *synchronizerTask) buildRedfishUrl(ctx context.Context, address, usernam
 	// Build the virtual media URL:
 	result = fmt.Sprintf("redfish-virtualmedia://%s%s", address, path)
 	return
-}
-
-// deviceToHost converts a BCM device to a fulfillment service host.
-func (t *synchronizerTask) deviceToHost(ctx context.Context, device *Device) (
-	*privatev1.Host, error) {
-	// Create the host with the basic data:
-	host := privatev1.Host_builder{
-		Id: device.Uuid,
-		Metadata: privatev1.Metadata_builder{
-			Name: device.Hostname,
-		}.Build(),
-		Spec: privatev1.HostSpec_builder{
-			Class:   device.Category,
-			BootMac: device.Mac,
-			Bmc: privatev1.BMC_builder{
-				User:     device.BmcSettings.UserName,
-				Password: device.BmcSettings.Password,
-				Insecure: true,
-			}.Build(),
-		}.Build(),
-	}.Build()
-
-	// Find the BMC network interface in order to build the BMC URL:
-	for _, iface := range device.Interfaces {
-		if iface.ChildType == "NetworkBmcInterface" {
-			switch {
-			case redfishInterfaceRegex.MatchString(iface.Name):
-				url, err := t.buildRedfishUrl(
-					ctx,
-					iface.IP,
-					device.BmcSettings.UserName,
-					device.BmcSettings.Password,
-					device.Hostname,
-				)
-				if err != nil {
-					t.logger.ErrorContext(
-						ctx,
-						"Failed to build Redfish URL",
-						slog.String("interface", iface.Name),
-						slog.String("ip", iface.IP),
-						slog.Any("error", err),
-					)
-				} else {
-					host.GetSpec().GetBmc().SetUrl(url)
-				}
-			default:
-				t.logger.ErrorContext(
-					ctx,
-					"Unsupported BMC interface type",
-					slog.String("interface", iface.Name),
-					slog.String("ip", iface.IP),
-				)
-			}
-		}
-	}
-
-	// Find the boot network interface in order to extract the boot IP address:
-	for _, iface := range device.Interfaces {
-		if iface.Name == "BOOTIF" {
-			host.GetSpec().SetBootIp(iface.IP)
-			break
-		}
-	}
-
-	// Set the rack:
-	rack := t.racksByUuid[device.RackPosition.Rack]
-	if rack != nil {
-		host.GetSpec().SetRack(rack.Name)
-	}
-
-	// Set the BCM link:
-	host.GetSpec().SetBcmLink(fmt.Sprintf("%s/base-view/device/%s", t.parent.bcmUrl, device.Uuid))
-
-	return host, nil
 }
 
 func (t *synchronizerTask) createOrUpdateHost(ctx context.Context, host *privatev1.Host) error {
@@ -502,17 +546,43 @@ func (t *synchronizerTask) syncCategories(ctx context.Context) error {
 }
 
 func (t *synchronizerTask) syncCategory(ctx context.Context, category *Category) error {
-	// Convert the category to a host class:
-	hostClass := privatev1.HostClass_builder{
-		Id: category.Uuid,
-		Metadata: privatev1.Metadata_builder{
-			Name: category.Name,
-		}.Build(),
-		Title:       fmt.Sprintf("BCM `%s` category", category.Name),
-		Description: fmt.Sprintf("Extracted from BCM device category `%s`.", category.Name),
-	}.Build()
+	// Extract the title and description from the notes:
+	type Matter struct {
+		HostClass string `yaml:"host_class"`
+	}
+	var matter Matter
+	hostClassTitle, hostClassDescription := t.parseNotes(category.Notes, &matter)
+	if hostClassTitle == "" {
+		hostClassTitle = fmt.Sprintf(
+			"BCM `%s` category",
+			category.Name,
+		)
+	}
+	if hostClassDescription == "" {
+		hostClassDescription = fmt.Sprintf(
+			"# %s\n\nExtracted from BCM device category `%s`.",
+			hostClassTitle, category.Name,
+		)
+	}
+
+	// Use the category name as the host class identifier:
+	hostClassId := category.Uuid
+
+	// If the host class name is specified in the front matter then use it, otherwise use the category name:
+	hostClassName := matter.HostClass
+	if hostClassName == "" {
+		hostClassName = category.Name
+	}
 
 	// Create or update the host class:
+	hostClass := privatev1.HostClass_builder{
+		Id: hostClassId,
+		Metadata: privatev1.Metadata_builder{
+			Name: hostClassName,
+		}.Build(),
+		Title:       hostClassTitle,
+		Description: hostClassDescription,
+	}.Build()
 	err := t.createOrUpdateHostClass(ctx, hostClass)
 	if err != nil {
 		return fmt.Errorf("failed to create or update host class: %w", err)
@@ -520,8 +590,8 @@ func (t *synchronizerTask) syncCategory(ctx context.Context, category *Category)
 	t.logger.DebugContext(
 		ctx,
 		"Synchronized host class",
-		slog.String("id", category.Uuid),
-		slog.String("name", category.Name),
+		slog.String("id", hostClassId),
+		slog.String("name", hostClassName),
 	)
 
 	return nil
@@ -564,6 +634,42 @@ func (t *synchronizerTask) createOrUpdateHostClass(ctx context.Context, hostClas
 		slog.String("id", hostClass.GetId()),
 	)
 	return nil
+}
+
+func (t *synchronizerTask) parseNotes(notes string, matter any) (title, description string) {
+	// If the notes are empty then there is nothing to do, matter title and description are left unchanged.
+	if notes == "" {
+		return
+	}
+
+	// Try to extract the from matter and the rest of the data from the notes. If this fails we will continue
+	// assuming that there is no front matter and using the complete document as the description.
+	var reader io.Reader
+	reader = strings.NewReader(notes)
+	data, err := frontmatter.Parse(reader, matter)
+	if err != nil {
+		t.logger.Error(
+			"Failed to extract front matter from notes",
+			slog.String("notes", notes),
+			slog.Any("error", err),
+		)
+		data = []byte(notes)
+	}
+
+	// Try to find the first heading and use it, without the leading hash characters, as the title:
+	reader = bytes.NewReader(data)
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#") {
+			title = strings.TrimSpace(strings.TrimPrefix(line, "#"))
+			break
+		}
+	}
+
+	// Return the rest of the data as the description:
+	description = string(data)
+	return
 }
 
 var (
