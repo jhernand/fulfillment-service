@@ -200,7 +200,6 @@ func (w *Watcher) setupReconcilers() error {
 	// Create a reconciler for HostedCluster resources:
 	hostedClusterReconciler := &hostedClusterReconciler{
 		logger:         w.logger,
-		hubId:          w.hubId,
 		connection:     w.connection,
 		hubClient:      w.hubClient,
 		clustersClient: privatev1.NewClustersClient(w.connection),
