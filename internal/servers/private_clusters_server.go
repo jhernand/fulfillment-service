@@ -200,6 +200,12 @@ func (s *PrivateClustersServer) Delete(ctx context.Context,
 	return
 }
 
+func (s *PrivateClustersServer) Signal(ctx context.Context,
+	request *privatev1.ClustersSignalRequest) (response *privatev1.ClustersSignalResponse, err error) {
+	err = s.generic.Signal(ctx, request, &response)
+	return
+}
+
 func (s *PrivateClustersServer) setDefaults(cluster *privatev1.Cluster) {
 	if !cluster.HasSpec() {
 		cluster.SetSpec(&privatev1.ClusterSpec{})

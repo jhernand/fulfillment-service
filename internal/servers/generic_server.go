@@ -67,6 +67,8 @@ type GenericServer[O dao.Object] struct {
 	updateResponse proto.Message
 	deleteRequest  proto.Message
 	deleteResponse proto.Message
+	signalRequest  proto.Message
+	signalResponse proto.Message
 	notifier       *database.Notifier
 	pathCompiler   *masks.PathCompiler[O]
 	pathCache      map[string]*masks.Path[O]
@@ -232,6 +234,10 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	if err != nil {
 		return
 	}
+	s.signalRequest, s.signalResponse, err = b.findRequestAndResponse(service, signalMethod)
+	if err != nil {
+		return
+	}
 
 	result = s
 	return
@@ -263,6 +269,7 @@ const (
 	createMethod = "Create"
 	updateMethod = "Update"
 	deleteMethod = "Delete"
+	signalMethod = "Signal"
 )
 
 // findRequestAndResponse finds the request and response message types for the given method.
@@ -353,9 +360,6 @@ func (s *GenericServer[O]) Get(ctx context.Context, request any, response any) e
 		)
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to get object with identifier '%s'", id)
 	}
-	if s.isNil(object) {
-		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' doesn't exist", id)
-	}
 	responseMsg := proto.Clone(s.getResponse).(responseIface)
 	responseMsg.SetObject(object)
 	s.setPointer(response, responseMsg)
@@ -438,13 +442,6 @@ func (s *GenericServer[O]) Update(ctx context.Context, request any, response any
 		return grpcstatus.Errorf(
 			grpccodes.Internal,
 			"failed to get object with identifier '%s'",
-			id,
-		)
-	}
-	if s.isNil(object) {
-		return grpcstatus.Errorf(
-			grpccodes.InvalidArgument,
-			"object with identifier '%s' doesn't exist",
 			id,
 		)
 	}
@@ -556,6 +553,53 @@ func (s *GenericServer[O]) Delete(ctx context.Context, request any, response any
 	return nil
 }
 
+func (s *GenericServer[O]) Signal(ctx context.Context, request any, response any) error {
+	type requestIface interface {
+		GetId() string
+	}
+	requestMsg := request.(requestIface)
+	id := requestMsg.GetId()
+	if id == "" {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "identifier is mandatory")
+	}
+	object, err := s.dao.Get(ctx, id)
+	var notFoundErr *dao.ErrNotFound
+	if errors.As(err, &notFoundErr) {
+		return grpcstatus.Errorf(grpccodes.NotFound, "object with identifier '%s' not found", id)
+	}
+	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to signal object",
+			slog.String("id", id),
+			slog.Any("error", err),
+		)
+		return grpcstatus.Errorf(grpccodes.Internal, "failed to signal object with identifier '%s'", id)
+	}
+	event := privatev1.Event_builder{
+		Id:   uuid.New(),
+		Type: privatev1.EventType_EVENT_TYPE_OBJECT_SIGNALED,
+	}.Build()
+	err = s.setPayload(event, object)
+	if err != nil {
+		return err
+	}
+	if s.notifier != nil {
+		err = s.notifier.Notify(ctx, event)
+		if err != nil {
+			s.logger.ErrorContext(
+				ctx,
+				"Failed to send signal notification",
+				slog.String("id", id),
+				slog.Any("error", err),
+			)
+		}
+	}
+	responseMsg := proto.Clone(s.signalResponse)
+	s.setPointer(response, responseMsg)
+	return nil
+}
+
 // notifyEvent converts the DAO event into an API event and publishes it using the PostgreSQL NOTIFY command.
 func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) error {
 	// TODO: This is the only part of the generic server that depends on specific object types. Is there a way
@@ -572,7 +616,17 @@ func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) error {
 	default:
 		return fmt.Errorf("unknown event kind '%s'", e.Type)
 	}
-	switch object := e.Object.(type) {
+	err := s.setPayload(event, e.Object)
+	if err != nil {
+		return err
+	}
+	return s.notifier.Notify(ctx, event)
+}
+
+func (s *GenericServer[O]) setPayload(event *privatev1.Event, object proto.Message) error {
+	// TODO: This is the only part of the generic server that depends on specific object types. Is there a way
+	// to avoid that?
+	switch object := object.(type) {
 	case *privatev1.ClusterTemplate:
 		event.SetClusterTemplate(object)
 	case *privatev1.Cluster:
@@ -597,7 +651,7 @@ func (s *GenericServer[O]) notifyEvent(ctx context.Context, e dao.Event) error {
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)
 	}
-	return s.notifier.Notify(ctx, event)
+	return nil
 }
 
 func (s *GenericServer[O]) isNil(object proto.Message) bool {

@@ -322,6 +322,11 @@ func (s *EventsServer) processPayload(ctx context.Context, payload proto.Message
 		return nil
 	}
 
+	// Skip signal events:
+	if private.GetType() == privatev1.EventType_EVENT_TYPE_OBJECT_SIGNALED {
+		return nil
+	}
+
 	// Skip object that don't have a public representtion:
 	if private.HasHub() {
 		return nil

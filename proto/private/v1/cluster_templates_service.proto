@@ -62,6 +62,12 @@ message ClusterTemplatesUpdateResponse {
   ClusterTemplate object = 1;
 }
 
+message ClusterTemplatesSignalRequest {
+  string id = 1;
+}
+
+message ClusterTemplatesSignalResponse {}
+
 service ClusterTemplates {
   rpc List(ClusterTemplatesListRequest) returns (ClusterTemplatesListResponse) {
     option (google.api.http) = {
@@ -92,5 +98,9 @@ service ClusterTemplates {
       body: "object"
       response_body: "object"
     };
+  }
+
+  // Indicates that something changed in the object or the system that may require reconciling the object.
+  rpc Signal(ClusterTemplatesSignalRequest) returns (ClusterTemplatesSignalResponse) {
   }
 }

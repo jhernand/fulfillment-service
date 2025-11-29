@@ -124,3 +124,9 @@ func (s *PrivateHubsServer) Delete(ctx context.Context,
 	err = s.generic.Delete(ctx, request, &response)
 	return
 }
+
+func (s *PrivateHubsServer) Signal(ctx context.Context,
+	request *privatev1.HubsSignalRequest) (response *privatev1.HubsSignalResponse, err error) {
+	err = s.generic.Signal(ctx, request, &response)
+	return
+}

@@ -63,6 +63,12 @@ message HostClassesDeleteRequest {
 
 message HostClassesDeleteResponse {}
 
+message HostClassesSignalRequest {
+  string id = 1;
+}
+
+message HostClassesSignalResponse {}
+
 service HostClasses {
   rpc List(HostClassesListRequest) returns (HostClassesListResponse) {
     option (google.api.http) = {
@@ -93,5 +99,9 @@ service HostClasses {
     option (google.api.http) = {
       delete: "/api/private/v1/host_classes/{id}"
     };
+  }
+
+  // Indicates that something changed in the object or the system that may require reconciling the object.
+  rpc Signal(HostClassesSignalRequest) returns (HostClassesSignalResponse) {
   }
 }

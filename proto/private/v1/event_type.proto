@@ -64,4 +64,9 @@ enum EventType {
   //
   // The payload will contain the representation of the object right before it was deleted.
   EVENT_TYPE_OBJECT_DELETED = 3;
+
+  // Means that something has changed that may require reconciling the state of the object.
+  //
+  // The payload will contain the current representation of the object.
+  EVENT_TYPE_OBJECT_SIGNALED = 4;
 }

@@ -124,3 +124,9 @@ func (s *PrivateHostPoolsServer) Delete(ctx context.Context,
 	err = s.generic.Delete(ctx, request, &response)
 	return
 }
+
+func (s *PrivateHostPoolsServer) Signal(ctx context.Context,
+	request *privatev1.HostPoolsSignalRequest) (response *privatev1.HostPoolsSignalResponse, err error) {
+	err = s.generic.Signal(ctx, request, &response)
+	return
+}
