@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -39,6 +40,7 @@ import (
 	sharedv1 "github.com/innabox/fulfillment-service/internal/api/shared/v1"
 	"github.com/innabox/fulfillment-service/internal/controllers"
 	"github.com/innabox/fulfillment-service/internal/controllers/finalizers"
+	"github.com/innabox/fulfillment-service/internal/jq"
 	"github.com/innabox/fulfillment-service/internal/json"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
@@ -69,6 +71,7 @@ type function struct {
 	dnsKeyNameFq      string
 	dnsKeySecret      string
 	dnsClient         *dns.Client
+	jqTool            *jq.Tool
 }
 
 type task struct {
@@ -200,6 +203,14 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		}
 	}
 
+	// Create the JQ tool:
+	jqTool, err := jq.NewTool().
+		SetLogger(b.logger).
+		Build()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create JQ tool: %w", err)
+	}
+
 	// Create and populate the object:
 	object := &function{
 		logger:            b.logger,
@@ -215,6 +226,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		dnsKeyNameFq:      dnsKeyNameFq,
 		dnsKeySecret:      b.dnsKeySecret,
 		dnsClient:         dnsClient,
+		jqTool:            jqTool,
 	}
 	result = object.run
 	return
@@ -248,20 +260,17 @@ func (f *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 }
 
 func (t *task) update(ctx context.Context) error {
-	// Add the finalizer:
-	t.addFinalizer()
-
-	// Set the default values:
-	t.setDefaults()
+	// If there is no finalizer yet then add, set the defaults and return. That will trigger another reconciliation
+	// and we will perform the rest of the update there.
+	if !t.hasFinalizer() {
+		t.addFinalizer()
+		t.setDefaults()
+		return nil
+	}
 
 	// Shortcuts for the cluster metadata and spec:
 	clusterMeta := t.cluster.GetMetadata()
 	clusterStatus := t.cluster.GetStatus()
-
-	// Do nothing if the order isn't progressing:
-	if clusterStatus.GetState() != privatev1.ClusterState_CLUSTER_STATE_PROGRESSING {
-		return nil
-	}
 
 	// Select the hub, and if no hubs are available, update the condition to inform the user that creation is
 	// pending. Note that we don't want to disclose the existence of hubs to the user, as that is a internal
@@ -358,6 +367,12 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
+	// Synchronize the state of the from the hosted cluster:
+	err = t.syncFromHostedCluster(ctx)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -383,6 +398,7 @@ func (t *task) mutateSshSecret() error {
 
 func (t *task) mutateHostedCluster() error {
 	t.mutateLabels(t.hostedCluster)
+	t.mutateFinalizers(t.hostedCluster)
 	spec, err := t.renderHostedClusterSpec()
 	if err != nil {
 		return err
@@ -615,6 +631,14 @@ func (t *task) mutateLabels(object clnt.Object) {
 	object.SetLabels(values)
 }
 
+func (t *task) mutateFinalizers(object clnt.Object) {
+	list := object.GetFinalizers()
+	if !slices.Contains(list, finalizers.Controller) {
+		list = append(list, finalizers.Controller)
+		object.SetFinalizers(list)
+	}
+}
+
 // syncDnsRecords synchronizes the DNS records for the cluster. It calculates the desired records, compares then with
 // the current records and sends the necessary updates to the DNS server.
 func (t *task) syncDnsRecords(ctx context.Context) error {
@@ -631,6 +655,16 @@ func (t *task) syncDnsRecords(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// If there are no changes, don't send an update:
+	if len(addedRecords) == 0 && len(removedRecords) == 0 {
+		t.logger.DebugContext(
+			ctx,
+			"No DNS changes detected, skipping update",
+		)
+		return nil
+	}
+
 	// Prepare the update message:
 	request := &dns.Msg{}
 	request.SetUpdate(t.parent.dnsZoneFq)
@@ -669,9 +703,12 @@ func (t *task) syncDnsRecords(ctx context.Context) error {
 			ctx,
 			"Failed to update DNS",
 			slog.String("server", t.parent.dnsServer),
-			slog.Any("error", err),
+			slog.Int("rcode", int(response.Rcode)),
 		)
-		return fmt.Errorf("failed to send DNS update to '%s': %w", t.parent.dnsServer, err)
+		return fmt.Errorf(
+			"failed to send DNS update to '%s', response code is %d",
+			t.parent.dnsServer, response.Rcode,
+		)
 	}
 
 	return nil
@@ -712,6 +749,15 @@ func (t *task) desiredDnsRecords(ctx context.Context) (result []dns.RR, err erro
 	// Calculate A records for each IP address in the ingress domain:
 	ingressDomainFq := dns.Fqdn(t.ingressDomain)
 	for _, hostIp := range hostIps {
+		parsedIp := net.ParseIP(hostIp)
+		if parsedIp == nil {
+			t.logger.WarnContext(
+				ctx,
+				"Skipping invalid host IP",
+				slog.String("ip", hostIp),
+			)
+			continue
+		}
 		ingressRecord := &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   ingressDomainFq,
@@ -719,13 +765,17 @@ func (t *task) desiredDnsRecords(ctx context.Context) (result []dns.RR, err erro
 				Class:  dns.ClassINET,
 				Rrtype: dns.TypeA,
 			},
-			A: net.ParseIP(hostIp),
+			A: parsedIp,
 		}
 		records = append(records, ingressRecord)
 	}
 
 	// Calculate A records for the hub IP in the API domains:
 	hubIp := net.ParseIP(t.hub.GetIp())
+	if hubIp == nil {
+		err = fmt.Errorf("invalid hub IP address: '%s'", t.hub.GetIp())
+		return
+	}
 	apiDomainFq := dns.Fqdn(t.apiDomain)
 	apiRecord := &dns.A{
 		Hdr: dns.RR_Header{
@@ -770,7 +820,9 @@ func (t *task) currentDnsRecords(ctx context.Context) (records []dns.RR, err err
 	)
 	msg := &dns.Msg{}
 	msg.SetAxfr(t.parent.dnsZoneFq)
-	msg.SetTsig(t.parent.dnsKeyNameFq, dns.HmacSHA256, 300, time.Now().Unix())
+	if t.parent.dnsKeyName != "" && t.parent.dnsKeySecret != "" {
+		msg.SetTsig(t.parent.dnsKeyNameFq, dns.HmacSHA256, 300, time.Now().Unix())
+	}
 	transfer := &dns.Transfer{
 		TsigSecret: t.parent.dnsClient.TsigSecret,
 	}
@@ -850,6 +902,99 @@ func (t *task) dnsRecordDiffKey(record dns.RR) string {
 	return copy.String()
 }
 
+func (t *task) syncFromHostedCluster(ctx context.Context) error {
+	hostedClusterKey := clnt.ObjectKeyFromObject(t.hostedCluster)
+	err := t.hubClient.Get(ctx, hostedClusterKey, t.hostedCluster)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get hosted cluster: %w", err)
+	}
+	err = t.syncState()
+	if err != nil {
+		return err
+	}
+	if t.cluster.GetStatus().GetState() == privatev1.ClusterState_CLUSTER_STATE_READY {
+		err = t.syncApiUrl()
+		if err != nil {
+			return err
+		}
+		err = t.syncConsoleUrl()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *task) syncState() error {
+	var availableStatus corev1.ConditionStatus
+	err := t.parent.jqTool.Evaluate(
+		`.status.conditions[] | select(.type == "Available") | .status`,
+		t.hostedCluster.Object,
+		&availableStatus,
+	)
+	if err != nil {
+		return err
+	}
+	var state privatev1.ClusterState
+	if availableStatus == corev1.ConditionTrue {
+		state = privatev1.ClusterState_CLUSTER_STATE_READY
+		t.cluster.GetStatus().SetState(state)
+	}
+	return nil
+}
+
+func (t *task) syncApiUrl() error {
+	type controlPlaneEndpointData struct {
+		Host string `json:"host"`
+		Port int    `json:"port"`
+	}
+	var controlPlaneEndpoint controlPlaneEndpointData
+	err := t.parent.jqTool.Evaluate(
+		`.status.controlPlaneEndpoint | {
+			host: .host,
+			port: .port,
+		}`,
+		t.hostedCluster.Object,
+		&controlPlaneEndpoint,
+	)
+	if err != nil {
+		return err
+	}
+	if controlPlaneEndpoint.Host == "" || controlPlaneEndpoint.Port == 0 {
+		return nil
+	}
+	url := fmt.Sprintf(
+		"https://%s:%d",
+		controlPlaneEndpoint.Host, controlPlaneEndpoint.Port,
+	)
+	t.cluster.GetStatus().SetApiUrl(url)
+	return nil
+}
+
+func (t *task) syncConsoleUrl() error {
+	var dnsBaseDomain string
+	err := t.parent.jqTool.Evaluate(
+		`.spec.dns.baseDomain`,
+		t.hostedCluster.Object,
+		&dnsBaseDomain,
+	)
+	if err != nil {
+		return err
+	}
+	if dnsBaseDomain == "" {
+		return nil
+	}
+	url := fmt.Sprintf(
+		"https://console-openshift-console.apps.%s.%s",
+		t.alias, dnsBaseDomain,
+	)
+	t.cluster.GetStatus().SetConsoleUrl(url)
+	return nil
+}
+
 func (t *task) setDefaults() {
 	status := t.cluster.GetStatus()
 	if status == nil {
@@ -898,131 +1043,72 @@ func (t *task) setConditionDefaults(value privatev1.ClusterConditionType) {
 	}
 }
 
-func (t *task) delete(ctx context.Context) (err error) {
-	// Remember to remove the finalizer if there was no error:
-	defer func() {
-		if err == nil {
-			t.removeFinalizer()
-		}
-	}()
-
+func (t *task) delete(ctx context.Context) error {
 	// Select the hub where the cluster was created so we can delete the resources:
-	hubId := t.cluster.GetStatus().GetHub()
-	if hubId != "" {
-		err := t.selectHub(ctx)
-		if err != nil {
-			t.logger.ErrorContext(
-				ctx,
-				"Failed to select hub for deletion",
-				slog.Any("error", err),
-			)
-			return err
-		}
-
-		// Delete the HostedCluster if it exists:
-		clusterMeta := t.cluster.GetMetadata()
-		hostedCluster := &unstructured.Unstructured{}
-		hostedCluster.SetGroupVersionKind(gvks.HostedCluster)
-		hostedCluster.SetNamespace(t.hub.GetNamespace())
-		hostedCluster.SetName(clusterMeta.GetName())
-		err = t.hubClient.Delete(ctx, hostedCluster)
-		if clnt.IgnoreNotFound(err) != nil {
-			t.logger.ErrorContext(
-				ctx,
-				"Failed to delete HostedCluster",
-				slog.Any("error", err),
-				slog.String("namespace", t.hub.GetNamespace()),
-				slog.String("name", clusterMeta.GetName()),
-			)
-			return err
-		}
-		t.logger.InfoContext(
+	err := t.selectHub(ctx)
+	if err != nil {
+		t.logger.ErrorContext(
 			ctx,
-			"Deleted HostedCluster",
-			slog.String("namespace", t.hub.GetNamespace()),
-			slog.String("name", clusterMeta.GetName()),
+			"Failed to select hub for deletion",
+			slog.Any("error", err),
 		)
-
-		// Delete the NodePools:
-		for nodeSetName := range t.cluster.GetSpec().GetNodeSets() {
-			nodePool := &unstructured.Unstructured{}
-			nodePool.SetGroupVersionKind(gvks.NodePool)
-			nodePool.SetNamespace(t.hub.GetNamespace())
-			nodePool.SetName(fmt.Sprintf("%s-%s", clusterMeta.GetName(), nodeSetName))
-			err = t.hubClient.Delete(ctx, nodePool)
-			if clnt.IgnoreNotFound(err) != nil {
-				t.logger.ErrorContext(
-					ctx,
-					"Failed to delete NodePool",
-					slog.Any("error", err),
-					slog.String("namespace", t.hub.GetNamespace()),
-					slog.String("name", nodePool.GetName()),
-				)
-				return err
-			}
-			t.logger.InfoContext(
-				ctx,
-				"Deleted NodePool",
-				slog.String("namespace", t.hub.GetNamespace()),
-				slog.String("name", nodePool.GetName()),
-			)
-		}
-
-		// Delete the pull secret:
-		pullSecret := &corev1.Secret{}
-		pullSecret.SetNamespace(t.hub.GetNamespace())
-		pullSecret.SetName(fmt.Sprintf("%s-pull", clusterMeta.GetName()))
-		err = t.hubClient.Delete(ctx, pullSecret)
-		if clnt.IgnoreNotFound(err) != nil {
-			t.logger.ErrorContext(
-				ctx,
-				"Failed to delete pull secret",
-				slog.Any("error", err),
-				slog.String("namespace", t.hub.GetNamespace()),
-				slog.String("name", pullSecret.GetName()),
-			)
-			return err
-		}
-		t.logger.InfoContext(
-			ctx,
-			"Deleted pull secret",
-			slog.String("namespace", t.hub.GetNamespace()),
-			slog.String("name", pullSecret.GetName()),
-		)
-
-		// Delete the SSH secret:
-		sshSecret := &corev1.Secret{}
-		sshSecret.SetNamespace(t.hub.GetNamespace())
-		sshSecret.SetName(fmt.Sprintf("%s-ssh", clusterMeta.GetName()))
-		err = t.hubClient.Delete(ctx, sshSecret)
-		if clnt.IgnoreNotFound(err) != nil {
-			t.logger.ErrorContext(
-				ctx,
-				"Failed to delete SSH secret",
-				slog.Any("error", err),
-				slog.String("namespace", t.hub.GetNamespace()),
-				slog.String("name", sshSecret.GetName()),
-			)
-			return err
-		}
-		t.logger.InfoContext(
-			ctx,
-			"Deleted SSH secret",
-			slog.String("namespace", t.hub.GetNamespace()),
-			slog.String("name", sshSecret.GetName()),
-		)
+		return err
 	}
 
-	// Scale down to zero all the node sets:
-	for nodeSetName, nodeSet := range t.cluster.GetSpec().GetNodeSets() {
-		nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
-		err := t.scaleNodeSetDown(ctx, nodeSetName, nodeSet, nodeSetStatus)
+	// Try fetch the hosted cluster:
+	clusterMeta := t.cluster.GetMetadata()
+	t.hostedCluster = &unstructured.Unstructured{}
+	t.hostedCluster.SetGroupVersionKind(gvks.HostedCluster)
+	t.hostedCluster.SetNamespace(t.hub.GetNamespace())
+	t.hostedCluster.SetName(clusterMeta.GetName())
+	hostedClusterKey := clnt.ObjectKeyFromObject(t.hostedCluster)
+	err = t.hubClient.Get(ctx, hostedClusterKey, t.hostedCluster)
+	if clnt.IgnoreNotFound(err) != nil {
+		return err
+	}
+
+	// If the hosted cluster doesn't exist then we can assume that HyperShift already completed its cleanup
+	// so we can remove our finalizer.
+	if apierrors.IsNotFound(err) {
+		t.logger.InfoContext(
+			ctx,
+			"Hosted cluster not found, deleting finalizer",
+			slog.Any("error", err),
+		)
+		t.removeFinalizer()
+		return nil
+	}
+
+	// If the hosted cluster exists and it hasn't the deletion timestamp, then we need to delete it:
+	hostedClusterDeleted := t.hostedCluster.GetDeletionTimestamp() != nil
+	if !hostedClusterDeleted {
+		err = t.hubClient.Delete(ctx, t.hostedCluster)
 		if err != nil {
 			return err
 		}
+		t.logger.InfoContext(
+			ctx,
+			"Deleted hosted cluster",
+		)
+		return nil
 	}
 
-	return
+	// If the hosted cluster exists, it has been deleted and it doesn't have the HyperShift finalizer, then we can
+	// also assume that Hypershift already completed its cleanup, so we can remove our finalizer from both the
+	// cluster and the hosted cluster.
+	if !controllerutil.ContainsFinalizer(t.hostedCluster, "hypershift.openshift.io/finalizer") {
+		t.logger.InfoContext(
+			ctx,
+			"Hosted cluster has been deleted and doesn't have the HyperShift finalizer, removing finalizers",
+			slog.Any("error", err),
+		)
+		t.removeFinalizer()
+		hostedClusterPatch := clnt.MergeFrom(t.hostedCluster.DeepCopy())
+		controllerutil.RemoveFinalizer(t.hostedCluster, finalizers.Controller)
+		return t.hubClient.Patch(ctx, t.hostedCluster, hostedClusterPatch)
+	}
+
+	return nil
 }
 
 func (t *task) scaleNodeSets(ctx context.Context) error {
@@ -1310,23 +1396,30 @@ func (t *task) updateCondition(conditionType privatev1.ClusterConditionType, sta
 	t.cluster.GetStatus().SetConditions(conditions)
 }
 
-func (t *task) addFinalizer() {
+func (t *task) hasFinalizer() bool {
 	list := t.cluster.GetMetadata().GetFinalizers()
-	if !slices.Contains(list, finalizers.Controller) {
-		list = append(list, finalizers.Controller)
-		t.cluster.GetMetadata().SetFinalizers(list)
+	return slices.Contains(list, finalizers.Controller)
+}
+
+func (t *task) addFinalizer() {
+	if t.hasFinalizer() {
+		return
 	}
+	list := t.cluster.GetMetadata().GetFinalizers()
+	list = append(list, finalizers.Controller)
+	t.cluster.GetMetadata().SetFinalizers(list)
 }
 
 func (t *task) removeFinalizer() {
-	list := t.cluster.GetMetadata().GetFinalizers()
-	if slices.Contains(list, finalizers.Controller) {
-		list = slices.DeleteFunc(list, func(item string) bool {
-			return item == finalizers.Controller
-		})
-		t.cluster.GetMetadata().SetFinalizers(list)
+	if !t.hasFinalizer() {
+		return
 	}
+	list := t.cluster.GetMetadata().GetFinalizers()
+	list = slices.DeleteFunc(list, func(item string) bool {
+		return item == finalizers.Controller
+	})
+	t.cluster.GetMetadata().SetFinalizers(list)
 }
 
 // defaultDnsTtl is the default time to live for DNS records.
-const defaultDnsTtl = 300
+const defaultDnsTtl = 10
