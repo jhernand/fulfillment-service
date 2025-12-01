@@ -978,10 +978,13 @@ func (t *task) syncState() error {
 	if err != nil {
 		return err
 	}
-	var state privatev1.ClusterState
+	t.logger.Debug(
+		"Available condition status",
+		slog.String("status", string(availableStatus)),
+	)
 	if availableStatus == corev1.ConditionTrue {
-		state = privatev1.ClusterState_CLUSTER_STATE_READY
-		t.cluster.GetStatus().SetState(state)
+		t.logger.Debug("Setting cluster state to ready")
+		t.cluster.GetStatus().SetState(privatev1.ClusterState_CLUSTER_STATE_READY)
 	}
 	return nil
 }
@@ -1165,8 +1168,8 @@ func (t *task) scaleNodeSets(ctx context.Context) error {
 func (t *task) scaleNodeSet(ctx context.Context, nodeSetName string, nodeSetSpec *privatev1.ClusterNodeSet,
 	nodeSetStatus *privatev1.ClusterNodeSet) error {
 	// Get the desired and current number of hosts:
-	desiredSize := nodeSetSpec.GetSize()
-	currentSize := nodeSetStatus.GetSize()
+	desiredSize := int(nodeSetSpec.GetSize())
+	currentSize := len(nodeSetStatus.GetHosts())
 	deltaSize := desiredSize - currentSize
 	t.logger.DebugContext(
 		ctx,
@@ -1222,7 +1225,7 @@ func (t *task) scaleNodeSetUp(ctx context.Context, nodeSetName string, nodeSetSp
 	)
 
 	// Find all the available hosts with the matching host class:
-	hostDelta := nodeSetSpec.GetSize() - nodeSetStatus.GetSize()
+	hostDelta := int(nodeSetSpec.GetSize()) - len(nodeSetStatus.GetHosts())
 	hostFilter := fmt.Sprintf(
 		"!has(this.metadata.deletion_timestamp) && "+
 			"this.spec.class == '%s' && "+
@@ -1231,12 +1234,12 @@ func (t *task) scaleNodeSetUp(ctx context.Context, nodeSetName string, nodeSetSp
 	)
 	hostListResponse, err := t.parent.hostsClient.List(ctx, privatev1.HostsListRequest_builder{
 		Filter: &hostFilter,
-		Limit:  proto.Int32(hostDelta),
+		Limit:  proto.Int32(int32(hostDelta)),
 	}.Build())
 	if err != nil {
 		return
 	}
-	hostDelta = min(hostDelta, hostListResponse.GetSize())
+	hostDelta = min(hostDelta, int(hostListResponse.GetSize()))
 	hostList := hostListResponse.GetItems()
 	hostIds := make([]string, 0, hostDelta)
 	for _, host := range hostList {
@@ -1296,8 +1299,8 @@ func (t *task) scaleNodeSetDown(ctx context.Context, nodeSetName string, nodeSet
 	})
 
 	// Select the first hosts from the list:
-	hostDelta := nodeSetStatus.GetSize() - nodeSetSpec.GetSize()
-	hostDelta = min(hostDelta, int32(len(hostIds)))
+	hostDelta := len(nodeSetStatus.GetHosts()) - int(nodeSetSpec.GetSize())
+	hostDelta = min(hostDelta, len(hostIds))
 	hostIds = hostIds[:hostDelta]
 	sort.Strings(hostIds)
 	logger.DebugContext(
