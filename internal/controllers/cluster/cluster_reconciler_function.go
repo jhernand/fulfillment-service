@@ -372,6 +372,10 @@ func (t *task) update(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	err = t.syncFromNodePools(ctx)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -928,6 +932,42 @@ func (t *task) syncFromHostedCluster(ctx context.Context) error {
 	return nil
 }
 
+func (t *task) syncFromNodePools(ctx context.Context) error {
+	for nodeSetName, nodePool := range t.nodePools {
+		err := t.syncFromNodePool(ctx, nodeSetName, nodePool)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *task) syncFromNodePool(ctx context.Context, nodeSetName string, nodePool *unstructured.Unstructured) error {
+	nodePoolKey := clnt.ObjectKeyFromObject(nodePool)
+	err := t.hubClient.Get(ctx, nodePoolKey, nodePool)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get node pool: %w", err)
+	}
+	var nodePoolSize int32
+	err = t.parent.jqTool.Evaluate(
+		`.status.replicas`,
+		nodePool.Object,
+		&nodePoolSize,
+	)
+	if err != nil {
+		return err
+	}
+	nodeSetStatus := t.cluster.GetStatus().GetNodeSets()[nodeSetName]
+	if nodeSetStatus == nil {
+		return nil
+	}
+	nodeSetStatus.SetSize(nodePoolSize)
+	return nil
+}
+
 func (t *task) syncState() error {
 	var availableStatus corev1.ConditionStatus
 	err := t.parent.jqTool.Evaluate(
@@ -1168,7 +1208,6 @@ func (t *task) scaleNodeSet(ctx context.Context, nodeSetName string, nodeSetSpec
 	}
 	sort.Strings(hostIds)
 	nodeSetStatus.SetHosts(hostIds)
-	nodeSetStatus.SetSize(int32(len(hostIds)))
 
 	return nil
 }
@@ -1227,7 +1266,7 @@ func (t *task) scaleNodeSetUp(ctx context.Context, nodeSetName string, nodeSetSp
 			},
 		}.Build())
 		if err != nil {
-			return err
+			return
 		}
 		logger.DebugContext(
 			ctx,
