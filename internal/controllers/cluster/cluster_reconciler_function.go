@@ -1138,24 +1138,45 @@ func (t *task) scaleNodeSet(ctx context.Context, nodeSetName string, nodeSetSpec
 	)
 
 	// Scale the node set up or down as needed:
+	var assignedHostIds, unassignedHostIds []string
 	switch {
 	case deltaSize > 0:
-		err := t.scaleNodeSetUp(ctx, nodeSetName, nodeSetSpec, nodeSetStatus)
+		var err error
+		assignedHostIds, err = t.scaleNodeSetUp(ctx, nodeSetName, nodeSetSpec, nodeSetStatus)
 		if err != nil {
 			return err
 		}
 	case deltaSize < 0:
-		err := t.scaleNodeSetDown(ctx, nodeSetName, nodeSetSpec, nodeSetStatus)
+		var err error
+		unassignedHostIds, err = t.scaleNodeSetDown(ctx, nodeSetName, nodeSetSpec, nodeSetStatus)
 		if err != nil {
 			return err
 		}
 	}
 
+	// Update the status of the node set:
+	hostIds := nodeSetStatus.GetHosts()
+	for _, hostId := range assignedHostIds {
+		if !slices.Contains(hostIds, hostId) {
+			hostIds = append(hostIds, hostId)
+		}
+	}
+	for _, hostId := range unassignedHostIds {
+		hostIds = slices.DeleteFunc(hostIds, func(item string) bool {
+			return item == hostId
+		})
+	}
+	sort.Strings(hostIds)
+	nodeSetStatus.SetHosts(hostIds)
+	nodeSetStatus.SetSize(int32(len(hostIds)))
+
 	return nil
 }
 
+// scaleNodeSetUp scales up a node set by assigning a random selection of hosts, and returns the identifiers of the
+// assigned hosts.
 func (t *task) scaleNodeSetUp(ctx context.Context, nodeSetName string, nodeSetSpec *privatev1.ClusterNodeSet,
-	nodeSetStatus *privatev1.ClusterNodeSet) error {
+	nodeSetStatus *privatev1.ClusterNodeSet) (result []string, err error) {
 	// Add the node set name to the logger:
 	logger := t.logger.With(
 		slog.String("set", nodeSetName),
@@ -1174,7 +1195,7 @@ func (t *task) scaleNodeSetUp(ctx context.Context, nodeSetName string, nodeSetSp
 		Limit:  proto.Int32(hostDelta),
 	}.Build())
 	if err != nil {
-		return err
+		return
 	}
 	hostDelta = min(hostDelta, hostListResponse.GetSize())
 	hostList := hostListResponse.GetItems()
@@ -1215,16 +1236,15 @@ func (t *task) scaleNodeSetUp(ctx context.Context, nodeSetName string, nodeSetSp
 		)
 	}
 
-	// Update the size and list of hosts of the status of the node set:
-	hostCount := nodeSetStatus.GetSize() + hostDelta
-	nodeSetStatus.SetSize(hostCount)
-	nodeSetStatus.SetHosts(hostIds)
-
-	return nil
+	// Return the identifiers of the assigned hosts:
+	result = hostIds
+	return
 }
 
+// scaleNodeSetDown scales down a node set by unassigning a random selection of hosts, and returns the identifiers of
+// the unassigned hosts.
 func (t *task) scaleNodeSetDown(ctx context.Context, nodeSetName string, nodeSetSpec *privatev1.ClusterNodeSet,
-	nodeSetStatus *privatev1.ClusterNodeSet) error {
+	nodeSetStatus *privatev1.ClusterNodeSet) (result []string, err error) {
 	// Add the node set name to the logger:
 	logger := t.logger.With(
 		slog.String("set", nodeSetName),
@@ -1251,7 +1271,7 @@ func (t *task) scaleNodeSetDown(ctx context.Context, nodeSetName string, nodeSet
 
 	// Remove the reference to the cluster from the selected hosts:
 	for _, hostId := range hostIds {
-		_, err := t.parent.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
+		_, err = t.parent.hostsClient.Update(ctx, privatev1.HostsUpdateRequest_builder{
 			Object: privatev1.Host_builder{
 				Id: hostId,
 				Status: privatev1.HostStatus_builder{
@@ -1265,7 +1285,7 @@ func (t *task) scaleNodeSetDown(ctx context.Context, nodeSetName string, nodeSet
 			},
 		}.Build())
 		if err != nil {
-			return err
+			return
 		}
 		logger.DebugContext(
 			ctx,
@@ -1274,12 +1294,9 @@ func (t *task) scaleNodeSetDown(ctx context.Context, nodeSetName string, nodeSet
 		)
 	}
 
-	// Update the status of the node set:
-	hostCount := nodeSetStatus.GetSize() - hostDelta
-	nodeSetStatus.SetHosts(hostIds)
-	nodeSetStatus.SetSize(hostCount)
-
-	return nil
+	// Return the identifiers of the unassigned hosts:
+	result = hostIds
+	return
 }
 
 func (t *task) selectHub(ctx context.Context) error {

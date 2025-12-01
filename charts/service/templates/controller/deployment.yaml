@@ -20,7 +20,7 @@ spec:
   selector:
     matchLabels:
       app: fulfillment-controller
-  replicas: 0
+  replicas: 1
   template:
     metadata:
       labels:
