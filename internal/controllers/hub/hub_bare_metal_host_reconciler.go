@@ -106,11 +106,15 @@ func (r *bareMetalHostReconciler) Reconcile(ctx context.Context, req reconcile.R
 	}
 
 	// Determine the power state:
+	//
+	// TODO: Apparently the bare metal hosts always report that the hosts are off, even if they
+	// are actually on. We will need to investigate this further.
 	var powerState privatev1.HostPowerState
 	if poweredOn {
 		powerState = privatev1.HostPowerState_HOST_POWER_STATE_ON
 	} else {
-		powerState = privatev1.HostPowerState_HOST_POWER_STATE_OFF
+		// powerState = privatev1.HostPowerState_HOST_POWER_STATE_OFF
+		powerState = privatev1.HostPowerState_HOST_POWER_STATE_ON
 	}
 
 	logger.InfoContext(
