@@ -41,7 +41,7 @@ import (
 type SynchronizerBuilder struct {
 	logger    *slog.Logger
 	bcmUrl    string
-	bcmClient Client
+	bcmClient *Client
 	grpcConn  *grpc.ClientConn
 	interval  time.Duration
 }
@@ -50,7 +50,7 @@ type SynchronizerBuilder struct {
 type Synchronizer struct {
 	logger            *slog.Logger
 	bcmUrl            string
-	bcmClient         Client
+	bcmClient         *Client
 	hostsClient       privatev1.HostsClient
 	hostClassesClient privatev1.HostClassesClient
 	interval          time.Duration
@@ -60,7 +60,7 @@ type Synchronizer struct {
 type synchronizerTask struct {
 	parent            *Synchronizer
 	logger            *slog.Logger
-	bcmClient         Client
+	bcmClient         *Client
 	hostsClient       privatev1.HostsClient
 	hostClassesClient privatev1.HostClassesClient
 	racksByUuid       map[string]*Rack
@@ -87,7 +87,7 @@ func (b *SynchronizerBuilder) SetBcmUrl(value string) *SynchronizerBuilder {
 }
 
 // SetBcmClient sets the BCM client.
-func (b *SynchronizerBuilder) SetBcmClient(value Client) *SynchronizerBuilder {
+func (b *SynchronizerBuilder) SetBcmClient(value *Client) *SynchronizerBuilder {
 	b.bcmClient = value
 	return b
 }
@@ -202,6 +202,16 @@ func (t *synchronizerTask) run(ctx context.Context) error {
 		t.logger.WarnContext(
 			ctx,
 			"Failed to synchronize devices",
+			slog.Any("error", err),
+		)
+	}
+
+	// Approve certificate requests:
+	err = t.approveCertificateRequests(ctx)
+	if err != nil {
+		t.logger.WarnContext(
+			ctx,
+			"Failed to approve certificate requests",
 			slog.Any("error", err),
 		)
 	}
@@ -670,6 +680,53 @@ func (t *synchronizerTask) parseNotes(notes string, matter any) (title, descript
 	// Return the rest of the data as the description:
 	description = string(data)
 	return
+}
+
+func (t *synchronizerTask) approveCertificateRequests(ctx context.Context) error {
+	certificateRequests, err := t.bcmClient.GetCertificateRequests(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get certificate requests: %w", err)
+	}
+	for _, certificateRequest := range certificateRequests {
+		err := t.approveCertificateRequest(ctx, certificateRequest)
+		if err != nil {
+			t.logger.WarnContext(
+				ctx,
+				"Failed to approve certificate request",
+				slog.String("id", certificateRequest.Uuid),
+				slog.Any("error", err),
+			)
+		}
+	}
+	return nil
+}
+
+func (t *synchronizerTask) approveCertificateRequest(ctx context.Context, certificateRequest *CertificateRequest) error {
+	issued, err := t.bcmClient.IssueCertificateRequest(
+		ctx,
+		certificateRequest.Uuid,
+		&CertificateSubjectName{
+			Entity: Entity{
+				BaseType: "CertificateSubjectName",
+			},
+			CommonName: certificateRequest.CommonName,
+			Days:       365,
+			Profile:    "litenode",
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to approve certificate request: %w", err)
+	}
+	if !issued {
+		return fmt.Errorf("certificate request for '%s' wasn't approved", certificateRequest.CommonName)
+	}
+	t.logger.InfoContext(
+		ctx,
+		"Approved certificate request",
+		slog.String("id", certificateRequest.Uuid),
+		slog.String("name", certificateRequest.CommonName),
+	)
+	return nil
 }
 
 var (

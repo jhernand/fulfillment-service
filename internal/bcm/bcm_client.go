@@ -28,24 +28,6 @@ import (
 	"time"
 )
 
-// Client is the interface for interacting with the BCM API.
-type Client interface {
-	// GetDevices retrieves all devices from BCM.
-	GetDevices(ctx context.Context) ([]*Device, error)
-
-	// GetRacks retrieves all racks from BCM.
-	GetRacks(ctx context.Context) ([]*Rack, error)
-
-	// GetNetworks retrieves all networks from BCM.
-	GetNetworks(ctx context.Context) ([]*Network, error)
-
-	// GetCategories retrieves all categories from BCM.
-	GetCategories(ctx context.Context) ([]*Category, error)
-
-	// GetCategoriesByUuids retrieves categories by their UUIDs.
-	GetCategoriesByUuids(ctx context.Context, uuids ...string) ([]Category, error)
-}
-
 type Entity struct {
 	BaseType  string `json:"baseType"`
 	ChildType string `json:"childType"`
@@ -111,8 +93,26 @@ type Category struct {
 	Notes string `json:"notes"`
 }
 
-// clientImpl is the implementation of the Client interface.
-type clientImpl struct {
+// CertificateRequest represents a certificate request in BCM.
+type CertificateRequest struct {
+	Entity
+
+	CommonName  string `json:"commonName"`
+	CSR         string `json:"CSR"`
+	ClientType  int    `json:"clientType"`
+	SessionUuid string `json:"session_uuid"`
+}
+
+type CertificateSubjectName struct {
+	Entity
+
+	CommonName string `json:"commonName"`
+	Days       int    `json:"days"`
+	Profile    string `json:"profile"`
+}
+
+// Client is the BCM client.
+type Client struct {
 	logger     *slog.Logger
 	httpClient *http.Client
 	url        string
@@ -184,7 +184,7 @@ func (b *ClientBuilder) SetTimeout(value time.Duration) *ClientBuilder {
 }
 
 // Build creates the BCM client.
-func (b *ClientBuilder) Build() (Client, error) {
+func (b *ClientBuilder) Build() (result *Client, err error) {
 	// Check required parameters:
 	if b.url == "" {
 		return nil, fmt.Errorf("BCM URL is required")
@@ -232,7 +232,7 @@ func (b *ClientBuilder) Build() (Client, error) {
 	}
 
 	// Create and return the client:
-	return &clientImpl{
+	return &Client{
 		logger:     logger,
 		httpClient: httpClient,
 		url:        strings.TrimSuffix(b.url, "/") + "/json",
@@ -241,7 +241,7 @@ func (b *ClientBuilder) Build() (Client, error) {
 }
 
 // GetDevices retrieves all devices from BCM.
-func (c *clientImpl) GetDevices(ctx context.Context) ([]*Device, error) {
+func (c *Client) GetDevices(ctx context.Context) ([]*Device, error) {
 	c.logger.DebugContext(ctx, "Fetching devices from BCM")
 
 	// Prepare the request:
@@ -269,7 +269,7 @@ func (c *clientImpl) GetDevices(ctx context.Context) ([]*Device, error) {
 }
 
 // GetRacks retrieves all racks from BCM.
-func (c *clientImpl) GetRacks(ctx context.Context) ([]*Rack, error) {
+func (c *Client) GetRacks(ctx context.Context) ([]*Rack, error) {
 	c.logger.DebugContext(ctx, "Fetching all racks from BCM")
 
 	// Prepare the request. According to the BCM API documentation, getRacksByUuids returns all racks
@@ -300,7 +300,7 @@ func (c *clientImpl) GetRacks(ctx context.Context) ([]*Rack, error) {
 }
 
 // GetNetworks retrieves all networks from BCM.
-func (c *clientImpl) GetNetworks(ctx context.Context) ([]*Network, error) {
+func (c *Client) GetNetworks(ctx context.Context) ([]*Network, error) {
 	c.logger.DebugContext(ctx, "Fetching all networks from BCM")
 
 	// Prepare the request. According to the BCM API documentation, getNetworksByUuids returns all networks
@@ -331,7 +331,7 @@ func (c *clientImpl) GetNetworks(ctx context.Context) ([]*Network, error) {
 }
 
 // GetCategories retrieves all categories from BCM.
-func (c *clientImpl) GetCategories(ctx context.Context) ([]*Category, error) {
+func (c *Client) GetCategories(ctx context.Context) ([]*Category, error) {
 	c.logger.DebugContext(ctx, "Fetching categories from BCM")
 
 	// Prepare the request to search for Category entities:
@@ -359,7 +359,7 @@ func (c *clientImpl) GetCategories(ctx context.Context) ([]*Category, error) {
 }
 
 // GetCategoriesByUuids retrieves categories by their UUIDs.
-func (c *clientImpl) GetCategoriesByUuids(ctx context.Context, uuids ...string) (result []Category, err error) {
+func (c *Client) GetCategoriesByUuids(ctx context.Context, uuids ...string) (result []Category, err error) {
 	c.logger.DebugContext(
 		ctx,
 		"Fetching categories from BCM",
@@ -377,8 +377,101 @@ func (c *clientImpl) GetCategoriesByUuids(ctx context.Context, uuids ...string) 
 	return
 }
 
+// GetCertificateRequests retrieves all certificate requests from BCM.
+func (c *Client) GetCertificateRequests(ctx context.Context) ([]*CertificateRequest, error) {
+	c.logger.DebugContext(ctx, "Fetching certificate requests from BCM")
+
+	// Prepare the request:
+	request := map[string]any{
+		"service": "cmcert",
+		"call":    "getCertificateRequests",
+	}
+
+	// Make the API call:
+	var certRequests []*CertificateRequest
+	err := c.call(ctx, request, &certRequests)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get certificate requests: %w", err)
+	}
+
+	c.logger.DebugContext(
+		ctx,
+		"Fetched certificate requests from BCM",
+		slog.Int("count", len(certRequests)),
+	)
+
+	return certRequests, nil
+}
+
+func (c *Client) RequestCertificate(ctx context.Context, csr string, sessionUuid string, clientType int) (requestUuid string, err error) {
+	c.logger.DebugContext(ctx, "Requesting certificate from BCM")
+
+	request := map[string]any{
+		"service": "cmcert",
+		"call":    "requestCertificate",
+		"args": []any{
+			csr,
+			sessionUuid,
+			clientType,
+		},
+	}
+	err = c.call(ctx, request, &requestUuid)
+	if err != nil {
+		return "", fmt.Errorf("failed to request certificate: %w", err)
+	}
+
+	c.logger.DebugContext(
+		ctx,
+		"Requested certificate from BCM",
+		slog.String("requestUuid", requestUuid),
+	)
+	return
+}
+
+func (c *Client) RegisterSession(ctx context.Context, clientType int) (sessionUuid string, err error) {
+	request := map[string]any{
+		"service": "cmsession",
+		"call":    "registerSession",
+		"args": []any{
+			clientType,
+		},
+	}
+	err = c.call(ctx, request, &sessionUuid)
+	if err != nil {
+		return "", fmt.Errorf("failed to register session: %w", err)
+	}
+
+	c.logger.DebugContext(
+		ctx,
+		"Registered session with BCM",
+		slog.String("sessionUuid", sessionUuid),
+	)
+	return
+}
+
+func (c *Client) IssueCertificateRequest(ctx context.Context, requestUuid string, subjectName *CertificateSubjectName) (issued bool, err error) {
+	request := map[string]any{
+		"service": "cmcert",
+		"call":    "issueCertificateRequest",
+		"args": []any{
+			requestUuid,
+			subjectName,
+		},
+	}
+	err = c.call(ctx, request, &issued)
+	if err != nil {
+		return false, fmt.Errorf("failed to issue certificate: %w", err)
+	}
+	c.logger.DebugContext(
+		ctx,
+		"Issued certificate from BCM",
+		slog.Bool("issued", issued),
+	)
+	return
+}
+
 // call makes a generic API call to BCM.
-func (c *clientImpl) call(ctx context.Context, request map[string]any, result any) error {
+func (c *Client) call(ctx context.Context, request map[string]any, result any) error {
 	// Marshal the request:
 	c.logger.DebugContext(
 		ctx,
