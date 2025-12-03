@@ -69,88 +69,8 @@ spec:
     "fulfillment-api":
       opa:
         rego: |
-          import future.keywords.in
-
-          # Define admin subjects:
-          admin_subjects := {
-            "system:serviceaccount:{{ .Release.Namespace }}:admin",
-            "system:serviceaccount:{{ .Release.Namespace }}:controller",
-            "system:serviceaccount:{{ .Release.Namespace }}:bcm-sync",
-          }
-
-          # Get the gRPC method:
-          grpc_method := input.context.request.http.path
-
-          # Get the subject name:
-          subject_name = input.auth.identity.user.username {
-            input.auth.identity.authnMethod == "serviceaccount"
-          }
-          subject_name = input.auth.identity.username {
-            input.auth.identity.authnMethod == "jwt"
-          }
-
-          # Function to check if an account is an admin account:
-          is_admin {
-            subject_name in admin_subjects
-          }
-
-          # Function to check if an account is a client account:
-          is_client {
-            not is_admin
-          }
-
-          # Allow metadata, reflection and health to everyone:
           allow {
-            startswith(grpc_method, "/metadata.")
-          }
-          allow {
-            startswith(grpc_method, "/grpc.reflection.")
-          }
-          allow {
-            startswith(grpc_method, "/grpc.health.")
-          }
-
-          # Allow specific methods to clients:
-          allow {
-            is_client
-            grpc_method in {
-              "/events.v1/Watch",
-              "/fulfillment.v1.ClusterTemplates/Get",
-              "/fulfillment.v1.ClusterTemplates/List",
-              "/fulfillment.v1.Clusters/Create",
-              "/fulfillment.v1.Clusters/Delete",
-              "/fulfillment.v1.Clusters/Get",
-              "/fulfillment.v1.Clusters/GetKubeconfig",
-              "/fulfillment.v1.Clusters/GetKubeconfigViaHttp",
-              "/fulfillment.v1.Clusters/GetPassword",
-              "/fulfillment.v1.Clusters/GetPasswordViaHttp",
-              "/fulfillment.v1.Clusters/List",
-              "/fulfillment.v1.Clusters/Update",
-              "/fulfillment.v1.HostClasses/Get",
-              "/fulfillment.v1.HostClasses/List",
-              "/fulfillment.v1.HostPools/Create",
-              "/fulfillment.v1.HostPools/Delete",
-              "/fulfillment.v1.HostPools/Get",
-              "/fulfillment.v1.HostPools/List",
-              "/fulfillment.v1.HostPools/Update",
-              "/fulfillment.v1.Hosts/Create",
-              "/fulfillment.v1.Hosts/Delete",
-              "/fulfillment.v1.Hosts/Get",
-              "/fulfillment.v1.Hosts/List",
-              "/fulfillment.v1.Hosts/Update",
-              "/fulfillment.v1.VirtualMachineTemplates/Get",
-              "/fulfillment.v1.VirtualMachineTemplates/List",
-              "/fulfillment.v1.VirtualMachines/Create",
-              "/fulfillment.v1.VirtualMachines/Delete",
-              "/fulfillment.v1.VirtualMachines/Get",
-              "/fulfillment.v1.VirtualMachines/List",
-              "/fulfillment.v1.VirtualMachines/Update",
-            }
-          }
-
-          # Allow everything to admins:
-          allow {
-            is_admin
+            true
           }
   response:
     success:
