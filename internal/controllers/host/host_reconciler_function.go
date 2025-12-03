@@ -44,16 +44,17 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger          *slog.Logger
-	hubCache        *controllers.HubCache
-	hostsClient     privatev1.HostsClient
-	hostPoolsClient privatev1.HostPoolsClient
-	hubsClient      privatev1.HubsClient
+	logger            *slog.Logger
+	hubCache          *controllers.HubCache
+	hostsClient       privatev1.HostsClient
+	hostClassesClient privatev1.HostClassesClient
+	hubsClient        privatev1.HubsClient
 }
 
 type task struct {
 	parent        *function
 	host          *privatev1.Host
+	hostClass     *privatev1.HostClass
 	hub           *privatev1.Hub
 	hubClient     clnt.Client
 	bmcSecret     *corev1.Secret
@@ -101,11 +102,11 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 
 	// Create and populate the object:
 	object := &function{
-		logger:          b.logger,
-		hostsClient:     privatev1.NewHostsClient(b.connection),
-		hostPoolsClient: privatev1.NewHostPoolsClient(b.connection),
-		hubsClient:      privatev1.NewHubsClient(b.connection),
-		hubCache:        b.hubCache,
+		logger:            b.logger,
+		hostsClient:       privatev1.NewHostsClient(b.connection),
+		hubsClient:        privatev1.NewHubsClient(b.connection),
+		hostClassesClient: privatev1.NewHostClassesClient(b.connection),
+		hubCache:          b.hubCache,
 	}
 	result = object.run
 	return
@@ -147,6 +148,12 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
+	// Fetch the host class:
+	err = t.fetchHostClass(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Ensure tha the BMC credentials secret exists:
 	t.bmcSecret = &corev1.Secret{}
 	t.bmcSecret.SetNamespace(t.hub.GetNamespace())
@@ -166,6 +173,21 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
+	return nil
+}
+
+func (t *task) fetchHostClass(ctx context.Context) error {
+	hostClassId := t.host.GetSpec().GetClass()
+	if hostClassId == "" {
+		return nil
+	}
+	response, err := t.parent.hostClassesClient.Get(ctx, privatev1.HostClassesGetRequest_builder{
+		Id: hostClassId,
+	}.Build())
+	if err != nil {
+		return err
+	}
+	t.hostClass = response.GetObject()
 	return nil
 }
 
@@ -234,6 +256,18 @@ func (t *task) mutateLabels(object clnt.Object) {
 		delete(values, labels.ClusterId)
 	}
 
+	// Add the labels indicating the host class:
+	hostClassId := t.hostClass.GetMetadata().GetName()
+	if hostClassId != "" {
+		values[labels.HostClassId] = hostClassId
+	} else {
+		delete(values, labels.HostClassId)
+	}
+	hostClassName := t.hostClass.GetMetadata().GetName()
+	if hostClassName != "" {
+		values[labels.HostClassName] = hostClassName
+	}
+
 	// Save the labels:
 	object.SetLabels(values)
 }
@@ -257,6 +291,18 @@ func (t *task) mutateAnnotations(object clnt.Object) {
 		annotations[clusterIdBmacAnnotation] = clusterId
 	} else {
 		delete(annotations, clusterIdBmacAnnotation)
+	}
+	hostClassId := t.hostClass.GetMetadata().GetName()
+	if hostClassId != "" {
+		annotations[hostClassIdBmacAnnotation] = hostClassId
+	} else {
+		delete(annotations, hostClassNameBmacAnnotation)
+	}
+	hostClassName := t.hostClass.GetMetadata().GetName()
+	if hostClassName != "" {
+		annotations[hostClassNameBmacAnnotation] = hostClassName
+	} else {
+		delete(annotations, hostClassNameBmacAnnotation)
 	}
 
 	// Save the annotations:
@@ -347,5 +393,7 @@ const (
 
 // Our annotations:
 const (
-	clusterIdBmacAnnotation = bmacAgentLabelAnnotationPrefix + labels.ClusterId
+	clusterIdBmacAnnotation     = bmacAgentLabelAnnotationPrefix + labels.ClusterId
+	hostClassIdBmacAnnotation   = bmacAgentLabelAnnotationPrefix + labels.HostClassName
+	hostClassNameBmacAnnotation = bmacAgentLabelAnnotationPrefix + labels.HostClassName
 )

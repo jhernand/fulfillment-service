@@ -21,13 +21,15 @@ import (
 
 // Labels that will be added to Kubernetes objects to help identifiy the corresponding object in the fulfillment service.
 const (
-	base        = "fulfillment"
-	ClusterId   = base + "/cluster.id"
-	ClusterName = base + "/cluster.name"
-	HostId      = base + "/host.id"
-	HostName    = base + "/host.name"
-	HubId       = base + "/hub.id"
-	HubName     = base + "/hub.name"
+	base          = "fulfillment"
+	ClusterId     = base + "/cluster.id"
+	ClusterName   = base + "/cluster.name"
+	HostClassId   = base + "/hostClass.id"
+	HostClassName = base + "/hostClass.name"
+	HostId        = base + "/host.id"
+	HostName      = base + "/host.name"
+	HubId         = base + "/hub.id"
+	HubName       = base + "/hub.name"
 )
 
 // ClusterOrderUuid is the label where the fulfillment API will write the identifier of the order.
