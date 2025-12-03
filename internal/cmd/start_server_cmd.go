@@ -530,6 +530,19 @@ func (c *startServerCommandRunner) run(cmd *cobra.Command, argv []string) error 
 	}
 	privatev1.RegisterHubsServer(grpcServer, privateHubsServer)
 
+	// Create the private tenants server:
+	c.logger.InfoContext(ctx, "Creating tenants server")
+	privateTenantsServer, err := servers.NewPrivateTenantsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(privateAttributionLogic).
+		SetTenancyLogic(privateTenancyLogic).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create tenants server: %w", err)
+	}
+	privatev1.RegisterTenantsServer(grpcServer, privateTenantsServer)
+
 	// Create the events server:
 	c.logger.InfoContext(ctx, "Creating events server")
 	eventsServer, err := servers.NewEventsServer().
