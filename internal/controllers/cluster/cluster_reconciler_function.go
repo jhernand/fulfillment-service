@@ -447,7 +447,23 @@ func (t *task) renderHostedClusterSpec() (result json.Object, err error) {
 		"name": t.sshSecret.GetName(),
 	}
 	result = json.Object{
-		"clusterID":                        t.cluster.GetId(),
+		// TODO: We can use our cluster identifier here because we use UUID7, and OpenShift complains that
+		// it isn't a valid UUID with an error like this:
+		//
+		// # oc get clusterversion
+		// NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
+		// version   4.19.18   True        False         107m    Stopped at 4.19.18: the cluster version is invalid
+		//
+		//   - lastTransitionTime: "2025-12-03T17:39:53Z"
+		//     message: 'The cluster version is invalid: spec.clusterID: Invalid value: "019ae545-af23-7b38-83d4-7200b9b2c5ec":
+		//       must be a version-4 UUID'
+		//     reason: InvalidClusterVersion
+		//     status: "True"
+		//     type: Invalid
+		//
+		// So we let it empty and HyperShift will generate a random UUID.
+		//
+		// "clusterID": t.cluster.GetId(),
 		"controllerAvailabilityPolicy":     "SingleReplica",
 		"dns":                              dnsSpec,
 		"etcd":                             etcdSpec,
