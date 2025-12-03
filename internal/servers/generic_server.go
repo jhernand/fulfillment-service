@@ -643,6 +643,8 @@ func (s *GenericServer[O]) setPayload(event *privatev1.Event, object proto.Messa
 		event.SetVirtualMachineTemplate(object)
 	case *privatev1.VirtualMachine:
 		event.SetVirtualMachine(object)
+	case *privatev1.Tenant:
+		event.SetTenant(object)
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)
 	}

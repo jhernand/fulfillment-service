@@ -328,7 +328,7 @@ func (s *EventsServer) processPayload(ctx context.Context, payload proto.Message
 	}
 
 	// Skip object that don't have a public representtion:
-	if private.HasHub() {
+	if private.HasHub() || private.HasTenant() {
 		return nil
 	}
 
