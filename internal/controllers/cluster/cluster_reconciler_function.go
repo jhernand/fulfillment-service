@@ -23,7 +23,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -33,6 +33,7 @@ import (
 	"github.com/innabox/fulfillment-service/internal/controllers/finalizers"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/gvks"
 	"github.com/innabox/fulfillment-service/internal/kubernetes/labels"
+	"github.com/innabox/fulfillment-service/internal/masks"
 	"github.com/innabox/fulfillment-service/internal/utils"
 )
 
@@ -51,6 +52,7 @@ type function struct {
 	hubCache       *controllers.HubCache
 	clustersClient privatev1.ClustersClient
 	hubsClient     privatev1.HubsClient
+	maskCalculator *masks.Calculator
 }
 
 type task struct {
@@ -106,6 +108,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		clustersClient: privatev1.NewClustersClient(b.connection),
 		hubsClient:     privatev1.NewHubsClient(b.connection),
 		hubCache:       b.hubCache,
+		maskCalculator: masks.NewCalculator().Build(),
 	}
 	result = object.run
 	return
@@ -126,15 +129,16 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if err != nil {
 		return err
 	}
-	if !proto.Equal(cluster, oldCluster) {
+	// Calculate which fields the reconciler actually modified and use a field mask
+	// to update only those fields. This prevents overwriting concurrent user changes
+	// to fields like spec.node_sets.
+	updateMask := r.maskCalculator.Calculate(oldCluster, cluster)
+
+	// Only send an update if there are actual changes
+	if len(updateMask.GetPaths()) > 0 {
 		_, err = r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-			Object: cluster,
-			UpdateMask: &fieldmaskpb.FieldMask{
-				Paths: []string{
-					"metadata.finalizers",
-					"status",
-				},
-			},
+			Object:     cluster,
+			UpdateMask: updateMask,
 		}.Build())
 	}
 	return err
