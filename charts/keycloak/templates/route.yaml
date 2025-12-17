@@ -26,3 +26,24 @@ spec:
   tls:
     termination: passthrough
 {{ end }}
+
+{{ if eq .Values.variant "kind" }}
+apiVersion: gateway.networking.k8s.io/v1alpha3
+kind: TLSRoute
+metadata:
+  namespace: {{ .Release.Namespace }}
+  name: keycloak
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    namespace: envoy-gateway
+    name: default
+    sectionName: tls
+  hostnames:
+  - {{ include "keycloak.hostname" . }}
+  rules:
+  - backendRefs:
+    - name: keycloak
+      port: 8001
+{{ end }}

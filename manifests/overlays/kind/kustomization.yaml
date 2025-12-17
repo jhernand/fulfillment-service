@@ -17,20 +17,4 @@ namespace: innabox
 
 resources:
 - ../../base
-
-patches:
-
-# Configure the service to use a node port, so that we can access it without installing an ingress or gateway
-# implementation.
-- target:
-    group: ""
-    version: v1
-    kind: Service
-    name: fulfillment-api
-  patch: |-
-    - op: replace
-      path: /spec/type
-      value: NodePort
-    - op: replace
-      path: /spec/ports/0/nodePort
-      value: 30000
+- route.yaml

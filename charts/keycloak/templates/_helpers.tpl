@@ -11,15 +11,14 @@ Unless required by applicable law or agreed to in writing, software distributed 
 specific language governing permissions and limitations under the License.
 */}}
 
-apiVersion: v1
-kind: Service
-metadata:
-  namespace: {{ .Release.Namespace }}
-  name: fulfillment-api
-spec:
-  selector:
-    app: fulfillment-ingress-proxy
-  ports:
-  - name: api
-    port: 8000
-    targetPort: api
+{{/*
+Generate the hostname for Keycloak. If .Values.hostname is set, use it; otherwise, use the default Kubernetes service
+hostname based on the release namespace.
+*/}}
+{{- define "keycloak.hostname" -}}
+{{- if .Values.hostname -}}
+{{- .Values.hostname -}}
+{{- else -}}
+{{- printf "keycloak.%s.svc.cluster.local" .Release.Namespace -}}
+{{- end -}}
+{{- end -}}

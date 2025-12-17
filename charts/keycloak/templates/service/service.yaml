@@ -19,15 +19,9 @@ metadata:
   labels:
     app: keycloak-service
 spec:
-  {{ if eq .Values.variant "kind" }}
-  type: NodePort
-  {{ end }}
   selector:
     app: keycloak-service
   ports:
   - name: https
     port: 8001
     targetPort: 8001
-    {{ if eq .Values.variant "kind" }}
-    nodePort: 30001
-    {{ end }}

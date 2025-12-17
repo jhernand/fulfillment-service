@@ -772,7 +772,8 @@ func (t *Tool) makeGrpcConn(tokenSource auth.TokenSource) (result *grpc.ClientCo
 	result, err = network.NewGrpcClient().
 		SetLogger(t.logger).
 		SetCaPool(t.caPool).
-		SetAddress("localhost:8000").
+		SetAddress(serviceAddress).
+		SetHost(serviceHost).
 		SetTokenSource(tokenSource).
 		SetUserAgent(userAgent).
 		Build()
@@ -782,7 +783,8 @@ func (t *Tool) makeGrpcConn(tokenSource auth.TokenSource) (result *grpc.ClientCo
 func (t *Tool) makeHttpClient(tokenSource auth.TokenSource) *http.Client {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			RootCAs: t.caPool,
+			RootCAs:    t.caPool,
+			ServerName: serviceHost,
 		},
 	}
 	return &http.Client{
@@ -796,6 +798,10 @@ func (t *Tool) makeHttpClient(tokenSource auth.TokenSource) *http.Client {
 					"Authorization",
 					fmt.Sprintf("Bearer %s", token.Access),
 				)
+				if request.URL.Host == serviceHost {
+					request.Host = request.URL.Host
+					request.URL.Host = serviceAddress
+				}
 				response, err = transport.RoundTrip(request)
 				return
 			},
@@ -998,3 +1004,9 @@ const imageName = "ghcr.io/innabox/fulfillment-service"
 
 // userAgent is the user agent string for the integration test tool.
 const userAgent = "fulfillment-it-tool"
+
+// Service host name and address:
+const (
+	serviceHost    = "fulfillment-api.innabox.svc.cluster.local"
+	serviceAddress = "127.0.0.1:8000"
+)

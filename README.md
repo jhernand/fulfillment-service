@@ -226,6 +226,7 @@ $ ginkgo run it
 ```
 
 The integration tests will automatically:
+
 1. Create a kind cluster named "fulfillment-service-it".
 2. Build and load the container image.
 3. Deploy the fulfillment service.
@@ -271,4 +272,15 @@ To clean up a preserved cluster manually:
 
 ```bash
 $ kind delete cluster --name fulfillment-service-it
+```
+
+The automated tests do not require any special host name configuration. However, if you want to
+manually access the services running in the kind cluster, the host names
+`fulfillment-api.innabox.svc.cluster.local` and `keycloak.keycloak.svc.cluster.local` must be
+resolvable and point to `127.0.0.1`. One way to achieve this is by adding the following entries to
+your `/etc/hosts` file:
+
+```
+127.0.0.1 fulfillment-api.innabox.svc.cluster.local
+127.0.0.1 keycloak.keycloak.svc.cluster.local
 ```
