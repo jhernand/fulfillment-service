@@ -82,7 +82,7 @@ spec:
         - name: KC_HTTPS_CERTIFICATE_KEY_FILE
           value: "/secrets/tls/tls.key"
         - name: KC_HOSTNAME
-          value: "{{ required "hostname is required" .Values.hostname }}"
+          value: "{{ include "keycloak.hostname" . }}"
         - name: KC_HOSTNAME_PORT
           value: "8001"
         - name: KC_DB
