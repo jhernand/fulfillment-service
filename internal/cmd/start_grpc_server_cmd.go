@@ -506,57 +506,57 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 	}
 	privatev1.RegisterHostPoolsServer(grpcServer, privateHostPoolsServer)
 
-	// Create the virtual machine templates server:
-	c.logger.InfoContext(ctx, "Creating virtual machine templates server")
-	virtualMachineTemplatesServer, err := servers.NewVirtualMachineTemplatesServer().
+	// Create the compute instance templates server:
+	c.logger.InfoContext(ctx, "Creating compute instance templates server")
+	computeInstanceTemplatesServer, err := servers.NewComputeInstanceTemplatesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
 		SetAttributionLogic(publicAttributionLogic).
 		SetTenancyLogic(publicTenancyLogic).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create virtual machine templates server: %w", err)
+		return fmt.Errorf("failed to create compute instance templates server: %w", err)
 	}
-	ffv1.RegisterVirtualMachineTemplatesServer(grpcServer, virtualMachineTemplatesServer)
+	ffv1.RegisterComputeInstanceTemplatesServer(grpcServer, computeInstanceTemplatesServer)
 
-	// Create the private virtual machine templates server:
-	c.logger.InfoContext(ctx, "Creating private virtual machine templates server")
-	privateVirtualMachineTemplatesServer, err := servers.NewPrivateVirtualMachineTemplatesServer().
+	// Create the private compute instance templates server:
+	c.logger.InfoContext(ctx, "Creating private compute instance templates server")
+	privateComputeInstanceTemplatesServer, err := servers.NewPrivateComputeInstanceTemplatesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
 		SetAttributionLogic(privateAttributionLogic).
 		SetTenancyLogic(privateTenancyLogic).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create private virtual machine templates server: %w", err)
+		return fmt.Errorf("failed to create private compute instance templates server: %w", err)
 	}
-	privatev1.RegisterVirtualMachineTemplatesServer(grpcServer, privateVirtualMachineTemplatesServer)
+	privatev1.RegisterComputeInstanceTemplatesServer(grpcServer, privateComputeInstanceTemplatesServer)
 
-	// Create the virtual machines server:
-	c.logger.InfoContext(ctx, "Creating virtual machines server")
-	virtualMachinesServer, err := servers.NewVirtualMachinesServer().
+	// Create the compute instances server:
+	c.logger.InfoContext(ctx, "Creating compute instances server")
+	computeInstancesServer, err := servers.NewComputeInstancesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
 		SetAttributionLogic(publicAttributionLogic).
 		SetTenancyLogic(publicTenancyLogic).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create virtual machines server: %w", err)
+		return fmt.Errorf("failed to create compute instances server: %w", err)
 	}
-	ffv1.RegisterVirtualMachinesServer(grpcServer, virtualMachinesServer)
+	ffv1.RegisterComputeInstancesServer(grpcServer, computeInstancesServer)
 
-	// Create the private virtual machines server:
-	c.logger.InfoContext(ctx, "Creating private virtual machines server")
-	privateVirtualMachinesServer, err := servers.NewPrivateVirtualMachinesServer().
+	// Create the private compute instances server:
+	c.logger.InfoContext(ctx, "Creating private compute instances server")
+	privateComputeInstancesServer, err := servers.NewPrivateComputeInstancesServer().
 		SetLogger(c.logger).
 		SetNotifier(notifier).
 		SetAttributionLogic(privateAttributionLogic).
 		SetTenancyLogic(privateTenancyLogic).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create private virtual machines server: %w", err)
+		return fmt.Errorf("failed to create private compute instances server: %w", err)
 	}
-	privatev1.RegisterVirtualMachinesServer(grpcServer, privateVirtualMachinesServer)
+	privatev1.RegisterComputeInstancesServer(grpcServer, privateComputeInstancesServer)
 
 	// Create the private hubs server:
 	c.logger.InfoContext(ctx, "Creating hubs server")
