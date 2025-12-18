@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/innabox/fulfillment-common/auth"
 	"github.com/innabox/fulfillment-common/network"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
@@ -69,6 +71,7 @@ func NewStartControllerCommand() *cobra.Command {
 	)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
+	network.AddListenerFlags(flags, network.MetricsListenerName, network.DefaultMetricsAddress)
 	return command
 }
 
@@ -103,6 +106,7 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	r.flags = cmd.Flags()
 
 	// Load the trusted CA certificates:
+	r.logger.InfoContext(ctx, "Loading trusted CA certificates")
 	caPool, err := network.NewCertPool().
 		SetLogger(r.logger).
 		AddFiles(r.args.caFiles...).
@@ -112,6 +116,7 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}
 
 	// Create the token source:
+	r.logger.InfoContext(ctx, "Creating token source")
 	tokenSource, err := auth.NewFileTokenSource().
 		SetLogger(r.logger).
 		SetFile(r.args.tokenFile).
@@ -121,22 +126,25 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 	}
 
 	// Calculate the user agent:
+	r.logger.InfoContext(ctx, "Calculating user agent")
 	userAgent := fmt.Sprintf("%s/%s", grpcServerUserAgent, version.Get())
 
 	// Create the gRPC client:
+	r.logger.InfoContext(ctx, "Creating gRPC client")
 	r.client, err = network.NewGrpcClient().
 		SetLogger(r.logger).
 		SetFlags(r.flags, network.GrpcClientName).
 		SetCaPool(caPool).
 		SetTokenSource(tokenSource).
 		SetUserAgent(userAgent).
+		SetMetricsSubsystem("outbound").
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC client: %w", err)
 	}
 
 	// Create the gRPC server:
-	r.logger.InfoContext(ctx, "Creating gRPC server for health service")
+	r.logger.InfoContext(ctx, "Creating gRPC listener")
 	grpcListener, err := network.NewListener().
 		SetLogger(r.logger).
 		SetFlags(r.flags, network.GrpcListenerName).
@@ -346,6 +354,36 @@ func (r *startControllerRunner) run(cmd *cobra.Command, argv []string) error {
 			r.logger.InfoContext(
 				ctx,
 				"Host pool reconciler failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
+
+	// Create the metrics listener:
+	r.logger.InfoContext(ctx, "Creating metrics listener")
+	metricsListener, err := network.NewListener().
+		SetLogger(r.logger).
+		SetFlags(r.flags, network.MetricsListenerName).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics listener: %w", err)
+	}
+
+	// Start the metrics server:
+	r.logger.InfoContext(
+		ctx,
+		"Starting metrics server",
+		slog.String("address", metricsListener.Addr().String()),
+	)
+	metricsServer := &http.Server{
+		Handler: promhttp.Handler(),
+	}
+	go func() {
+		err := metricsServer.Serve(metricsListener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			r.logger.ErrorContext(
+				ctx,
+				"Metrics server failed",
 				slog.Any("error", err),
 			)
 		}

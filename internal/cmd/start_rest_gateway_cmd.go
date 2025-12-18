@@ -20,6 +20,8 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/innabox/fulfillment-common/network"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/net/http2"
@@ -45,6 +47,7 @@ func NewStartRestGatewayCommand() *cobra.Command {
 	}
 	flags := command.Flags()
 	network.AddListenerFlags(flags, network.HttpListenerName, network.DefaultHttpAddress)
+	network.AddListenerFlags(flags, network.MetricsListenerName, network.DefaultMetricsAddress)
 	network.AddCorsFlags(flags, network.HttpListenerName)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	flags.StringArrayVar(
@@ -90,6 +93,7 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 	}
 
 	// Load the trusted CA certificates:
+	c.logger.InfoContext(ctx, "Loading trusted CA certificates")
 	caPool, err := network.NewCertPool().
 		SetLogger(c.logger).
 		AddFiles(c.args.caFiles...).
@@ -99,6 +103,7 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 	}
 
 	// Calculate the user agent:
+	c.logger.InfoContext(ctx, "Calculating user agent")
 	userAgent := fmt.Sprintf("%s/%s", restGatewayUserAgent, version.Get())
 
 	// Create the gRPC client:
@@ -108,6 +113,7 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 		SetFlags(c.flags, network.GrpcClientName).
 		SetCaPool(caPool).
 		SetUserAgent(userAgent).
+		SetMetricsSubsystem("outbound").
 		Build()
 	if err != nil {
 		return err
@@ -209,6 +215,36 @@ func (c *startRestGatewayCommandRunner) run(cmd *cobra.Command, argv []string) e
 		return fmt.Errorf("failed to create CORS middleware: %w", err)
 	}
 	handler := corsMiddleware(gatewayMux)
+
+	// Create the metrics server:
+	c.logger.InfoContext(ctx, "Creating metrics listener")
+	metricsListener, err := network.NewListener().
+		SetLogger(c.logger).
+		SetFlags(c.flags, network.MetricsListenerName).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics listener: %w", err)
+	}
+
+	// Start the metrics server:
+	c.logger.InfoContext(
+		ctx,
+		"Starting metrics server",
+		slog.String("address", metricsListener.Addr().String()),
+	)
+	metricsServer := &http.Server{
+		Handler: promhttp.Handler(),
+	}
+	go func() {
+		err := metricsServer.Serve(metricsListener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			c.logger.ErrorContext(
+				ctx,
+				"Metrics server failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
 
 	// Start serving:
 	c.logger.InfoContext(
