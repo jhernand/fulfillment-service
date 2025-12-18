@@ -217,6 +217,7 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 			SetCaPool(caPool).
 			AddPublicMethodRegex(publicMethodRegex).
 			SetUserAgent(userAgent).
+			SetMetricsSubsystem("outbound").
 			Build()
 		if err != nil {
 			return fmt.Errorf("failed to create external auth interceptor: %w", err)
@@ -239,7 +240,6 @@ func (c *startGrpcServerCommandRunner) run(cmd *cobra.Command, argv []string) er
 		return fmt.Errorf("failed to create panic interceptor: %w", err)
 	}
 
-	// Prepare the metrics interceptor:
 	c.logger.InfoContext(ctx, "Creating metrics interceptor")
 	metricsInterceptor, err := metrics.NewGrpcInterceptor().
 		SetSubsystem("inbound").

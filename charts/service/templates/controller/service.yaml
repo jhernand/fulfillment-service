@@ -15,17 +15,17 @@ apiVersion: v1
 kind: Service
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: fulfillment-rest-gateway
+  name: fulfillment-controller
   labels:
-    app: fulfillment-rest-gateway
+    app: fulfillment-controller
 spec:
   selector:
-    app: fulfillment-rest-gateway
+    app: fulfillment-controller
   clusterIP: None
   ports:
-  - name: api
+  - name: grpc
     port: 8000
-    targetPort: api
+    targetPort: grpc
   - name: metrics
     port: 8002
     targetPort: metrics

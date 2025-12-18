@@ -27,6 +27,7 @@ import (
 	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyauthv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"github.com/innabox/fulfillment-common/network"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -39,12 +40,14 @@ const GrpcExternalAuthType = "external"
 // GrpcExternalAuthInterceptorBuilder contains the data and logic needed to build an interceptor that performs
 // authentication and authorization by calling an external service using the Envoy ext_authz gRPC protocol.
 type GrpcExternalAuthInterceptorBuilder struct {
-	logger        *slog.Logger
-	address       string
-	caPool        *x509.CertPool
-	insecure      bool
-	publicMethods []string
-	userAgent     string
+	logger            *slog.Logger
+	address           string
+	caPool            *x509.CertPool
+	insecure          bool
+	publicMethods     []string
+	userAgent         string
+	metricsSubsystem  string
+	metricsRegisterer prometheus.Registerer
 }
 
 // GrpcExternalAuthInterceptor is an interceptor that performs authentication and authorization by calling an external
@@ -110,6 +113,20 @@ func (b *GrpcExternalAuthInterceptorBuilder) SetUserAgent(value string) *GrpcExt
 	return b
 }
 
+// SetMetricsSubsystem sets the subsystem that will be used for metrics. This is optional, if not specified then no
+// metrics will be collected.
+func (b *GrpcExternalAuthInterceptorBuilder) SetMetricsSubsystem(value string) *GrpcExternalAuthInterceptorBuilder {
+	b.metricsSubsystem = value
+	return b
+}
+
+// SetMetricsRegisterer sets the metrics registry that will be used for metrics. This is optional, if not specified then
+// the default metrics registry will be used.
+func (b *GrpcExternalAuthInterceptorBuilder) SetMetricsRegisterer(value prometheus.Registerer) *GrpcExternalAuthInterceptorBuilder {
+	b.metricsRegisterer = value
+	return b
+}
+
 // Build uses the data stored in the builder to create and configure a new interceptor.
 func (b *GrpcExternalAuthInterceptorBuilder) Build() (result *GrpcExternalAuthInterceptor, err error) {
 	// Check parameters:
@@ -138,6 +155,8 @@ func (b *GrpcExternalAuthInterceptorBuilder) Build() (result *GrpcExternalAuthIn
 		SetCaPool(b.caPool).
 		SetInsecure(b.insecure).
 		SetUserAgent(b.userAgent).
+		SetMetricsSubsystem(b.metricsSubsystem).
+		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {
 		err = fmt.Errorf(
