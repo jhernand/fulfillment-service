@@ -1,4 +1,4 @@
-# Set update schedule for GitHub Actions
+# Set update schedule for GitHub Actions and Go modules
 
 version: 2
 updates:
@@ -6,4 +6,10 @@ updates:
   directory: "/"
   schedule:
     # Check for updates to GitHub Actions every week
+    interval: "weekly"
+
+- package-ecosystem: "gomod"
+  directory: "/"
+  schedule:
+    # Check for updates to Go modules every week
     interval: "weekly"
