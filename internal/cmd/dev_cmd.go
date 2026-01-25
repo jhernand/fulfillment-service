@@ -27,5 +27,6 @@ func NewDevCommand() *cobra.Command {
 	}
 	result.AddCommand(dev.NewListenCommand())
 	result.AddCommand(dev.NewWatchCommand())
+	result.AddCommand(dev.NewAapExample())
 	return result
 }
