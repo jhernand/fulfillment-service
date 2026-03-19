@@ -271,8 +271,9 @@ func (c *runnerContext) findTemplate(ctx context.Context) (result *publicv1.Comp
 		c.args.template,
 	)
 	response, err := c.templatesClient.List(ctx, publicv1.ComputeInstanceTemplatesListRequest_builder{
-		Filter: proto.String(filter),
-		Limit:  proto.Int32(10),
+		Filter:  proto.String(filter),
+		Limit:   proto.Int32(10),
+		Flatten: proto.Bool(true),
 	}.Build())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)

@@ -18,15 +18,24 @@ package osac.private.v1;
 import "google/protobuf/any.proto";
 import "osac/private/v1/metadata_type.proto";
 
+// A compute instance template defines a type of compute instance that can be created by the user. Templates support
+// inheritance via the `parent` field: a child template inherits all parameter definitions from the parent and can
+// override defaults or seal parameters.
 message ComputeInstanceTemplate {
   // Public data.
   string id = 1;
   Metadata metadata = 2;
   string title = 3;
   string description = 4;
+
+  // Parameter definitions. For child templates, only the overridden parameters are listed here.
   repeated ComputeInstanceTemplateParameterDefinition parameters = 5;
+
+  // Identifier or name of the parent template. Empty for root templates.
+  optional string parent = 6;
 }
 
+// Contains type and documentation of a template parameter.
 message ComputeInstanceTemplateParameterDefinition {
   string name = 1;
   string title = 2;
@@ -34,4 +43,7 @@ message ComputeInstanceTemplateParameterDefinition {
   bool required = 4;
   string type = 5;
   google.protobuf.Any default = 6;
+
+  // When true, the parameter value is locked to its default and cannot be overridden by users.
+  bool sealed = 7;
 }

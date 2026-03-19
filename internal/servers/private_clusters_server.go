@@ -53,6 +53,7 @@ type PrivateClustersServer struct {
 	templatesDao   *dao.GenericDAO[*privatev1.ClusterTemplate]
 	hostClassesDao *dao.GenericDAO[*privatev1.HostClass]
 	generic        *GenericServer[*privatev1.Cluster]
+	templateHelper *TemplateHelper[*privatev1.ClusterTemplate, *privatev1.ClusterTemplateParameterDefinition]
 }
 
 func NewPrivateClustersServer() *PrivateClustersServerBuilder {
@@ -122,12 +123,22 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 		return
 	}
 
+	// Create the template helper:
+	templateHelper, err := NewTemplateHelper[*privatev1.ClusterTemplate, *privatev1.ClusterTemplateParameterDefinition]().
+		SetLogger(b.logger).
+		SetDao(templatesDao).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create and populate the object:
 	result = &PrivateClustersServer{
 		logger:         b.logger,
 		templatesDao:   templatesDao,
 		hostClassesDao: hostClassesDao,
 		generic:        generic,
+		templateHelper: templateHelper,
 	}
 	return
 }
@@ -632,16 +643,23 @@ func (s *PrivateClustersServer) validateAndTransformCluster(ctx context.Context,
 	}
 	cluster.GetSpec().SetNodeSets(actualNodeSets)
 
-	// Validate template parameters:
+	// Flatten the template parameters:
+	flattenedTemplate := proto.Clone(template).(*privatev1.ClusterTemplate)
+	err = s.templateHelper.Flatten(ctx, flattenedTemplate)
+	if err != nil {
+		return err
+	}
+
+	// Validate template parameters against the effective (fully resolved) template:
 	clusterParameters := cluster.GetSpec().GetTemplateParameters()
-	err = utils.ValidateClusterTemplateParameters(template, clusterParameters)
+	err = utils.ValidateClusterTemplateParameters(flattenedTemplate, clusterParameters)
 	if err != nil {
 		return err
 	}
 
 	// Set default values for template parameters:
 	actualClusterParameters := utils.ProcessTemplateParametersWithDefaults(
-		utils.ClusterTemplateAdapter{ClusterTemplate: template},
+		utils.ClusterTemplateAdapter{ClusterTemplate: flattenedTemplate},
 		clusterParameters,
 	)
 	cluster.GetSpec().SetTemplateParameters(actualClusterParameters)

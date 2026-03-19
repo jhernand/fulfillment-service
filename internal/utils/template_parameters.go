@@ -21,6 +21,7 @@ type TemplateParameterDefinition interface {
 	GetRequired() bool
 	GetType() string
 	GetDefault() *anypb.Any
+	GetSealed() bool
 }
 
 // Template represents a common interface for templates that have parameters
@@ -98,6 +99,26 @@ func ValidateTemplateParameters(
 				grpccodes.InvalidArgument,
 				"parameter '%s' of template '%s' is mandatory",
 				templateParameterName, templateID,
+			)
+		}
+	}
+
+	// Check that sealed parameters are not being overridden with different values:
+	for _, templateParameter := range templateParameters {
+		if !templateParameter.GetSealed() {
+			continue
+		}
+		paramName := templateParameter.GetName()
+		provided, hasValue := providedParameters[paramName]
+		if !hasValue {
+			continue
+		}
+		sealedDefault := templateParameter.GetDefault()
+		if sealedDefault != nil && !proto.Equal(provided, sealedDefault) {
+			return grpcstatus.Errorf(
+				grpccodes.InvalidArgument,
+				"parameter '%s' of template '%s' is sealed and cannot be changed",
+				paramName, templateID,
 			)
 		}
 	}

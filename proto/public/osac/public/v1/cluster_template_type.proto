@@ -20,6 +20,10 @@ import "osac/public/v1/metadata_type.proto";
 
 // A cluster template defines a type of cluster that can be created by the user. Note that the user doesn't create these
 // templates: the system provides a collection of them, and the user chooses one.
+//
+// Templates support inheritance: a template can reference a parent template via the `parent` field. A child template
+// inherits all parameter definitions from the parent and can override default values or seal parameters so that users
+// cannot change them.
 message ClusterTemplate {
   // Unique identifier of the template.
   string id = 1;
@@ -37,10 +41,20 @@ message ClusterTemplate {
   //
   // Note that these are only the *definitions* of the parameters, not the actual values. The actual values are in the
   // `spec.template_parameters` field of the cluster.
+  //
+  // For child templates (those with a `parent`), this list contains only the parameters that the child wants to
+  // override. Each entry must reference by `name` a parameter that exists in the parent. The child can set `sealed` to
+  // `true` and provide a new `default` value. Fields like `type`, `title`, and `description` are inherited from the
+  // parent.
   repeated ClusterTemplateParameterDefinition parameters = 5;
 
   // Initial node sets of the cluster.
   map<string, ClusterTemplateNodeSet> node_sets = 6;
+
+  // Identifier or name of the parent template. When set, this template inherits all parameter definitions from the
+  // referenced parent, forming an inheritance chain. When empty, the template is a root template, typically backed by
+  // an Ansible role.
+  optional string parent = 7;
 }
 
 // Contains type and documentation of a template parameter.
@@ -90,6 +104,11 @@ message ClusterTemplateParameterDefinition {
 
   // Default value for optional parameters.
   google.protobuf.Any default = 6;
+
+  // Indicates if this parameter is sealed. A sealed parameter's value is locked to its `default` and cannot be changed
+  // by users when creating a cluster. Child templates can seal parameters inherited from the parent. Once a parameter
+  // is sealed it cannot be unsealed by further descendants.
+  bool sealed = 7;
 }
 
 // Defines a set of nodes that will be part of cluster, all of them of the same class of host.

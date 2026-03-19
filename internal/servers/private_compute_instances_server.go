@@ -21,6 +21,7 @@ import (
 
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
@@ -47,6 +48,10 @@ type PrivateComputeInstancesServer struct {
 	templatesDao      *dao.GenericDAO[*privatev1.ComputeInstanceTemplate]
 	subnetsDao        *dao.GenericDAO[*privatev1.Subnet]
 	securityGroupsDao *dao.GenericDAO[*privatev1.SecurityGroup]
+	templateHelper    *TemplateHelper[
+		*privatev1.ComputeInstanceTemplate,
+		*privatev1.ComputeInstanceTemplateParameterDefinition,
+	]
 }
 
 func NewPrivateComputeInstancesServer() *PrivateComputeInstancesServerBuilder {
@@ -126,6 +131,18 @@ func (b *PrivateComputeInstancesServerBuilder) Build() (result *PrivateComputeIn
 		return
 	}
 
+	// Create the template helper:
+	templateHelper, err := NewTemplateHelper[
+		*privatev1.ComputeInstanceTemplate,
+		*privatev1.ComputeInstanceTemplateParameterDefinition,
+	]().
+		SetLogger(b.logger).
+		SetDao(templatesDao).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create and populate the object:
 	result = &PrivateComputeInstancesServer{
 		logger:            b.logger,
@@ -133,6 +150,7 @@ func (b *PrivateComputeInstancesServerBuilder) Build() (result *PrivateComputeIn
 		templatesDao:      templatesDao,
 		subnetsDao:        subnetsDao,
 		securityGroupsDao: securityGroupsDao,
+		templateHelper:    templateHelper,
 	}
 	return
 }
@@ -243,16 +261,23 @@ func (s *PrivateComputeInstancesServer) validateTemplate(ctx context.Context, vm
 		)
 	}
 
-	// Validate template parameters:
+	// Resolve effective template parameters (including inherited ones) for validation:
+	flattenedTemplate := proto.Clone(template).(*privatev1.ComputeInstanceTemplate)
+	err = s.templateHelper.Flatten(ctx, flattenedTemplate)
+	if err != nil {
+		return err
+	}
+
+	// Validate template parameters against the effective (fully resolved) template:
 	vmParameters := spec.GetTemplateParameters()
-	err = utils.ValidateComputeInstanceTemplateParameters(template, vmParameters)
+	err = utils.ValidateComputeInstanceTemplateParameters(flattenedTemplate, vmParameters)
 	if err != nil {
 		return err
 	}
 
 	// Set default values for template parameters:
 	actualVmParameters := utils.ProcessTemplateParametersWithDefaults(
-		utils.ComputeInstanceTemplateAdapter{ComputeInstanceTemplate: template},
+		utils.ComputeInstanceTemplateAdapter{ComputeInstanceTemplate: flattenedTemplate},
 		vmParameters,
 	)
 	spec.SetTemplateParameters(actualVmParameters)

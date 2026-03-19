@@ -18,16 +18,25 @@ package osac.private.v1;
 import "google/protobuf/any.proto";
 import "osac/private/v1/metadata_type.proto";
 
+// A cluster template defines a type of cluster that can be created by the user. Templates support inheritance via
+// the `parent` field: a child template inherits all parameter definitions from the parent and can override defaults
+// or seal parameters.
 message ClusterTemplate {
   // Public data.
   string id = 1;
   Metadata metadata = 2;
   string title = 3;
   string description = 4;
+
+  // Parameter definitions. For child templates, only the overridden parameters are listed here.
   repeated ClusterTemplateParameterDefinition parameters = 5;
   map<string, ClusterTemplateNodeSet> node_sets = 6;
+
+  // Identifier or name of the parent template. Empty for root templates.
+  optional string parent = 7;
 }
 
+// Contains type and documentation of a template parameter.
 message ClusterTemplateParameterDefinition {
   string name = 1;
   string title = 2;
@@ -35,6 +44,9 @@ message ClusterTemplateParameterDefinition {
   bool required = 4;
   string type = 5;
   google.protobuf.Any default = 6;
+
+  // When true, the parameter value is locked to its default and cannot be overridden by users.
+  bool sealed = 7;
 }
 
 message ClusterTemplateNodeSet {

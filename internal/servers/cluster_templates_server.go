@@ -128,6 +128,7 @@ func (s *ClusterTemplatesServer) List(ctx context.Context,
 	privateRequest.SetOffset(request.GetOffset())
 	privateRequest.SetLimit(request.GetLimit())
 	privateRequest.SetFilter(request.GetFilter())
+	privateRequest.SetFlatten(request.GetFlatten())
 
 	// Delegate to private server:
 	privateResponse, err := s.delegate.List(ctx, privateRequest)
@@ -165,6 +166,7 @@ func (s *ClusterTemplatesServer) Get(ctx context.Context,
 	// Create private request:
 	privateRequest := &privatev1.ClusterTemplatesGetRequest{}
 	privateRequest.SetId(request.GetId())
+	privateRequest.SetFlatten(request.GetFlatten())
 
 	// Delegate to private server:
 	privateResponse, err := s.delegate.Get(ctx, privateRequest)

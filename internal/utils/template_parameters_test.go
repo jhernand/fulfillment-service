@@ -635,6 +635,7 @@ type mockParameter struct {
 	required     bool
 	paramType    string
 	defaultValue *anypb.Any
+	sealed       bool
 }
 
 func (m *mockParameter) GetName() string {
@@ -651,4 +652,8 @@ func (m *mockParameter) GetType() string {
 
 func (m *mockParameter) GetDefault() *anypb.Any {
 	return m.defaultValue
+}
+
+func (m *mockParameter) GetSealed() bool {
+	return m.sealed
 }

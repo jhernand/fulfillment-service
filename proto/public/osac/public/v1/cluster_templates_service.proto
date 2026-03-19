@@ -50,6 +50,10 @@ message ClusterTemplatesListRequest {
   //
   // If the parameter isn't provided, or if the value is empty, then the order of the results is undefined.
   optional string order = 4;
+
+  // When true, the returned templates include all parameters inherited from parent templates, with overrides applied.
+  // When false (the default), only the raw fields of the template itself are returned.
+  optional bool flatten = 5;
 }
 
 message ClusterTemplatesListResponse {
@@ -68,6 +72,10 @@ message ClusterTemplatesListResponse {
 
 message ClusterTemplatesGetRequest {
   string id = 1;
+
+  // When true, the returned template includes all parameters inherited from parent templates, with overrides applied.
+  // When false (the default), only the raw fields of the template itself are returned.
+  optional bool flatten = 2;
 }
 
 message ClusterTemplatesGetResponse {

@@ -23,6 +23,9 @@ message ClusterTemplatesListRequest {
   optional int32 offset = 1;
   optional int32 limit = 2;
   optional string filter = 3;
+
+  // When true, the returned templates include all parameters inherited from parent templates, with overrides applied.
+  optional bool flatten = 4;
 }
 
 message ClusterTemplatesListResponse {
@@ -33,6 +36,9 @@ message ClusterTemplatesListResponse {
 
 message ClusterTemplatesGetRequest {
   string id = 1;
+
+  // When true, the returned template includes all parameters inherited from parent templates, with overrides applied.
+  optional bool flatten = 2;
 }
 
 message ClusterTemplatesGetResponse {
