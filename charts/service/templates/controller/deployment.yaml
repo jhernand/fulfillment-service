@@ -22,7 +22,7 @@ spec:
   selector:
     matchLabels:
       app: fulfillment-controller
-  replicas: 1
+  replicas: {{ .Values.controller.replicas | default 1 }}
   strategy:
     type: {{ if .Values.debug }}Recreate{{ else }}RollingUpdate{{ end }}
   template:

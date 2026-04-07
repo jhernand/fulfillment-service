@@ -63,6 +63,13 @@ log:
   # environments.
   bodies: false
 
+# Controller configuration:
+controller:
+
+  # Number of controller replicas. Leader election ensures only one is actively reconciling at a time, so it is
+  # safe to run multiple replicas for high availability.
+  replicas: 1
+
 # Image configuration:
 images:
   service: ghcr.io/osac/fulfillment-service:main

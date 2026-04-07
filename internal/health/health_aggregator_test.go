@@ -76,9 +76,9 @@ var _ = Describe("Aggregator", func() {
 			return resp.Status
 		}
 
-		It("Reports 'NOT_SERVING' initially", func() {
+		It("Reports 'SERVING' initially when no components are registered", func() {
 			status := getStatus()
-			Expect(status).To(Equal(healthv1.HealthCheckResponse_NOT_SERVING))
+			Expect(status).To(Equal(healthv1.HealthCheckResponse_SERVING))
 		})
 
 		It("Reports 'SERVING' when single component is serving", func() {

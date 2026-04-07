@@ -31,7 +31,8 @@ type AggregatorBuilder struct {
 }
 
 // Aggregator tracks the health status of multiple components and reports the aggregated status to a gRPC health
-// server. It only reports 'SERVING' when all registered components are healthy.
+// server. It reports 'SERVING' when there are no registered components or when all registered components are
+// healthy. It reports 'NOT_SERVING' if any registered component is unhealthy.
 type Aggregator struct {
 	logger   *slog.Logger
 	server   *health.Server
@@ -75,14 +76,16 @@ func (b *AggregatorBuilder) Build() (result *Aggregator, err error) {
 		statuses: make(map[string]healthv1.HealthCheckResponse_ServingStatus),
 	}
 
-	// Initially set the health server to 'NOT_SERVING' until all components report healthy:
-	b.server.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
+	// Initially set the health server to 'SERVING' because with zero components registered the aggregated
+	// status is healthy. It will transition to 'NOT_SERVING' only when a component explicitly reports unhealthy.
+	b.server.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
 
 	return
 }
 
-// Report reports the health status for the given component. The aggregated status will be 'SERVING' only when all
-// registered components report 'SERVING', otherwise it will be 'NOT_SERVING'.
+// Report reports the health status for the given component. The aggregated status is 'SERVING' when there are no
+// registered components or when all registered components report 'SERVING'. It is 'NOT_SERVING' if any registered
+// component reports a non-serving status.
 func (a *Aggregator) Report(ctx context.Context, name string, status healthv1.HealthCheckResponse_ServingStatus) {
 	a.lock.Lock()
 	defer a.lock.Unlock()

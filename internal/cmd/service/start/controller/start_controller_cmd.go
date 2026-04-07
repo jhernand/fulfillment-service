@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"syscall"
 	"time"
 
@@ -42,6 +43,7 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/controllers/securitygroup"
 	"github.com/osac-project/fulfillment-service/internal/controllers/subnet"
 	"github.com/osac-project/fulfillment-service/internal/controllers/virtualnetwork"
+	"github.com/osac-project/fulfillment-service/internal/coordination"
 	internalhealth "github.com/osac-project/fulfillment-service/internal/health"
 	"github.com/osac-project/fulfillment-service/internal/logging"
 	"github.com/osac-project/fulfillment-service/internal/network"
@@ -71,6 +73,12 @@ func Cmd() *cobra.Command {
 		"",
 		"File containing the token to use for authentication.",
 	)
+	flags.StringVar(
+		&runner.args.leaderIdentity,
+		"leader-identity",
+		"",
+		"Identity used for leader election. Defaults to the hostname.",
+	)
 	network.AddGrpcClientFlags(flags, network.GrpcClientName, network.DefaultGrpcAddress)
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	network.AddListenerFlags(flags, network.MetricsListenerName, network.DefaultMetricsAddress)
@@ -82,8 +90,9 @@ type runnerContext struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	args   struct {
-		caFiles   []string
-		tokenFile string
+		caFiles        []string
+		tokenFile      string
+		leaderIdentity string
 	}
 	client *grpc.ClientConn
 }
@@ -214,196 +223,46 @@ func (r *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to wait for server to be ready: %w", err)
 	}
 
-	// Create the hub cache:
-	r.logger.InfoContext(ctx, "Creating hub cache")
-	hubCache, err := controllers.NewHubCache().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create hub cache: %w", err)
-	}
-
-	// Create the cluster reconciler:
-	r.logger.InfoContext(ctx, "Creating cluster reconciler")
-	clusterReconcilerFunction, err := cluster.NewFunction().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create cluster reconciler function: %w", err)
-	}
-	clusterReconciler, err := controllers.NewReconciler[*privatev1.Cluster]().
-		SetLogger(r.logger).
-		SetName("cluster").
-		SetClient(r.client).
-		SetFunction(clusterReconcilerFunction).
-		SetEventFilter("has(event.cluster) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
-		SetHealthReporter(healthAggregator).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create cluster reconciler: %w", err)
-	}
-
-	// Start the cluster reconciler:
-	r.logger.InfoContext(ctx, "Starting cluster reconciler")
-	go func() {
-		err := clusterReconciler.Start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Cluster reconciler finished")
-		} else {
-			r.logger.InfoContext(
-				ctx,
-				"Cluster reconciler failed",
-				slog.Any("error", err),
-			)
+	// Determine the leader election identity, defaulting to the hostname:
+	leaderIdentity := r.args.leaderIdentity
+	if leaderIdentity == "" {
+		leaderIdentity, err = os.Hostname()
+		if err != nil {
+			return fmt.Errorf("failed to get hostname for leader election identity: %w", err)
 		}
-	}()
-
-	// Create the compute instance reconciler:
-	r.logger.InfoContext(ctx, "Creating compute instance reconciler")
-	computeInstanceReconcilerFunction, err := computeinstance.NewFunction().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create compute instance reconciler function: %w", err)
 	}
-	computeInstanceReconciler, err := controllers.NewReconciler[*privatev1.ComputeInstance]().
+
+	// Create and start the leader elector. The reconcilers will be created and started only when this
+	// instance becomes the leader.
+	r.logger.InfoContext(ctx, "Creating leader elector")
+	leaderElector, err := coordination.NewLeaderElector().
 		SetLogger(r.logger).
-		SetName("compute_instance").
 		SetClient(r.client).
-		SetFunction(computeInstanceReconcilerFunction).
-		SetEventFilter("has(event.compute_instance) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
-		SetHealthReporter(healthAggregator).
+		SetLeaseId(controllerLeaseName).
+		SetLeaseHolder(leaderIdentity).
+		SetCallback(func(leaderCtx context.Context) {
+			r.startReconcilers(leaderCtx, healthAggregator)
+		}).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create compute instance reconciler: %w", err)
+		return fmt.Errorf("failed to create leader elector: %w", err)
 	}
 
-	// Start the compute instance reconciler:
-	r.logger.InfoContext(ctx, "Starting compute instance reconciler")
+	// Start the leader elector in a goroutine:
+	r.logger.InfoContext(
+		ctx,
+		"Starting leader election",
+		slog.String("identity", leaderIdentity),
+		slog.String("lease", controllerLeaseName),
+	)
 	go func() {
-		err := computeInstanceReconciler.Start(ctx)
+		err := leaderElector.Run(ctx)
 		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Compute instance reconciler finished")
+			r.logger.InfoContext(ctx, "Leader elector finished")
 		} else {
-			r.logger.InfoContext(
+			r.logger.ErrorContext(
 				ctx,
-				"Compute instance reconciler failed",
-				slog.Any("error", err),
-			)
-		}
-	}()
-
-	// Create the subnet reconciler:
-	r.logger.InfoContext(ctx, "Creating subnet reconciler")
-	subnetReconcilerFunction, err := subnet.NewFunction().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create subnet reconciler function: %w", err)
-	}
-	subnetReconciler, err := controllers.NewReconciler[*privatev1.Subnet]().
-		SetLogger(r.logger).
-		SetName("subnet").
-		SetClient(r.client).
-		SetFunction(subnetReconcilerFunction).
-		SetEventFilter("has(event.subnet) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
-		SetHealthReporter(healthAggregator).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create subnet reconciler: %w", err)
-	}
-
-	// Start the subnet reconciler:
-	r.logger.InfoContext(ctx, "Starting subnet reconciler")
-	go func() {
-		err := subnetReconciler.Start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Subnet reconciler finished")
-		} else {
-			r.logger.InfoContext(
-				ctx,
-				"Subnet reconciler failed",
-				slog.Any("error", err),
-			)
-		}
-	}()
-
-	// Create the virtual network reconciler:
-	r.logger.InfoContext(ctx, "Creating virtual network reconciler")
-	virtualNetworkReconcilerFunction, err := virtualnetwork.NewFunction().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create virtual network reconciler function: %w", err)
-	}
-	virtualNetworkReconciler, err := controllers.NewReconciler[*privatev1.VirtualNetwork]().
-		SetLogger(r.logger).
-		SetName("virtual_network").
-		SetClient(r.client).
-		SetFunction(virtualNetworkReconcilerFunction).
-		SetEventFilter("has(event.virtual_network) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
-		SetHealthReporter(healthAggregator).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create virtual network reconciler: %w", err)
-	}
-
-	// Start the virtual network reconciler:
-	r.logger.InfoContext(ctx, "Starting virtual network reconciler")
-	go func() {
-		err := virtualNetworkReconciler.Start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Virtual network reconciler finished")
-		} else {
-			r.logger.InfoContext(
-				ctx,
-				"Virtual network reconciler failed",
-				slog.Any("error", err),
-			)
-		}
-	}()
-
-	// Create the security group reconciler:
-	r.logger.InfoContext(ctx, "Creating security group reconciler")
-	securityGroupReconcilerFunction, err := securitygroup.NewFunction().
-		SetLogger(r.logger).
-		SetConnection(r.client).
-		SetHubCache(hubCache).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create security group reconciler function: %w", err)
-	}
-	securityGroupReconciler, err := controllers.NewReconciler[*privatev1.SecurityGroup]().
-		SetLogger(r.logger).
-		SetName("security_group").
-		SetClient(r.client).
-		SetFunction(securityGroupReconcilerFunction).
-		SetEventFilter("has(event.security_group) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
-		SetHealthReporter(healthAggregator).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create security group reconciler: %w", err)
-	}
-
-	// Start the security group reconciler:
-	r.logger.InfoContext(ctx, "Starting security group reconciler")
-	go func() {
-		err := securityGroupReconciler.Start(ctx)
-		if err == nil || errors.Is(err, context.Canceled) {
-			r.logger.InfoContext(ctx, "Security group reconciler finished")
-		} else {
-			r.logger.InfoContext(
-				ctx,
-				"Security group reconciler failed",
+				"Leader elector failed",
 				slog.Any("error", err),
 			)
 		}
@@ -474,5 +333,189 @@ func (r *runnerContext) waitForServer(ctx context.Context) error {
 	}
 }
 
+// startReconcilers creates and starts all reconcilers. It is called when this instance becomes the leader. The
+// context will be cancelled when leadership is lost, stopping all reconcilers.
+func (r *runnerContext) startReconcilers(ctx context.Context, healthAggregator internalhealth.Reporter) {
+	r.logger.InfoContext(ctx, "Started leading, creating reconcilers")
+
+	// Create the hub cache:
+	hubCache, err := controllers.NewHubCache().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create hub cache", slog.Any("error", err))
+		return
+	}
+
+	// Create and start the cluster reconciler:
+	r.logger.InfoContext(ctx, "Creating cluster reconciler")
+	clusterReconcilerFunction, err := cluster.NewFunction().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create cluster reconciler function", slog.Any("error", err))
+		return
+	}
+	clusterReconciler, err := controllers.NewReconciler[*privatev1.Cluster]().
+		SetLogger(r.logger).
+		SetName("cluster").
+		SetClient(r.client).
+		SetFunction(clusterReconcilerFunction).
+		SetEventFilter("has(event.cluster) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create cluster reconciler", slog.Any("error", err))
+		return
+	}
+	go func() {
+		err := clusterReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			r.logger.InfoContext(ctx, "Cluster reconciler finished")
+		} else {
+			r.logger.ErrorContext(ctx, "Cluster reconciler failed", slog.Any("error", err))
+		}
+	}()
+
+	// Create and start the compute instance reconciler:
+	r.logger.InfoContext(ctx, "Creating compute instance reconciler")
+	computeInstanceReconcilerFunction, err := computeinstance.NewFunction().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create compute instance reconciler function", slog.Any("error", err))
+		return
+	}
+	computeInstanceReconciler, err := controllers.NewReconciler[*privatev1.ComputeInstance]().
+		SetLogger(r.logger).
+		SetName("compute_instance").
+		SetClient(r.client).
+		SetFunction(computeInstanceReconcilerFunction).
+		SetEventFilter("has(event.compute_instance) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create compute instance reconciler", slog.Any("error", err))
+		return
+	}
+	go func() {
+		err := computeInstanceReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			r.logger.InfoContext(ctx, "Compute instance reconciler finished")
+		} else {
+			r.logger.ErrorContext(ctx, "Compute instance reconciler failed", slog.Any("error", err))
+		}
+	}()
+
+	// Create and start the subnet reconciler:
+	r.logger.InfoContext(ctx, "Creating subnet reconciler")
+	subnetReconcilerFunction, err := subnet.NewFunction().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create subnet reconciler function", slog.Any("error", err))
+		return
+	}
+	subnetReconciler, err := controllers.NewReconciler[*privatev1.Subnet]().
+		SetLogger(r.logger).
+		SetName("subnet").
+		SetClient(r.client).
+		SetFunction(subnetReconcilerFunction).
+		SetEventFilter("has(event.subnet) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create subnet reconciler", slog.Any("error", err))
+		return
+	}
+	go func() {
+		err := subnetReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			r.logger.InfoContext(ctx, "Subnet reconciler finished")
+		} else {
+			r.logger.ErrorContext(ctx, "Subnet reconciler failed", slog.Any("error", err))
+		}
+	}()
+
+	// Create and start the virtual network reconciler:
+	r.logger.InfoContext(ctx, "Creating virtual network reconciler")
+	virtualNetworkReconcilerFunction, err := virtualnetwork.NewFunction().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create virtual network reconciler function", slog.Any("error", err))
+		return
+	}
+	virtualNetworkReconciler, err := controllers.NewReconciler[*privatev1.VirtualNetwork]().
+		SetLogger(r.logger).
+		SetName("virtual_network").
+		SetClient(r.client).
+		SetFunction(virtualNetworkReconcilerFunction).
+		SetEventFilter("has(event.virtual_network) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create virtual network reconciler", slog.Any("error", err))
+		return
+	}
+	go func() {
+		err := virtualNetworkReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			r.logger.InfoContext(ctx, "Virtual network reconciler finished")
+		} else {
+			r.logger.ErrorContext(ctx, "Virtual network reconciler failed", slog.Any("error", err))
+		}
+	}()
+
+	// Create and start the security group reconciler:
+	r.logger.InfoContext(ctx, "Creating security group reconciler")
+	securityGroupReconcilerFunction, err := securitygroup.NewFunction().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create security group reconciler function", slog.Any("error", err))
+		return
+	}
+	securityGroupReconciler, err := controllers.NewReconciler[*privatev1.SecurityGroup]().
+		SetLogger(r.logger).
+		SetName("security_group").
+		SetClient(r.client).
+		SetFunction(securityGroupReconcilerFunction).
+		SetEventFilter("has(event.security_group) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
+		Build()
+	if err != nil {
+		r.logger.ErrorContext(ctx, "Failed to create security group reconciler", slog.Any("error", err))
+		return
+	}
+	go func() {
+		err := securityGroupReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			r.logger.InfoContext(ctx, "Security group reconciler finished")
+		} else {
+			r.logger.ErrorContext(ctx, "Security group reconciler failed", slog.Any("error", err))
+		}
+	}()
+
+	r.logger.InfoContext(ctx, "All reconcilers started")
+
+	// Block until the leader context is cancelled (leadership lost):
+	<-ctx.Done()
+}
+
 // controllerUserAgent is the user agent string for the controller.
 const controllerUserAgent = "fulfillment-controller"
+
+// controllerLeaseName is the name of the lease used for leader election among controller instances.
+const controllerLeaseName = "fulfillment-controller"
