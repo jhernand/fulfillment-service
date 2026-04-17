@@ -481,6 +481,9 @@ func (r *TableRenderer) lookupName(ctx context.Context, messageFullName protoref
 	object := listResult.Items[0]
 	metadata := helper.GetMetadata(object)
 	result = metadata.GetName()
+	if result == "" {
+		result = key
+	}
 	return
 }
 
