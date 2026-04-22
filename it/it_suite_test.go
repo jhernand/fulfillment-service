@@ -108,6 +108,7 @@ var _ = BeforeSuite(func() {
 		SetDeployMode(config.DeployMode).
 		SetDebug(config.Debug).
 		AddCrdFile(filepath.Join("crds", "clusterorders.osac.openshift.io.yaml")).
+		AddCrdFile(filepath.Join("crds", "computeinstances.osac.openshift.io.yaml")).
 		AddCrdFile(filepath.Join("crds", "hostedclusters.hypershift.openshift.io.yaml")).
 		Build()
 	Expect(err).ToNot(HaveOccurred())

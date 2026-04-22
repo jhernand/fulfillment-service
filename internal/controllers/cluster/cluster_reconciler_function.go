@@ -48,11 +48,12 @@ type FunctionBuilder struct {
 }
 
 type function struct {
-	logger         *slog.Logger
-	hubCache       controllers.HubCache
-	clustersClient privatev1.ClustersClient
-	hubsClient     privatev1.HubsClient
-	maskCalculator *masks.Calculator
+	logger          *slog.Logger
+	hubCache        controllers.HubCache
+	clustersClient  privatev1.ClustersClient
+	templatesClient privatev1.ClusterTemplatesClient
+	hubsClient      privatev1.HubsClient
+	maskCalculator  *masks.Calculator
 }
 
 type task struct {
@@ -104,11 +105,12 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 
 	// Create and populate the object:
 	object := &function{
-		logger:         b.logger,
-		clustersClient: privatev1.NewClustersClient(b.connection),
-		hubsClient:     privatev1.NewHubsClient(b.connection),
-		hubCache:       b.hubCache,
-		maskCalculator: masks.NewCalculator().Build(),
+		logger:          b.logger,
+		clustersClient:  privatev1.NewClustersClient(b.connection),
+		templatesClient: privatev1.NewClusterTemplatesClient(b.connection),
+		hubsClient:      privatev1.NewHubsClient(b.connection),
+		hubCache:        b.hubCache,
+		maskCalculator:  masks.NewCalculator().Build(),
 	}
 	result = object.run
 	return
@@ -203,8 +205,12 @@ func (t *task) update(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	templateID, err := t.resolveTemplateID(ctx)
+	if err != nil {
+		return err
+	}
 	spec := map[string]any{
-		"templateID":         t.cluster.GetSpec().GetTemplate(),
+		"templateID":         templateID,
 		"templateParameters": templateParameters,
 		"nodeRequests":       nodeRequests,
 	}
@@ -257,6 +263,35 @@ func (t *task) update(ctx context.Context) error {
 	}
 
 	return err
+}
+
+// resolveTemplateID determines the template identifier to pass to the hub cluster order. If the
+// cluster template has an `ansible_role` field set, that value is used. Otherwise the template
+// identifier from the cluster spec is used directly.
+func (t *task) resolveTemplateID(ctx context.Context) (result string, err error) {
+	templateID := t.cluster.GetSpec().GetTemplate()
+	if templateID == "" {
+		return
+	}
+	response, err := t.r.templatesClient.Get(ctx, privatev1.ClusterTemplatesGetRequest_builder{
+		Id: templateID,
+	}.Build())
+	if err != nil {
+		err = fmt.Errorf("failed to fetch cluster template '%s': %w", templateID, err)
+		return
+	}
+	result = templateID
+	ansibleRole := response.GetObject().GetAnsibleRole()
+	if ansibleRole != "" {
+		t.r.logger.DebugContext(
+			ctx,
+			"Using ansible role from cluster template",
+			slog.String("template", templateID),
+			slog.String("role", ansibleRole),
+		)
+		result = ansibleRole
+	}
+	return
 }
 
 func (t *task) setDefaults() {

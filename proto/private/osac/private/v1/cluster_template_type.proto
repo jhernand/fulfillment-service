@@ -26,6 +26,10 @@ message ClusterTemplate {
   string description = 4;
   repeated ClusterTemplateParameterDefinition parameters = 5;
   map<string, ClusterTemplateNodeSet> node_sets = 6;
+
+  // Name of the Ansible role that implements this template. When set, this value is passed to the hub cluster order
+  // instead of the template identifier.
+  string ansible_role = 7;
 }
 
 message ClusterTemplateParameterDefinition {

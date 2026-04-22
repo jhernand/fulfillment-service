@@ -59,6 +59,7 @@ type function struct {
 	logger                 *slog.Logger
 	hubCache               controllers.HubCache
 	computeInstancesClient privatev1.ComputeInstancesClient
+	templatesClient        privatev1.ComputeInstanceTemplatesClient
 	hubsClient             privatev1.HubsClient
 	maskCalculator         *masks.Calculator
 }
@@ -115,6 +116,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 	object := &function{
 		logger:                 b.logger,
 		computeInstancesClient: privatev1.NewComputeInstancesClient(b.connection),
+		templatesClient:        privatev1.NewComputeInstanceTemplatesClient(b.connection),
 		hubsClient:             privatev1.NewHubsClient(b.connection),
 		hubCache:               b.hubCache,
 		maskCalculator:         masks.NewCalculator().Build(),
@@ -484,6 +486,37 @@ func (t *task) updateCondition(conditionType privatev1.ComputeInstanceConditionT
 	t.computeInstance.GetStatus().SetConditions(conditions)
 }
 
+// resolveTemplateID determines the template identifier to pass to the hub compute instance. If the
+// compute instance template has an `ansible_role` field set, that value is used. Otherwise the
+// template identifier from the compute instance spec is used directly.
+func (t *task) resolveTemplateID(ctx context.Context) (result string, err error) {
+	templateID := t.computeInstance.GetSpec().GetTemplate()
+	if templateID == "" {
+		return
+	}
+	response, err := t.r.templatesClient.Get(
+		ctx, privatev1.ComputeInstanceTemplatesGetRequest_builder{
+			Id: templateID,
+		}.Build(),
+	)
+	if err != nil {
+		err = fmt.Errorf("failed to fetch compute instance template '%s': %w", templateID, err)
+		return
+	}
+	result = templateID
+	ansibleRole := response.GetObject().GetAnsibleRole()
+	if ansibleRole != "" {
+		t.r.logger.DebugContext(
+			ctx,
+			"Using ansible role from compute instance template",
+			slog.String("template", templateID),
+			slog.String("role", ansibleRole),
+		)
+		result = ansibleRole
+	}
+	return
+}
+
 // buildSpec constructs the spec map for the Kubernetes ComputeInstance object based on the
 // compute instance from the database.
 func (t *task) buildSpec(ctx context.Context) (map[string]any, error) {
@@ -491,8 +524,12 @@ func (t *task) buildSpec(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	templateID, err := t.resolveTemplateID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	spec := map[string]any{
-		"templateID":         t.computeInstance.GetSpec().GetTemplate(),
+		"templateID":         templateID,
 		"templateParameters": templateParameters,
 	}
 

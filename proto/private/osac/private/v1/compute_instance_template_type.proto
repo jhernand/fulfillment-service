@@ -25,6 +25,10 @@ message ComputeInstanceTemplate {
   string title = 3;
   string description = 4;
   repeated ComputeInstanceTemplateParameterDefinition parameters = 5;
+
+  // Name of the Ansible role that implements this template. When set, this value is passed to the hub compute
+  // instance instead of the template identifier.
+  string ansible_role = 6;
 }
 
 message ComputeInstanceTemplateParameterDefinition {

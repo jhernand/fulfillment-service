@@ -19,12 +19,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/clients"
 	"github.com/osac-project/fulfillment-service/internal/controllers"
 	"github.com/osac-project/fulfillment-service/internal/controllers/finalizers"
 	"github.com/osac-project/fulfillment-service/internal/kubernetes/annotations"
@@ -99,14 +101,30 @@ var _ = Describe("update tenant annotation", func() {
 	)
 
 	var (
-		ctx  context.Context
-		ctrl *gomock.Controller
+		ctx             context.Context
+		ctrl            *gomock.Controller
+		templatesClient *clients.MockClusterTemplatesClient
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		ctrl = gomock.NewController(GinkgoT())
 		DeferCleanup(ctrl.Finish)
+		templatesClient = clients.NewMockClusterTemplatesClient(ctrl)
+		templatesClient.EXPECT().
+			Get(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(
+				ctx context.Context,
+				req *privatev1.ClusterTemplatesGetRequest,
+				opts ...grpc.CallOption,
+			) (*privatev1.ClusterTemplatesGetResponse, error) {
+				return privatev1.ClusterTemplatesGetResponse_builder{
+					Object: privatev1.ClusterTemplate_builder{
+						Id: req.GetId(),
+					}.Build(),
+				}.Build(), nil
+			}).
+			AnyTimes()
 	})
 
 	It("should set tenant annotation when creating a new ClusterOrder CR", func() {
@@ -149,9 +167,10 @@ var _ = Describe("update tenant annotation", func() {
 
 		t := &task{
 			r: &function{
-				logger:         logger,
-				hubCache:       hubCache,
-				maskCalculator: nil,
+				logger:          logger,
+				hubCache:        hubCache,
+				templatesClient: templatesClient,
+				maskCalculator:  nil,
 			},
 			cluster: cluster,
 		}
@@ -246,9 +265,10 @@ var _ = Describe("update tenant annotation", func() {
 
 		t := &task{
 			r: &function{
-				logger:         logger,
-				hubCache:       hubCache,
-				maskCalculator: nil,
+				logger:          logger,
+				hubCache:        hubCache,
+				templatesClient: templatesClient,
+				maskCalculator:  nil,
 			},
 			cluster: cluster,
 		}
@@ -348,9 +368,10 @@ var _ = Describe("update tenant annotation", func() {
 
 		t := &task{
 			r: &function{
-				logger:         logger,
-				hubCache:       hubCache,
-				maskCalculator: nil,
+				logger:          logger,
+				hubCache:        hubCache,
+				templatesClient: templatesClient,
+				maskCalculator:  nil,
 			},
 			cluster: cluster,
 		}
@@ -523,9 +544,10 @@ var _ = Describe("update tenant annotation", func() {
 
 		t := &task{
 			r: &function{
-				logger:         logger,
-				hubCache:       hubCache,
-				maskCalculator: nil,
+				logger:          logger,
+				hubCache:        hubCache,
+				templatesClient: templatesClient,
+				maskCalculator:  nil,
 			},
 			cluster: cluster,
 		}

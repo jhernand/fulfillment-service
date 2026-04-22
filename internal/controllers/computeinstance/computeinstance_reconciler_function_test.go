@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/clients"
 	"github.com/osac-project/fulfillment-service/internal/controllers"
 	"github.com/osac-project/fulfillment-service/internal/controllers/finalizers"
 	"github.com/osac-project/fulfillment-service/internal/kubernetes/gvks"
@@ -42,21 +43,53 @@ import (
 )
 
 var _ = Describe("buildSpec", func() {
+	var (
+		ctx             context.Context
+		ctrl            *gomock.Controller
+		template        *privatev1.ComputeInstanceTemplate
+		templatesClient *clients.MockComputeInstanceTemplatesClient
+	)
+
+	BeforeEach(func() {
+		// Create a context:
+		ctx = context.Background()
+
+		// Create a mock controller:
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
+
+		// Create a templates client that returns always the same template:
+		template = privatev1.ComputeInstanceTemplate_builder{
+			Id: "osac.templates.ocp_virt_vm",
+		}.Build()
+		templatesClient = clients.NewMockComputeInstanceTemplatesClient(ctrl)
+		templatesClient.EXPECT().
+			Get(gomock.Any(), gomock.Any()).
+			Return(
+				&privatev1.ComputeInstanceTemplatesGetResponse{
+					Object: template,
+				},
+				nil,
+			).
+			AnyTimes()
+	})
+
 	Describe("RestartRequestedAt field", func() {
 		It("Includes restartRequestedAt in spec map when present", func() {
-			ctx := context.Background()
 			requestedAt := time.Date(2026, 1, 28, 13, 27, 0, 0, time.UTC)
 			cpuCores, err := anypb.New(wrapperspb.String("2"))
 			Expect(err).ToNot(HaveOccurred())
 			memory, err := anypb.New(wrapperspb.String("4Gi"))
 			Expect(err).ToNot(HaveOccurred())
-			template := "osac.templates.ocp_virt_vm"
 			task := &task{
-				r: &function{logger: logger},
+				r: &function{
+					logger:          logger,
+					templatesClient: templatesClient,
+				},
 				computeInstance: privatev1.ComputeInstance_builder{
 					Id: "test-instance-123",
 					Spec: privatev1.ComputeInstanceSpec_builder{
-						Template: template,
+						Template: template.GetId(),
 						TemplateParameters: map[string]*anypb.Any{
 							"cpu_cores": cpuCores,
 							"memory":    memory,
@@ -74,19 +107,20 @@ var _ = Describe("buildSpec", func() {
 			Expect(spec["restartRequestedAt"]).To(Equal(requestedAt.Format(time.RFC3339)))
 
 			// Verify other required fields are present
-			Expect(spec["templateID"]).To(Equal(template))
+			Expect(spec["templateID"]).To(Equal(template.GetId()))
 			Expect(spec["templateParameters"]).ToNot(BeNil())
 		})
 
 		It("Includes explicit fields in spec map when present", func() {
-			ctx := context.Background()
-			template := "osac.templates.ocp_virt_vm"
 			task := &task{
-				r: &function{logger: logger},
+				r: &function{
+					logger:          logger,
+					templatesClient: templatesClient,
+				},
 				computeInstance: privatev1.ComputeInstance_builder{
 					Id: "test-explicit-fields",
 					Spec: privatev1.ComputeInstanceSpec_builder{
-						Template:    template,
+						Template:    template.GetId(),
 						Cores:       proto.Int32(4),
 						MemoryGib:   proto.Int32(8),
 						RunStrategy: proto.String("Always"),
@@ -141,14 +175,15 @@ var _ = Describe("buildSpec", func() {
 		})
 
 		It("Excludes explicit fields from spec map when not set", func() {
-			ctx := context.Background()
-			template := "osac.templates.ocp_virt_vm"
 			task := &task{
-				r: &function{logger: logger},
+				r: &function{
+					logger:          logger,
+					templatesClient: templatesClient,
+				},
 				computeInstance: privatev1.ComputeInstance_builder{
 					Id: "test-no-explicit-fields",
 					Spec: privatev1.ComputeInstanceSpec_builder{
-						Template: template,
+						Template: template.GetId(),
 					}.Build(),
 				}.Build(),
 			}
@@ -167,18 +202,19 @@ var _ = Describe("buildSpec", func() {
 		})
 
 		It("Excludes restartRequestedAt from spec map when not set", func() {
-			ctx := context.Background()
 			cpuCores, err := anypb.New(wrapperspb.String("1"))
 			Expect(err).ToNot(HaveOccurred())
 			memory, err := anypb.New(wrapperspb.String("2Gi"))
 			Expect(err).ToNot(HaveOccurred())
-			template := "osac.templates.ocp_virt_vm"
 			task := &task{
-				r: &function{logger: logger},
+				r: &function{
+					logger:          logger,
+					templatesClient: templatesClient,
+				},
 				computeInstance: privatev1.ComputeInstance_builder{
 					Id: "test-instance-456",
 					Spec: privatev1.ComputeInstanceSpec_builder{
-						Template: template,
+						Template: template.GetId(),
 						TemplateParameters: map[string]*anypb.Any{
 							"cpu_cores": cpuCores,
 							"memory":    memory,
@@ -196,7 +232,7 @@ var _ = Describe("buildSpec", func() {
 			Expect(spec).ToNot(HaveKey("restartRequestedAt"))
 
 			// Verify other required fields are present
-			Expect(spec["templateID"]).To(Equal(template))
+			Expect(spec["templateID"]).To(Equal(template.GetId()))
 			Expect(spec["templateParameters"]).ToNot(BeNil())
 		})
 	})
@@ -527,11 +563,34 @@ var _ = Describe("buildSpec with subnetRef", func() {
 	)
 
 	var (
-		ctx context.Context
+		ctx             context.Context
+		ctrl            *gomock.Controller
+		template        *privatev1.ComputeInstanceTemplate
+		templatesClient *clients.MockComputeInstanceTemplatesClient
 	)
 
 	BeforeEach(func() {
+		// Create a context:
 		ctx = context.Background()
+
+		// Create a mock controller:
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
+
+		// Create a templates client that returns always the same template:
+		template = privatev1.ComputeInstanceTemplate_builder{
+			Id: "osac.templates.ocp_virt_vm",
+		}.Build()
+		templatesClient = clients.NewMockComputeInstanceTemplatesClient(ctrl)
+		templatesClient.EXPECT().
+			Get(gomock.Any(), gomock.Any()).
+			Return(
+				privatev1.ComputeInstanceTemplatesGetResponse_builder{
+					Object: template,
+				}.Build(),
+				nil,
+			).
+			AnyTimes()
 	})
 
 	It("should set subnetRef when subnet field present and Subnet CR exists", func() {
@@ -554,13 +613,15 @@ var _ = Describe("buildSpec with subnetRef", func() {
 			WithObjects(subnetCR).
 			Build()
 
-		template := "osac.templates.ocp_virt_vm"
 		t := &task{
-			r: &function{logger: logger},
+			r: &function{
+				logger:          logger,
+				templatesClient: templatesClient,
+			},
 			computeInstance: privatev1.ComputeInstance_builder{
 				Id: "test-instance",
 				Spec: privatev1.ComputeInstanceSpec_builder{
-					Template: template,
+					Template: template.GetId(),
 					Subnet:   proto.String(subnetID),
 				}.Build(),
 			}.Build(),
@@ -580,13 +641,15 @@ var _ = Describe("buildSpec with subnetRef", func() {
 			WithScheme(scheme).
 			Build()
 
-		template := "osac.templates.ocp_virt_vm"
 		t := &task{
-			r: &function{logger: logger},
+			r: &function{
+				logger:          logger,
+				templatesClient: templatesClient,
+			},
 			computeInstance: privatev1.ComputeInstance_builder{
 				Id: "test-instance",
 				Spec: privatev1.ComputeInstanceSpec_builder{
-					Template: template,
+					Template: template.GetId(),
 				}.Build(),
 			}.Build(),
 			hubNamespace: hubNamespace,
@@ -609,13 +672,15 @@ var _ = Describe("buildSpec with subnetRef", func() {
 			WithScheme(scheme).
 			Build()
 
-		template := "osac.templates.ocp_virt_vm"
 		t := &task{
-			r: &function{logger: logger},
+			r: &function{
+				logger:          logger,
+				templatesClient: templatesClient,
+			},
 			computeInstance: privatev1.ComputeInstance_builder{
 				Id: "test-instance",
 				Spec: privatev1.ComputeInstanceSpec_builder{
-					Template: template,
+					Template: template.GetId(),
 					Subnet:   proto.String(subnetID),
 				}.Build(),
 			}.Build(),
@@ -656,13 +721,15 @@ var _ = Describe("buildSpec with subnetRef", func() {
 			WithObjects(subnetCR1, subnetCR2).
 			Build()
 
-		template := "osac.templates.ocp_virt_vm"
 		t := &task{
-			r: &function{logger: logger},
+			r: &function{
+				logger:          logger,
+				templatesClient: templatesClient,
+			},
 			computeInstance: privatev1.ComputeInstance_builder{
 				Id: "test-instance",
 				Spec: privatev1.ComputeInstanceSpec_builder{
-					Template: template,
+					Template: template.GetId(),
 					Subnet:   proto.String(subnetID),
 				}.Build(),
 			}.Build(),
@@ -685,12 +752,37 @@ var _ = Describe("ensureUserDataSecret", func() {
 	)
 
 	var (
-		ctx   context.Context
-		owner *unstructured.Unstructured
+		ctx             context.Context
+		ctrl            *gomock.Controller
+		template        *privatev1.ComputeInstanceTemplate
+		templatesClient *clients.MockComputeInstanceTemplatesClient
+		owner           *unstructured.Unstructured
 	)
 
 	BeforeEach(func() {
+		// Create a context:
 		ctx = context.Background()
+
+		// Create a mock controller:
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
+
+		// Create a templates client that returns always the same template:
+		template = privatev1.ComputeInstanceTemplate_builder{
+			Id: "osac.templates.ocp_virt_vm",
+		}.Build()
+		templatesClient = clients.NewMockComputeInstanceTemplatesClient(ctrl)
+		templatesClient.EXPECT().
+			Get(gomock.Any(), gomock.Any()).
+			Return(
+				privatev1.ComputeInstanceTemplatesGetResponse_builder{
+					Object: template,
+				}.Build(),
+				nil,
+			).
+			AnyTimes()
+
+		// Create an owner object:
 		owner = &unstructured.Unstructured{}
 		owner.SetGroupVersionKind(gvks.ComputeInstance)
 		owner.SetNamespace(hubNamespace)
@@ -705,7 +797,10 @@ var _ = Describe("ensureUserDataSecret", func() {
 			Build()
 
 		t := &task{
-			r: &function{logger: logger},
+			r: &function{
+				logger:          logger,
+				templatesClient: templatesClient,
+			},
 			computeInstance: privatev1.ComputeInstance_builder{
 				Id: ciID,
 				Spec: privatev1.ComputeInstanceSpec_builder{
@@ -753,7 +848,10 @@ var _ = Describe("ensureUserDataSecret", func() {
 			Build()
 
 		t := &task{
-			r: &function{logger: logger},
+			r: &function{
+				logger:          logger,
+				templatesClient: templatesClient,
+			},
 			computeInstance: privatev1.ComputeInstance_builder{
 				Id: ciID,
 				Spec: privatev1.ComputeInstanceSpec_builder{
@@ -781,7 +879,10 @@ var _ = Describe("ensureUserDataSecret", func() {
 			Build()
 
 		t := &task{
-			r: &function{logger: logger},
+			r: &function{
+				logger:          logger,
+				templatesClient: templatesClient,
+			},
 			computeInstance: privatev1.ComputeInstance_builder{
 				Id: ciID,
 				Spec: privatev1.ComputeInstanceSpec_builder{
@@ -805,7 +906,10 @@ var _ = Describe("ensureUserDataSecret", func() {
 			Build()
 
 		t := &task{
-			r: &function{logger: logger},
+			r: &function{
+				logger:          logger,
+				templatesClient: templatesClient,
+			},
 			computeInstance: privatev1.ComputeInstance_builder{
 				Id:   ciID,
 				Spec: privatev1.ComputeInstanceSpec_builder{}.Build(),
