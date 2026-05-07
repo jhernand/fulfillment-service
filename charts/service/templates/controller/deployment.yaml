@@ -156,6 +156,7 @@ spec:
           hostPort: 30003
           protocol: TCP
         {{ end }}
+        {{ if not .Values.debug }}
         livenessProbe:
           exec:
             command:
@@ -178,3 +179,4 @@ spec:
             - --grpc-server-timeout=1s
           initialDelaySeconds: 5
           periodSeconds: 10
+        {{ end }}
