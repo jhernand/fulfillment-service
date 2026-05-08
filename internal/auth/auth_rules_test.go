@@ -143,7 +143,7 @@ var _ = Describe("Authorization rules", Ordered, func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Run the helm template command to generate the manifests:
-		chartDir := filepath.Join(projectDir, "charts", "service")
+		chartDir := filepath.Join(projectDir, "chart")
 		helmCmd, err := testing.NewCommand().
 			SetLogger(logger).
 			SetHome(projectDir).

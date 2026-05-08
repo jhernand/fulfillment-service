@@ -1489,7 +1489,7 @@ func (t *Tool) deployServiceWithHelm(ctx context.Context, imageRef string) error
 			"upgrade",
 			"--install",
 			"fulfillment-service",
-			"charts/service",
+			"chart",
 			"--kubeconfig", t.kcFile,
 			"--namespace", "osac",
 			"--create-namespace",

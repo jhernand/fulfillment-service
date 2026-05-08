@@ -14,7 +14,7 @@ This Helm chart deploys the complete fulfillment service.
 To install the chart with the release name `fulfillment-service`:
 
 ```bash
-$ helm install fulfillment-service ./charts/service -n osac --create-namespace
+$ helm install fulfillment-service ./chart -n osac --create-namespace
 ```
 
 ## Configuration
@@ -95,7 +95,7 @@ database:
 Then install with:
 
 ```bash
-$ helm install fulfillment-service ./charts/service -n osac -f values.yaml
+$ helm install fulfillment-service ./chart -n osac -f values.yaml
 ```
 
 ## Variants
