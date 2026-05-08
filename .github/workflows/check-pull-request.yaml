@@ -58,6 +58,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup-go
+    - uses: ./.github/actions/setup-helm
     - run: |
         ginkgo run -r internal
 
@@ -77,6 +78,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup-go
+    - uses: ./.github/actions/setup-helm
     - run: |
         echo '127.0.0.1 fulfillment-api.osac.svc.cluster.local' | sudo tee -a /etc/hosts
         echo '127.0.0.1 fulfillment-internal-api.osac.svc.cluster.local' | sudo tee -a /etc/hosts
@@ -95,6 +97,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - uses: ./.github/actions/setup-go
+    - uses: ./.github/actions/setup-helm
     - run: |
         echo '127.0.0.1 fulfillment-api.osac.svc.cluster.local' | sudo tee -a /etc/hosts
         echo '127.0.0.1 fulfillment-internal-api.osac.svc.cluster.local' | sudo tee -a /etc/hosts

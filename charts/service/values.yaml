@@ -80,7 +80,7 @@ auth:
   #
   # The keys of the ConfigMap and Secret don't need to match the parameter names. In the above example the client
   # identifier is in an `id` key but the credential parameter name is `client-id`.
-  controllerCredentials:
+  controllerCredentials: []
 
 # Logging configuration:
 log:
@@ -178,4 +178,4 @@ idp:
   # API access and IDP management permissions, or use a separate secret for separation of concerns.
   #
   # This parameter is mandatory.
-  credentials:
+  credentials: []

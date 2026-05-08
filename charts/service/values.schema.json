@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/osac-project/fulfillment-service/charts/service/values.schema.json",
+  "title": "Fulfillment Service Helm Values",
+  "description": "Schema for the fulfillment-service Helm chart values.",
+  "type": "object",
+  "$defs": {
+    "paramMapping": {
+      "type": "object",
+      "description": "Maps a key in a ConfigMap or Secret to a named parameter.",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "The key in the ConfigMap or Secret."
+        },
+        "param": {
+          "type": "string",
+          "description": "The target parameter name."
+        }
+      },
+      "required": [
+        "key",
+        "param"
+      ],
+      "additionalProperties": false
+    },
+    "configMapSource": {
+      "type": "object",
+      "description": "A ConfigMap reference with parameter mappings.",
+      "properties": {
+        "configMap": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name of the ConfigMap."
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/paramMapping"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "name",
+            "items"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "configMap"
+      ],
+      "additionalProperties": false
+    },
+    "secretSource": {
+      "type": "object",
+      "description": "A Secret reference with parameter mappings.",
+      "properties": {
+        "secret": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name of the Secret."
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/paramMapping"
+              },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "name",
+            "items"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "secret"
+      ],
+      "additionalProperties": false
+    },
+    "credentialSources": {
+      "type": "array",
+      "description": "List of ConfigMap or Secret sources that supply credential parameters.",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/configMapSource"
+          },
+          {
+            "$ref": "#/$defs/secretSource"
+          }
+        ]
+      }
+    }
+  },
+  "properties": {
+    "variant": {
+      "type": "string",
+      "description": "Target cluster variant. Use 'openshift' for OpenShift clusters or 'kind' for Kind clusters.",
+      "enum": [
+        "openshift",
+        "kind"
+      ],
+      "default": "kind"
+    },
+    "debug": {
+      "type": "boolean",
+      "description": "Enable debug mode. Runs services under the 'dlv' debugger; intended only for development environments.",
+      "default": false
+    },
+    "certs": {
+      "type": "object",
+      "description": "Certificate configuration.",
+      "properties": {
+        "issuerRef": {
+          "type": "object",
+          "description": "The cert-manager issuer reference used for service certificates.",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "description": "Kind of the cert-manager issuer.",
+              "enum": [
+                "ClusterIssuer",
+                "Issuer"
+              ],
+              "default": "ClusterIssuer"
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Name of the cert-manager issuer."
+            }
+          },
+          "additionalProperties": false
+        },
+        "caBundle": {
+          "type": "object",
+          "description": "Trusted CA certificates bundle.",
+          "properties": {
+            "configMap": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Name of a ConfigMap containing trusted CA certificates in PEM format."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "externalHostname": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Hostname for accessing the public API from outside the cluster. Defaults to 'fulfillment-api.<namespace>.svc.cluster.local'."
+    },
+    "internalHostname": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Hostname for accessing both the public and private APIs from the administrator's internal network. Defaults to 'fulfillment-internal-api.<namespace>.svc.cluster.local'."
+    },
+    "auth": {
+      "type": "object",
+      "description": "Authentication and authorization configuration.",
+      "properties": {
+        "issuerUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL of the OAuth issuer used for authentication. This parameter is mandatory.",
+          "format": "uri"
+        },
+        "controllerCredentials": {
+          "$ref": "#/$defs/credentialSources",
+          "description": "Sources for the OAuth client credentials used by the controller. Supported parameter names are 'client-id' and 'client-secret'."
+        }
+      },
+      "additionalProperties": false
+    },
+    "log": {
+      "type": "object",
+      "description": "Logging configuration.",
+      "properties": {
+        "level": {
+          "type": "string",
+          "description": "Log level for all components.",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info"
+        },
+        "headers": {
+          "type": "boolean",
+          "description": "Log HTTP/gRPC headers. May expose sensitive information; avoid in production.",
+          "default": false
+        },
+        "bodies": {
+          "type": "boolean",
+          "description": "Log HTTP/gRPC request and response bodies. May expose sensitive information; avoid in production.",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "images": {
+      "type": "object",
+      "description": "Container image references.",
+      "properties": {
+        "service": {
+          "type": "string",
+          "description": "Image for the fulfillment service.",
+          "default": "ghcr.io/osac/fulfillment-service:main"
+        },
+        "envoy": {
+          "type": "string",
+          "description": "Image for the Envoy proxy.",
+          "default": "docker.io/envoyproxy/envoy:v1.37.1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "database": {
+      "type": "object",
+      "description": "Database connection configuration. Expects an external PostgreSQL database.",
+      "properties": {
+        "connection": {
+          "$ref": "#/$defs/credentialSources",
+          "description": "Sources for database connection parameters. Supported parameter names are 'url', 'host', 'port', 'user', 'password', and 'dbname', in addition to standard PostgreSQL connection parameters.",
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "idp": {
+      "type": "object",
+      "description": "Identity provider configuration used by the controller to manage organizations.",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "IDP provider type.",
+          "enum": [
+            "keycloak"
+          ],
+          "default": "keycloak"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Base URL of the identity provider. This parameter is mandatory.",
+          "format": "uri"
+        },
+        "credentials": {
+          "$ref": "#/$defs/credentialSources",
+          "description": "Sources for IDP OAuth client credentials. The controller uses these to authenticate with the IDP admin API. Supported parameter names are 'client-id' and 'client-secret'."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

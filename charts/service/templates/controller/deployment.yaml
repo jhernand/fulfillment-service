@@ -45,6 +45,7 @@ spec:
       - name: credentials
         projected:
           sources:
+          {{ if $authControllerCredentials }}
           {{ range $authControllerCredentials }}
           {{ if .configMap }}
           - configMap:
@@ -65,20 +66,24 @@ spec:
               {{ end }}
           {{ end }}
           {{ end }}
+          {{ else }}
+          []
+          {{ end }}
       - name: idp-credentials
         projected:
           sources:
-          {{- range $idpCredentials }}
-          {{- if .configMap }}
+          {{ if $idpCredentials }}
+          {{ range $idpCredentials }}
+          {{ if .configMap }}
           - configMap:
               name: {{ .configMap.name }}
               items:
-              {{- range .configMap.items }}
+              {{ range .configMap.items }}
               - key: {{ .key }}
                 path: {{ .param }}
-              {{- end }}
-          {{- end }}
-          {{- if .secret }}
+              {{ end }}
+          {{ end }}
+          {{ if .secret }}
           - secret:
               name: {{ .secret.name }}
               items:
@@ -86,8 +91,11 @@ spec:
               - key: {{ .key }}
                 path: {{ .param }}
               {{- end }}
-          {{- end }}
-          {{- end }}
+          {{ end }}
+          {{ end }}
+          {{ else }}
+          []
+          {{ end }}
       containers:
       - name: controller
         image: {{ .Values.images.service }}

@@ -73,17 +73,19 @@ var _ = Describe("Authorization rules", Ordered, func() {
 			},
 			"auth": map[string]any{
 				"issuerUrl": "https://my-issuer.com",
-				"controllerCredentials": map[string]any{
-					"secret": map[string]any{
-						"name": "fulfillment-controller-credentials",
-						"items": []any{
-							map[string]any{
-								"key":   "client-id",
-								"param": "client-id",
-							},
-							map[string]any{
-								"key":   "client-secret",
-								"param": "client-secret",
+				"controllerCredentials": []any{
+					map[string]any{
+						"secret": map[string]any{
+							"name": "fulfillment-controller-credentials",
+							"items": []any{
+								map[string]any{
+									"key":   "client-id",
+									"param": "client-id",
+								},
+								map[string]any{
+									"key":   "client-secret",
+									"param": "client-secret",
+								},
 							},
 						},
 					},
