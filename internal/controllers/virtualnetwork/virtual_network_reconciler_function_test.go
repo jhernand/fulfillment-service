@@ -257,6 +257,26 @@ var _ = Describe("delete", func() {
 		})
 	})
 
+	When("hub cache returns ErrHubNotFound", func() {
+		It("removes finalizer to allow archiving", func() {
+			// This test verifies the core behavior: when a hub is decommissioned/deleted,
+			// the reconciler removes its finalizer to allow the virtual network to be archived.
+			mockHubCache.EXPECT().
+				Get(gomock.Any(), hubID).
+				Return(nil, controllers.ErrHubNotFound)
+
+			task := newTaskForDelete(virtualNetworkID, hubID, mockHubCache)
+			Expect(hasFinalizer(task.virtualNetwork)).To(BeTrue())
+
+			err := task.delete(ctx)
+
+			// Should return nil (not propagate the error)
+			Expect(err).ToNot(HaveOccurred())
+			// Finalizer should be removed to allow archiving
+			Expect(hasFinalizer(task.virtualNetwork)).To(BeFalse())
+		})
+	})
+
 	When("K8s object does not exist", func() {
 		It("removes the finalizer", func() {
 			fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()

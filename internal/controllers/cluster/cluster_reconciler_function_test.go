@@ -15,6 +15,7 @@ package cluster
 
 import (
 	"context"
+	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -482,5 +483,69 @@ var _ = Describe("update tenant annotation", func() {
 		Expect(createdCR.Spec.Network).ToNot(BeNil())
 		Expect(createdCR.Spec.Network.PodCIDR).To(Equal(podCIDR))
 		Expect(createdCR.Spec.Network.ServiceCIDR).To(Equal(serviceCIDR))
+	})
+})
+
+// newTaskForDelete creates a task configured for testing delete() with hub-dependent paths.
+func newTaskForDelete(clusterID, hubID string, hubCache controllers.HubCache) *task {
+	cluster := privatev1.Cluster_builder{
+		Id: clusterID,
+		Metadata: privatev1.Metadata_builder{
+			Finalizers: []string{finalizers.Controller},
+		}.Build(),
+		Status: privatev1.ClusterStatus_builder{
+			Hub: hubID,
+		}.Build(),
+	}.Build()
+
+	f := &function{
+		logger:   logger,
+		hubCache: hubCache,
+	}
+
+	return &task{
+		r:       f,
+		cluster: cluster,
+	}
+}
+
+// hasFinalizer checks if the fulfillment-controller finalizer is present on the cluster.
+func hasFinalizer(cluster *privatev1.Cluster) bool {
+	return slices.Contains(cluster.GetMetadata().GetFinalizers(), finalizers.Controller)
+}
+
+var _ = Describe("delete", func() {
+	const (
+		clusterID = "cluster-delete-id"
+		hubID     = "test-hub"
+	)
+
+	var (
+		ctx  context.Context
+		ctrl *gomock.Controller
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
+	})
+
+	It("should remove finalizer when hub cache returns ErrHubNotFound", func() {
+		// This test verifies the core behavior: when a hub is decommissioned/deleted,
+		// the reconciler removes its finalizer to allow the cluster to be archived.
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(nil, controllers.ErrHubNotFound)
+
+		t := newTaskForDelete(clusterID, hubID, hubCache)
+		Expect(hasFinalizer(t.cluster)).To(BeTrue())
+
+		err := t.delete(ctx)
+		// Should return nil (not propagate the error)
+		Expect(err).ToNot(HaveOccurred())
+		// Finalizer should be removed to allow archiving
+		Expect(hasFinalizer(t.cluster)).To(BeFalse())
 	})
 })

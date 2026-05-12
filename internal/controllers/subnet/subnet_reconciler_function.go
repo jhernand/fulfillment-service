@@ -242,6 +242,12 @@ func (t *task) delete(ctx context.Context) (err error) {
 	}
 	err = t.getHub(ctx)
 	if err != nil {
+		// Check if the hub has been decommissioned (deleted from database)
+		if errors.Is(err, controllers.ErrHubNotFound) {
+			controllers.RemoveFinalizerOnDecommissionedHub(ctx, t.r.logger, t.hubId, "subnet_id", t.subnet.GetId(), t.removeFinalizer)
+			return nil
+		}
+		// For transient errors (network, timeout, etc.), continue retrying
 		return
 	}
 

@@ -261,6 +261,24 @@ var _ = Describe("delete", func() {
 		Expect(hasFinalizer(t.publicIP)).To(BeTrue())
 	})
 
+	It("should remove finalizer when hub cache returns ErrHubNotFound", func() {
+		// This test verifies the core behavior: when a hub is decommissioned/deleted,
+		// the reconciler removes its finalizer to allow the public IP to be archived.
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(nil, controllers.ErrHubNotFound)
+
+		t := newTaskForDelete(publicIPID, hubID, hubCache)
+		Expect(hasFinalizer(t.publicIP)).To(BeTrue())
+
+		err := t.delete(ctx)
+		// Should return nil (not propagate the error)
+		Expect(err).ToNot(HaveOccurred())
+		// Finalizer should be removed to allow archiving
+		Expect(hasFinalizer(t.publicIP)).To(BeFalse())
+	})
+
 	It("should remove finalizer when no hub is assigned", func() {
 		publicIP := privatev1.PublicIP_builder{
 			Id: publicIPID,
