@@ -22,6 +22,7 @@ import (
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/create/netutil"
+	"github.com/osac-project/fulfillment-service/internal/cmd/cli/lookup"
 	"github.com/osac-project/fulfillment-service/internal/config"
 	"github.com/osac-project/fulfillment-service/internal/logging"
 	"github.com/osac-project/fulfillment-service/internal/terminal"
@@ -102,10 +103,25 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close()
 
+	vnClient := publicv1.NewVirtualNetworksClient(conn)
+	vn, err := lookup.Find(c.args.virtualNetwork, "virtual network", func(filter string, limit int32) ([]*publicv1.VirtualNetwork, error) {
+		resp, err := vnClient.List(ctx, publicv1.VirtualNetworksListRequest_builder{
+			Filter: proto.String(filter),
+			Limit:  proto.Int32(limit),
+		}.Build())
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve virtual network %q: %w", c.args.virtualNetwork, err)
+		}
+		return resp.GetItems(), nil
+	})
+	if err != nil {
+		return err
+	}
+
 	client := publicv1.NewSubnetsClient(conn)
 
 	spec := publicv1.SubnetSpec_builder{
-		VirtualNetwork: c.args.virtualNetwork,
+		VirtualNetwork: vn.GetId(),
 	}
 	if c.args.ipv4Cidr != "" {
 		spec.Ipv4Cidr = &c.args.ipv4Cidr
@@ -152,7 +168,7 @@ _NAME_ - Name of the subnet.
 `
 
 const virtualNetworkFlagHelp = `
-_ID_ - Identifier of the parent virtual network.
+_ID|NAME_ - ID or name of the parent virtual network.
 `
 
 const ipv4CidrFlagHelp = `
