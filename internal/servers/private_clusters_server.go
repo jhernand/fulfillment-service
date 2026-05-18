@@ -35,14 +35,13 @@ import (
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/database/dao"
 	"github.com/osac-project/fulfillment-service/internal/utils"
 )
 
 type PrivateClustersServerBuilder struct {
 	logger            *slog.Logger
-	notifier          *database.Notifier
+	notifier Notifier
 	attributionLogic  auth.AttributionLogic
 	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
@@ -67,7 +66,7 @@ func (b *PrivateClustersServerBuilder) SetLogger(value *slog.Logger) *PrivateClu
 	return b
 }
 
-func (b *PrivateClustersServerBuilder) SetNotifier(value *database.Notifier) *PrivateClustersServerBuilder {
+func (b *PrivateClustersServerBuilder) SetNotifier(value Notifier) *PrivateClustersServerBuilder {
 	b.notifier = value
 	return b
 }

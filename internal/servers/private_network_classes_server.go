@@ -27,7 +27,6 @@ import (
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/database/dao"
 )
 
@@ -67,7 +66,7 @@ func findDefaultNetworkClass(ctx context.Context, logger *slog.Logger, ncDao *da
 
 type PrivateNetworkClassesServerBuilder struct {
 	logger            *slog.Logger
-	notifier          *database.Notifier
+	notifier Notifier
 	attributionLogic  auth.AttributionLogic
 	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
@@ -91,7 +90,7 @@ func (b *PrivateNetworkClassesServerBuilder) SetLogger(value *slog.Logger) *Priv
 	return b
 }
 
-func (b *PrivateNetworkClassesServerBuilder) SetNotifier(value *database.Notifier) *PrivateNetworkClassesServerBuilder {
+func (b *PrivateNetworkClassesServerBuilder) SetNotifier(value Notifier) *PrivateNetworkClassesServerBuilder {
 	b.notifier = value
 	return b
 }

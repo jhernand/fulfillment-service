@@ -116,6 +116,15 @@ var _ = Describe("Authorization rules", Ordered, func() {
 					},
 				},
 			},
+			"kafka": map[string]any{
+				"properties": []any{
+					map[string]any{
+						"secret": map[string]any{
+							"name": "fulfillment-kafka-properties",
+						},
+					},
+				},
+			},
 			"idp": map[string]any{
 				"url": "https://keycloak.keycloak.svc.cluster.local:8000",
 				"credentials": []any{

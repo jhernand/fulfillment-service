@@ -146,6 +146,38 @@ database:
   # `uri` key but the connection parameter name is `url`.
   connection: []
 
+# Kafka connection configuration. The service expects an external Kafka broker to be available.
+kafka:
+
+  # List of sources for Kafka client properties. Each entry references a ConfigMap or Secret containing one or more
+  # properties files. All files are merged together (later entries override earlier ones). The file format is standard
+  # Java properties (key=value). All properties are passed directly to the librdkafka client.
+  #
+  # For example, to split connection details (in a ConfigMap) from credentials (in a Secret):
+  #
+  #   kafka:
+  #     properties:
+  #     - configMap:
+  #         name: kafka-config
+  #     - secret:
+  #         name: kafka-credentials
+  #
+  # Where `kafka-config` contains a key like `connection.properties` with:
+  #
+  #   bootstrap.servers=kafka.kafka.svc.cluster.local:9093
+  #   security.protocol=sasl_ssl
+  #   sasl.mechanisms=OAUTHBEARER
+  #   ssl.ca.location=/etc/fulfillment-grpc-server/tls/cas/bundle.pem
+  #   https.ca.location=/etc/fulfillment-grpc-server/tls/cas/bundle.pem
+  #
+  # And `kafka-credentials` contains a key like `credentials.properties` with:
+  #
+  #   sasl.oauthbearer.token.endpoint.url=https://keycloak.example.com/realms/osac/protocol/openid-connect/token
+  #   sasl.oauthbearer.client.id=osac-server
+  #   sasl.oauthbearer.client.secret=my-secret
+  #
+  properties: []
+
 # Identity provider configuration. The controller uses this to manage organizations in the identity provider via the
 # organization reconciler. This parameter is mandatory.
 idp:

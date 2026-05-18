@@ -27,13 +27,12 @@ import (
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 // PrivatePublicIPPoolsServerBuilder contains the data and logic needed to create a new private public IP pools server.
 type PrivatePublicIPPoolsServerBuilder struct {
 	logger            *slog.Logger
-	notifier          *database.Notifier
+	notifier Notifier
 	attributionLogic  auth.AttributionLogic
 	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
@@ -62,7 +61,7 @@ func (b *PrivatePublicIPPoolsServerBuilder) SetLogger(value *slog.Logger) *Priva
 }
 
 // SetNotifier sets the notifier used to publish change events.
-func (b *PrivatePublicIPPoolsServerBuilder) SetNotifier(value *database.Notifier) *PrivatePublicIPPoolsServerBuilder {
+func (b *PrivatePublicIPPoolsServerBuilder) SetNotifier(value Notifier) *PrivatePublicIPPoolsServerBuilder {
 	b.notifier = value
 	return b
 }

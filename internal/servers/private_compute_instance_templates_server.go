@@ -22,12 +22,11 @@ import (
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 type PrivateComputeInstanceTemplatesServerBuilder struct {
 	logger            *slog.Logger
-	notifier          *database.Notifier
+	notifier Notifier
 	attributionLogic  auth.AttributionLogic
 	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
@@ -50,7 +49,7 @@ func (b *PrivateComputeInstanceTemplatesServerBuilder) SetLogger(value *slog.Log
 	return b
 }
 
-func (b *PrivateComputeInstanceTemplatesServerBuilder) SetNotifier(value *database.Notifier) *PrivateComputeInstanceTemplatesServerBuilder {
+func (b *PrivateComputeInstanceTemplatesServerBuilder) SetNotifier(value Notifier) *PrivateComputeInstanceTemplatesServerBuilder {
 	b.notifier = value
 	return b
 }

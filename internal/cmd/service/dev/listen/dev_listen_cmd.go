@@ -25,7 +25,7 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/osac-project/fulfillment-service/internal/database"
+	"github.com/osac-project/fulfillment-service/internal/kafka"
 	"github.com/osac-project/fulfillment-service/internal/logging"
 )
 
@@ -38,20 +38,29 @@ func Cmd() *cobra.Command {
 		RunE:  runner.run,
 	}
 	flags := command.Flags()
-	database.AddFlags(flags)
+	kafka.AddFlags(flags)
 	flags.StringVar(
-		&runner.channel,
-		"channel",
-		"",
-		"Name of the channel",
+		&runner.args.topic,
+		"topic",
+		"events",
+		"Name of the Kafka topic to consume from",
+	)
+	flags.StringVar(
+		&runner.args.groupId,
+		"group-id",
+		"dev-listen",
+		"Consumer group identifier",
 	)
 	return command
 }
 
 type runnerContext struct {
-	logger  *slog.Logger
-	flags   *pflag.FlagSet
-	channel string
+	logger *slog.Logger
+	flags  *pflag.FlagSet
+	args   struct {
+		topic   string
+		groupId string
+	}
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
@@ -66,42 +75,53 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	c.flags = cmd.Flags()
 
 	// Check flags:
-	if c.channel == "" {
-		return errors.New("channel name is mandatory")
+	if c.args.topic == "" {
+		return errors.New("topic is mandatory")
+	}
+	if c.args.groupId == "" {
+		return errors.New("group identifier is mandatory")
 	}
 
-	// Get the database connection URL:
-	c.logger.InfoContext(ctx, "Getting database connection details")
-	dbTool, err := database.NewTool().
+	// Create the Kafka tool:
+	c.logger.InfoContext(ctx, "Creating Kafka tool")
+	kafkaTool, err := kafka.NewTool().
 		SetLogger(c.logger).
 		SetFlags(c.flags).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to get database connection details: %w", err)
+		return fmt.Errorf("failed to create Kafka tool: %w", err)
 	}
-	dbUrl := dbTool.URL()
+
+	// Create the consumer:
+	c.logger.InfoContext(ctx, "Creating Kafka consumer")
+	consumer, err := kafkaTool.Consumer(ctx, c.args.groupId)
+	if err != nil {
+		return fmt.Errorf("failed to create Kafka consumer: %w", err)
+	}
+	defer consumer.Close()
 
 	// Create the listener:
 	c.logger.InfoContext(ctx, "Creating listener")
-	listener, err := database.NewListener().
+	listener, err := kafka.NewListener().
 		SetLogger(c.logger).
-		SetUrl(dbUrl).
-		SetChannel(c.channel).
-		AddPayloadCallback(c.processPayload).
+		SetTopic(c.args.topic).
+		SetConsumer(consumer).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create listener: %w", err)
 	}
-	err = listener.Listen(ctx)
-	if err == nil || errors.Is(err, context.Canceled) {
-		c.logger.InfoContext(ctx, "Listener finished")
-	} else {
-		c.logger.InfoContext(
-			ctx,
-			"Listener failed",
-			slog.Any("error", err),
-		)
-	}
+
+	// Listen in a goroutine so we can handle signals:
+	go func() {
+		err := listener.Listen(ctx, c.processPayload)
+		if err == nil || errors.Is(err, context.Canceled) {
+			c.logger.InfoContext(ctx, "Listener finished")
+		} else {
+			c.logger.ErrorContext(ctx, "Listener failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
 
 	// Wait for a signal:
 	c.logger.InfoContext(ctx, "Waiting for signal")
@@ -109,16 +129,14 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	signal.Notify(stop, os.Interrupt)
 	<-stop
 	c.logger.InfoContext(ctx, "Signal received, shutting down")
+	cancel()
 	return nil
 }
 
 func (c *runnerContext) processPayload(ctx context.Context, payload proto.Message) error {
-	c.logger.InfoContext(
-		ctx,
-		"Received payload",
-		slog.String("channel", c.channel),
+	c.logger.InfoContext(ctx, "Received payload",
+		slog.String("topic", c.args.topic),
 		slog.Any("payload", payload),
 	)
-
 	return nil
 }

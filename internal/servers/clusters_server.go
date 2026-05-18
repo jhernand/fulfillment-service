@@ -36,7 +36,6 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/database/dao"
 	"github.com/osac-project/fulfillment-service/internal/jq"
 	"github.com/osac-project/fulfillment-service/internal/kubernetes/gvks"
@@ -45,7 +44,7 @@ import (
 
 type ClustersServerBuilder struct {
 	logger            *slog.Logger
-	notifier          *database.Notifier
+	notifier Notifier
 	attributionLogic  auth.AttributionLogic
 	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
@@ -58,7 +57,7 @@ type ClustersServer struct {
 	publicv1.UnimplementedClustersServer
 
 	logger          *slog.Logger
-	notifier        *database.Notifier
+	notifier Notifier
 	private         privatev1.ClustersServer
 	inMapper        *GenericMapper[*publicv1.Cluster, *privatev1.Cluster]
 	outMapper       *GenericMapper[*privatev1.Cluster, *publicv1.Cluster]
@@ -80,7 +79,7 @@ func (b *ClustersServerBuilder) SetLogger(value *slog.Logger) *ClustersServerBui
 }
 
 // SetNotifier sets the notifier to use. This is optional.
-func (b *ClustersServerBuilder) SetNotifier(value *database.Notifier) *ClustersServerBuilder {
+func (b *ClustersServerBuilder) SetNotifier(value Notifier) *ClustersServerBuilder {
 	b.notifier = value
 	return b
 }

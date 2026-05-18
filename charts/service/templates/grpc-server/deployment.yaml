@@ -11,7 +11,9 @@ Unless required by applicable law or agreed to in writing, software distributed 
 specific language governing permissions and limitations under the License.
 */}}
 
+{{- $issuerUrl := required "auth.issuerUrl is required" .Values.auth.issuerUrl }}
 {{- $caBundleConfigMap := required "certs.caBundle.configMap is required" .Values.certs.caBundle.configMap }}
+{{- $kafkaProperties := required "kafka.properties is required" .Values.kafka.properties }}
 
 apiVersion: apps/v1
 kind: Deployment
@@ -64,6 +66,19 @@ spec:
           {{ else }}
           []
           {{ end }}
+      - name: kafka
+        projected:
+          sources:
+          {{ range $kafkaProperties }}
+          {{ if .configMap }}
+          - configMap:
+              name: {{ .configMap.name }}
+          {{ end }}
+          {{ if .secret }}
+          - secret:
+              name: {{ .secret.name }}
+          {{ end }}
+          {{ end }}
       containers:
       - name: grpc-server
         image: {{ .Values.images.service }}
@@ -72,6 +87,9 @@ spec:
           mountPath: /etc/fulfillment-grpc-server/tls/cas
         - name: database
           mountPath: /etc/fulfillment-grpc-server/db
+          readOnly: true
+        - name: kafka
+          mountPath: /etc/fulfillment-grpc-server/kafka
           readOnly: true
         - name: tls
           mountPath: /etc/fulfillment-grpc-server/tls
@@ -96,10 +114,11 @@ spec:
         - --log-bodies={{ .Values.log.bodies }}
         - --ca-file=/etc/fulfillment-grpc-server/tls/cas
         - --db-url-file=/etc/fulfillment-grpc-server/db
+        - --kafka-properties-file=/etc/fulfillment-grpc-server/kafka
         - --grpc-listener-address=0.0.0.0:8000
         - --grpc-listener-tls-crt=/etc/fulfillment-grpc-server/tls/tls.crt
         - --grpc-listener-tls-key=/etc/fulfillment-grpc-server/tls/tls.key
-        - --grpc-authn-trusted-token-issuers={{ required "auth.issuerUrl is required" .Values.auth.issuerUrl }}
+        - --grpc-authn-trusted-token-issuers={{ $issuerUrl }}
         - --grpc-authn-type=external
         - --grpc-authn-external-address=authorino-authorino-authorization:50051
         - --tenancy-logic=default

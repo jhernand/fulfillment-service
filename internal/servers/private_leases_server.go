@@ -22,13 +22,12 @@ import (
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 // PrivateLeasesServerBuilder contains the data and logic needed to create a PrivateLeasesServer.
 type PrivateLeasesServerBuilder struct {
 	logger            *slog.Logger
-	notifier          *database.Notifier
+	notifier Notifier
 	attributionLogic  auth.AttributionLogic
 	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
@@ -56,7 +55,7 @@ func (b *PrivateLeasesServerBuilder) SetLogger(value *slog.Logger) *PrivateLease
 }
 
 // SetNotifier sets the notifier that will be used to send change notifications.
-func (b *PrivateLeasesServerBuilder) SetNotifier(value *database.Notifier) *PrivateLeasesServerBuilder {
+func (b *PrivateLeasesServerBuilder) SetNotifier(value Notifier) *PrivateLeasesServerBuilder {
 	b.notifier = value
 	return b
 }

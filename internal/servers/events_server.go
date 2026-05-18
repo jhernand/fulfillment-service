@@ -35,7 +35,6 @@ import (
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/collections"
-	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/packages"
 	"github.com/osac-project/fulfillment-service/internal/uuid"
 )
@@ -43,7 +42,7 @@ import (
 type EventsServerBuilder struct {
 	logger       *slog.Logger
 	flags        *pflag.FlagSet
-	dbUrl        string
+	listener     Listener
 	tenancyLogic auth.TenancyLogic
 }
 
@@ -53,7 +52,7 @@ type EventsServer struct {
 	publicv1.UnimplementedEventsServer
 
 	logger       *slog.Logger
-	listener     *database.Listener
+	listener     Listener
 	subs         map[string]eventsServerSubInfo
 	subsLock     *sync.RWMutex
 	celEnv       *cel.Env
@@ -83,8 +82,8 @@ func (b *EventsServerBuilder) SetFlags(value *pflag.FlagSet) *EventsServerBuilde
 	return b
 }
 
-func (b *EventsServerBuilder) SetDbUrl(value string) *EventsServerBuilder {
-	b.dbUrl = value
+func (b *EventsServerBuilder) SetListener(value Listener) *EventsServerBuilder {
+	b.listener = value
 	return b
 }
 
@@ -99,8 +98,8 @@ func (b *EventsServerBuilder) Build() (result *EventsServer, err error) {
 		err = errors.New("logger is mandatory")
 		return
 	}
-	if b.dbUrl == "" {
-		err = errors.New("database connection URL is mandatory")
+	if b.listener == nil {
+		err = errors.New("listener is mandatory")
 		return
 	}
 
@@ -132,29 +131,16 @@ func (b *EventsServerBuilder) Build() (result *EventsServer, err error) {
 		}
 	}
 
-	// Create the object early so that whe can use its methods as callback functions:
-	s := &EventsServer{
+	// Create and populate the object:
+	result = &EventsServer{
 		logger:       b.logger,
+		listener:     b.listener,
 		subs:         map[string]eventsServerSubInfo{},
 		subsLock:     &sync.RWMutex{},
 		celEnv:       celEnv,
 		mapper:       mapper,
 		tenancyLogic: tenancyLogic,
 	}
-
-	// Create the notification listener:
-	s.listener, err = database.NewListener().
-		SetLogger(b.logger).
-		SetUrl(b.dbUrl).
-		SetChannel("events").
-		AddPayloadCallback(s.processPayload).
-		Build()
-	if err != nil {
-		err = fmt.Errorf("failed to create notification listener: %w", err)
-		return
-	}
-
-	result = s
 	return
 }
 
@@ -201,7 +187,7 @@ func (b *EventsServerBuilder) createCelEnv() (result *cel.Env, err error) {
 // Starts starts the background components of the server, in particular the notification listener. This is a blocking
 // operation, and will return only when the context is canceled.
 func (s *EventsServer) Start(ctx context.Context) error {
-	return s.listener.Listen(ctx)
+	return s.listener.Listen(ctx, s.processPayload)
 }
 
 func (s *EventsServer) Watch(request *publicv1.EventsWatchRequest,

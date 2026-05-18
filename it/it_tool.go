@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/magiconair/properties"
 	"github.com/onsi/gomega/ghttp"
 	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/jq"
@@ -275,6 +276,10 @@ func (t *Tool) Setup(ctx context.Context) error {
 	var err error
 
 	// Check that the required host names are resolvable:
+	err = t.checkAddress(ctx, kafkaAddr)
+	if err != nil {
+		return err
+	}
 	err = t.checkAddress(ctx, keycloakAddr)
 	if err != nil {
 		return err
@@ -352,6 +357,12 @@ func (t *Tool) Setup(ctx context.Context) error {
 		return err
 	}
 
+	// Install Kafka:
+	err = t.deployKafka(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Create the Keycloak database resources:
 	err = t.createKeycloakDatabaseResources(ctx)
 	if err != nil {
@@ -366,6 +377,12 @@ func (t *Tool) Setup(ctx context.Context) error {
 
 	// Create the service database resources:
 	err = t.createServiceDatabaseResources(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Create the service Kafka resources:
+	err = t.createServiceKafkaResources(ctx)
 	if err != nil {
 		return err
 	}
@@ -822,6 +839,47 @@ func (t *Tool) createServiceDatabaseResources(ctx context.Context) error {
 	return fmt.Errorf("service database client certificate secret not available after waiting: %w", err)
 }
 
+// createServiceKafkaResources creates the Kubernetes Secret containing the Kafka properties file for the service.
+func (t *Tool) createServiceKafkaResources(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Creating service Kafka resources")
+
+	// Create the osac namespace if it doesn't exist:
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "osac",
+		},
+	}
+	err := t.kubeClient.Create(ctx, ns)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create osac namespace: %w", err)
+	}
+
+	// Create the Secret containing all the Kafka connection properties:
+	config := properties.NewProperties()
+	config.Set("bootstrap.servers", "kafka.kafka.svc.cluster.local:8000")
+	config.Set("security.protocol", "sasl_ssl")
+	config.Set("sasl.mechanisms", "SCRAM-SHA-512")
+	config.Set("sasl.username", kafkaUsername)
+	config.Set("sasl.password", t.secret)
+	config.Set("ssl.ca.location", "/etc/fulfillment-grpc-server/tls/cas/bundle.pem")
+	config.Set("https.ca.location", "/etc/fulfillment-grpc-server/tls/cas/bundle.pem")
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "osac",
+			Name:      serviceKafkaPropertiesSecret,
+		},
+		StringData: map[string]string{
+			"kafka.properties": config.String(),
+		},
+	}
+	err = t.kubeClient.Create(ctx, secret)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create service Kafka properties secret: %w", err)
+	}
+
+	return nil
+}
+
 // createControllerCredentials creates a Kubernetes secret containing the OAuth client credentials that the controller
 // uses to authenticate to the API.
 func (t *Tool) createControllerCredentials(ctx context.Context) error {
@@ -1050,6 +1108,11 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 				"view-users",
 			},
 		},
+	})
+	addServiceAccount(serviceAccountData{
+		Name:        "OSAC server",
+		Description: "Service account for the OSAC server",
+		ClientId:    serverClientId,
 	})
 
 	// Add the prepared clients, groups and users to the values:
@@ -1340,6 +1403,62 @@ func (t *Tool) deployPostgres(ctx context.Context) error {
 	return nil
 }
 
+// deployKafka installs the Kafka chart.
+func (t *Tool) deployKafka(ctx context.Context) error {
+	t.logger.DebugContext(ctx, "Installing Kafka chart")
+
+	// Prepare a map containing the values for the chart:
+	valuesData := map[string]any{
+		"certs": map[string]any{
+			"issuerRef": map[string]any{
+				"kind": "ClusterIssuer",
+				"name": "default-ca",
+			},
+		},
+		"sasl": map[string]any{
+			"username": kafkaUsername,
+			"password": t.secret,
+		},
+	}
+	valuesBytes, err := yaml.Marshal(valuesData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Kafka values to YAML: %w", err)
+	}
+
+	// Write the values to a temporary file:
+	valuesFile := filepath.Join(t.tmpDir, "kafka-values.yaml")
+	err = os.WriteFile(valuesFile, valuesBytes, 0400)
+	if err != nil {
+		return fmt.Errorf("failed to write Kafka values to file: %w", err)
+	}
+
+	// Install the chart:
+	installCmd, err := testing.NewCommand().
+		SetLogger(t.logger).
+		SetHome(t.projectDir).
+		SetDir(t.projectDir).
+		SetName(helmCmd).
+		SetArgs(
+			"upgrade",
+			"--install",
+			"kafka",
+			"it/charts/kafka",
+			"--kubeconfig", t.kcFile,
+			"--namespace", "kafka",
+			"--create-namespace",
+			"--values", valuesFile,
+			"--wait",
+		).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create Kafka install command: %w", err)
+	}
+	if err = installCmd.Execute(ctx); err != nil {
+		return fmt.Errorf("failed to install Kafka: %w", err)
+	}
+	return nil
+}
+
 func (t *Tool) deployService(ctx context.Context, imageRef string) error {
 	switch t.deployMode {
 	case deployModeHelm:
@@ -1437,6 +1556,15 @@ func (t *Tool) deployServiceWithHelm(ctx context.Context, imageRef string) error
 								"param": "sslrootcert",
 							},
 						},
+					},
+				},
+			},
+		},
+		"kafka": map[string]any{
+			"properties": []any{
+				map[string]any{
+					"secret": map[string]any{
+						"name": serviceKafkaPropertiesSecret,
 					},
 				},
 			},
@@ -2150,6 +2278,7 @@ const userAgent = "fulfillment-it-tool"
 
 // Service host name and address:
 const (
+	kafkaAddr           = "kafka.kafka.svc.cluster.local:8000"
 	keycloakAddr        = "keycloak.keycloak.svc.cluster.local:8000"
 	externalServiceAddr = "fulfillment-api.osac.svc.cluster.local:8000"
 	internalServiceAddr = "fulfillment-internal-api.osac.svc.cluster.local:8000"
@@ -2161,6 +2290,12 @@ const (
 	keycloakDatabaseConfigMap        = "keycloak-database-config"
 	serviceDatabaseClientCertSecret  = "fulfillment-database-client-cert"
 	serviceDatabaseConfigMap         = "fulfillment-database-config"
+)
+
+// Names of the Kafka-related Kubernetes resources and credentials.
+const (
+	serviceKafkaPropertiesSecret = "fulfillment-kafka-properties"
+	kafkaUsername                = "admin"
 )
 
 // Namespace, name and key of the Kubernetes secret that contains the random secret used for passwords and credentials.
@@ -2195,4 +2330,5 @@ const (
 const (
 	adminClientId      = "osac-admin"
 	controllerClientId = "osac-controller"
+	serverClientId     = "osac-server"
 )

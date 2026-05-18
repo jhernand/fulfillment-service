@@ -26,12 +26,11 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 type NetworkClassesServerBuilder struct {
 	logger            *slog.Logger
-	notifier          *database.Notifier
+	notifier Notifier
 	attributionLogic  auth.AttributionLogic
 	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
@@ -59,7 +58,7 @@ func (b *NetworkClassesServerBuilder) SetLogger(value *slog.Logger) *NetworkClas
 }
 
 // SetNotifier sets the notifier to use. This is optional.
-func (b *NetworkClassesServerBuilder) SetNotifier(value *database.Notifier) *NetworkClassesServerBuilder {
+func (b *NetworkClassesServerBuilder) SetNotifier(value Notifier) *NetworkClassesServerBuilder {
 	b.notifier = value
 	return b
 }

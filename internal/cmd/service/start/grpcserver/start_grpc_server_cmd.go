@@ -41,6 +41,7 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/console"
 	"github.com/osac-project/fulfillment-service/internal/database"
+	"github.com/osac-project/fulfillment-service/internal/kafka"
 	hubscheme "github.com/osac-project/fulfillment-service/internal/kubernetes/scheme"
 	"github.com/osac-project/fulfillment-service/internal/logging"
 	"github.com/osac-project/fulfillment-service/internal/metrics"
@@ -64,6 +65,7 @@ func Cmd() *cobra.Command {
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	network.AddListenerFlags(flags, network.MetricsListenerName, network.DefaultMetricsAddress)
 	database.AddFlags(flags)
+	kafka.AddFlags(flags)
 	flags.StringVar(
 		&runner.args.authType,
 		"grpc-authn-type",
@@ -182,6 +184,20 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		return err
 	}
 	shutdown.AddDatabasePool("database", 0, dbPool)
+
+	// Create the Kafka tool:
+	kafkaTool, err := kafka.NewTool().
+		SetLogger(c.logger).
+		SetFlags(c.flags).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create Kafka tool: %w", err)
+	}
+	kafkaProducer, err := kafkaTool.Producer(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create Kafka producer: %w", err)
+	}
+	defer kafkaProducer.Close()
 
 	// Create the network listener:
 	listener, err := network.NewListener().
@@ -332,17 +348,13 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 
 	// Create the notifier:
 	c.logger.InfoContext(ctx, "Creating notifier")
-	notifier, err := database.NewNotifier().
+	notifier, err := kafka.NewNotifier().
 		SetLogger(c.logger).
-		SetChannel("events").
-		SetPool(dbPool).
+		SetTopic("events").
+		SetProducer(kafkaProducer).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create notifier: %w", err)
-	}
-	err = notifier.Start(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to start notifier: %w", err)
 	}
 
 	// Create the public attribution logic:
@@ -954,12 +966,27 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	}
 	publicv1.RegisterConsoleServer(grpcServer, consoleServer)
 
+	// Create the events listener:
+	c.logger.InfoContext(ctx, "Creating events listener")
+	eventsConsumer, err := kafkaTool.Consumer(ctx, "fulfillment-events")
+	if err != nil {
+		return fmt.Errorf("failed to create events consumer: %w", err)
+	}
+	eventsListener, err := kafka.NewListener().
+		SetLogger(c.logger).
+		SetTopic("events").
+		SetConsumer(eventsConsumer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create events listener: %w", err)
+	}
+
 	// Create the events server:
 	c.logger.InfoContext(ctx, "Creating events server")
 	eventsServer, err := servers.NewEventsServer().
 		SetLogger(c.logger).
 		SetFlags(c.flags).
-		SetDbUrl(dbTool.URL()).
+		SetListener(eventsListener).
 		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
@@ -979,12 +1006,27 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	}()
 	publicv1.RegisterEventsServer(grpcServer, eventsServer)
 
+	// Create the private events listener:
+	c.logger.InfoContext(ctx, "Creating private events listener")
+	privateEventsConsumer, err := kafkaTool.Consumer(ctx, "fulfillment-private-events")
+	if err != nil {
+		return fmt.Errorf("failed to create private events consumer: %w", err)
+	}
+	privateEventsListener, err := kafka.NewListener().
+		SetLogger(c.logger).
+		SetTopic("events").
+		SetConsumer(privateEventsConsumer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create private events listener: %w", err)
+	}
+
 	// Create the private events server:
 	c.logger.InfoContext(ctx, "Creating private events server")
 	privateEventsServer, err := servers.NewPrivateEventsServer().
 		SetLogger(c.logger).
 		SetFlags(c.flags).
-		SetDbUrl(dbTool.URL()).
+		SetListener(privateEventsListener).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create private events server: %w", err)

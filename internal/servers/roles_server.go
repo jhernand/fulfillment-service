@@ -25,13 +25,12 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 // RolesServerBuilder is a builder for creating instances of RolesServer.
 type RolesServerBuilder struct {
 	logger            *slog.Logger
-	notifier          *database.Notifier
+	notifier Notifier
 	attributionLogic  auth.AttributionLogic
 	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
@@ -61,7 +60,7 @@ func (b *RolesServerBuilder) SetLogger(value *slog.Logger) *RolesServerBuilder {
 }
 
 // SetNotifier sets the notifier to use. This is optional.
-func (b *RolesServerBuilder) SetNotifier(value *database.Notifier) *RolesServerBuilder {
+func (b *RolesServerBuilder) SetNotifier(value Notifier) *RolesServerBuilder {
 	b.notifier = value
 	return b
 }
