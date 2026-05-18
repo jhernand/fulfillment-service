@@ -275,6 +275,24 @@ var _ = Describe("delete", func() {
 		Expect(hasFinalizer(t.subnet)).To(BeTrue())
 	})
 
+	It("should remove finalizer when hub cache returns ErrHubNotFound", func() {
+		// This test verifies the core behavior: when a hub is decommissioned/deleted,
+		// the reconciler removes its finalizer to allow the subnet to be archived.
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(nil, controllers.ErrHubNotFound)
+
+		t := newTaskForDelete(subnetID, hubID, hubCache)
+		Expect(hasFinalizer(t.subnet)).To(BeTrue())
+
+		err := t.delete(ctx)
+		// Should return nil (not propagate the error)
+		Expect(err).ToNot(HaveOccurred())
+		// Finalizer should be removed to allow archiving
+		Expect(hasFinalizer(t.subnet)).To(BeFalse())
+	})
+
 	It("should remove finalizer when no hub is assigned", func() {
 		subnet := privatev1.Subnet_builder{
 			Id: subnetID,
