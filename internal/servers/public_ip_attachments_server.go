@@ -150,7 +150,7 @@ func (s *PublicIPAttachmentsServer) List(ctx context.Context,
 	for i, privateItem := range privateItems {
 		publicItem, err := s.attachmentFromPrivate(ctx, privateItem)
 		if err != nil {
-			return nil, err
+			return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process public IP attachment")
 		}
 		publicItems[i] = publicItem
 	}
@@ -176,7 +176,7 @@ func (s *PublicIPAttachmentsServer) Get(ctx context.Context,
 	privateObject := privateResponse.GetObject()
 	publicObject, err := s.attachmentFromPrivate(ctx, privateObject)
 	if err != nil {
-		return nil, err
+		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process public IP attachment")
 	}
 
 	response := &publicv1.PublicIPAttachmentsGetResponse{}
@@ -193,7 +193,7 @@ func (s *PublicIPAttachmentsServer) Create(ctx context.Context,
 	}
 	privateObject, err := s.attachmentToPrivate(ctx, publicObject)
 	if err != nil {
-		return nil, err
+		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process public IP attachment")
 	}
 
 	privateRequest := &privatev1.PublicIPAttachmentsCreateRequest{}
