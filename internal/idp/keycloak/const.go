@@ -18,6 +18,10 @@ package keycloak
 // realm and is the only client we interact with for role assignments.
 const realmManagementClientID = "realm-management"
 
+// authorizationClientID is the clientId of the Keycloak client that has Authorization Services enabled.
+// This client manages authorization resources for Projects and other protected resources.
+const authorizationClientID = "osac-authorization"
+
 // keycloakRealmManagementRoles are the standard Keycloak administrative roles.
 //
 // NOTE: These are CLIENT roles (Keycloak client roles), not organization roles.
@@ -51,12 +55,8 @@ var keycloakIdpManagerRoles = []string{
 	"view-realm",
 }
 
-// Authorization scope constants define actions that can be performed on protected resources.
-// These are used with Keycloak Authorization Services to control fine-grained access to Projects.
+// Authorization resource type constants define the types of protected resources.
 const (
-	// ScopeViewProject allows viewing project details and status
-	ScopeViewProject = "VIEW_PROJECT"
-
-	// ScopeManageProject allows updating project metadata, deleting project, and managing permissions
-	ScopeManageProject = "MANAGE_PROJECT"
+	// ResourceTypeProject is the type identifier for Project authorization resources
+	ResourceTypeProject = "urn:osac:resources:project"
 )

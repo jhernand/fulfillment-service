@@ -216,72 +216,29 @@ type keycloakAuthorizationResource struct {
 	ID         string              `json:"_id,omitempty"`
 	Name       string              `json:"name,omitempty"`
 	Type       string              `json:"type,omitempty"`
-	Scopes     []*keycloakScope    `json:"scopes,omitempty"`
+	Scopes     []string            `json:"scopes,omitempty"`
 	URIs       []string            `json:"uris,omitempty"`
 	Attributes map[string][]string `json:"attributes,omitempty"`
 }
 
-// keycloakScope represents an authorization scope.
-type keycloakScope struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name,omitempty"`
-	DisplayName string `json:"displayName,omitempty"`
-	IconURI     string `json:"iconUri,omitempty"`
-}
-
-// AuthorizationResource represents a protected resource exposed to controllers.
-// Each Project is represented as an authorization resource.
-type AuthorizationResource struct {
-	// ID is the unique identifier assigned by Keycloak
-	ID string
-
-	// Name is the resource name (e.g., "PROJECT-acme-web-app")
-	Name string
-
-	// Type is the resource type (e.g., "urn:osac:resources:project")
-	Type string
-
-	// Scopes are the actions that can be performed on this resource
-	Scopes []string
-
-	// URIs are optional resource URIs
-	URIs []string
-
-	// Attributes for additional metadata
-	Attributes map[string][]string
-}
-
 // Conversion functions for authorization resources
-
-func toKeycloakAuthorizationResource(resource *AuthorizationResource) *keycloakAuthorizationResource {
-	var scopes []*keycloakScope
-	for _, scopeName := range resource.Scopes {
-		scopes = append(scopes, &keycloakScope{
-			Name: scopeName,
-		})
-	}
-
+func toKeycloakAuthorizationResource(resource *idp.AuthorizationResource) *keycloakAuthorizationResource {
 	return &keycloakAuthorizationResource{
 		ID:         resource.ID,
 		Name:       resource.Name,
 		Type:       resource.Type,
-		Scopes:     scopes,
+		Scopes:     resource.Scopes,
 		URIs:       resource.URIs,
 		Attributes: resource.Attributes,
 	}
 }
 
-func fromKeycloakAuthorizationResource(kcResource *keycloakAuthorizationResource) *AuthorizationResource {
-	var scopes []string
-	for _, scope := range kcResource.Scopes {
-		scopes = append(scopes, scope.Name)
-	}
-
-	return &AuthorizationResource{
+func fromKeycloakAuthorizationResource(kcResource *keycloakAuthorizationResource) *idp.AuthorizationResource {
+	return &idp.AuthorizationResource{
 		ID:         kcResource.ID,
 		Name:       kcResource.Name,
 		Type:       kcResource.Type,
-		Scopes:     scopes,
+		Scopes:     kcResource.Scopes,
 		URIs:       kcResource.URIs,
 		Attributes: kcResource.Attributes,
 	}
