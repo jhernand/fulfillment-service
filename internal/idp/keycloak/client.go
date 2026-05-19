@@ -38,6 +38,7 @@ type Client struct {
 
 	realmName               string
 	realmManagementClientID string
+	authorizationClientUUID string // Cached internal UUID of the authorization services client
 }
 
 // ClientBuilder builds a Keycloak client.
@@ -650,6 +651,100 @@ func (c *Client) deleteBreakGlassAccount(ctx context.Context, organizationName, 
 	if err != nil {
 		return fmt.Errorf("failed to delete break-glass user: %w", err)
 	}
+
+	return nil
+}
+
+// getAuthorizationClientUUID retrieves and caches the internal UUID of the authorization services client.
+// The first call queries Keycloak; subsequent calls return the cached value.
+func (c *Client) getAuthorizationClientUUID(ctx context.Context) (string, error) {
+	// Return cached value if available
+	if c.authorizationClientUUID != "" {
+		return c.authorizationClientUUID, nil
+	}
+
+	// First call - look up the UUID using existing function
+	clientUUID, err := c.GetRealmClientByClientID(ctx, authorizationClientID, c.realmName)
+	if err != nil {
+		return "", err
+	}
+
+	// Cache the result
+	c.authorizationClientUUID = clientUUID
+	return clientUUID, nil
+}
+
+// CreateAuthorizationResource creates a new authorization resource in Keycloak Authorization Services.
+func (c *Client) CreateAuthorizationResource(ctx context.Context, resource *idp.AuthorizationResource) (*idp.AuthorizationResource, error) {
+	if resource == nil {
+		return nil, fmt.Errorf("authorization resource is nil")
+	}
+	if resource.Type == "" {
+		resource.Type = ResourceTypeProject
+	}
+	kcResource := toKeycloakAuthorizationResource(resource)
+
+	clientInternalID, err := c.getAuthorizationClientUUID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get authorization client ID: %w", err)
+	}
+
+	// Create the resource via Keycloak Authorization Services REST API
+	path := fmt.Sprintf("/admin/realms/%s/clients/%s/authz/resource-server/resource", c.realmName, clientInternalID)
+	response, err := c.httpClient.DoRequest(ctx, http.MethodPost, path, kcResource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create authorization resource: %w", err)
+	}
+	defer response.Body.Close()
+
+	// Decode the created resource (includes the assigned ID)
+	var createdResource keycloakAuthorizationResource
+	if err = json.NewDecoder(response.Body).Decode(&createdResource); err != nil {
+		return nil, fmt.Errorf("failed to decode authorization resource response: %w", err)
+	}
+
+	return fromKeycloakAuthorizationResource(&createdResource), nil
+}
+
+// GetAuthorizationResource retrieves an authorization resource by ID from Keycloak Authorization Services.
+func (c *Client) GetAuthorizationResource(ctx context.Context, resourceID string) (*idp.AuthorizationResource, error) {
+	clientInternalID, err := c.getAuthorizationClientUUID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get authorization client ID: %w", err)
+	}
+
+	// Get the resource via Keycloak Authorization Services REST API
+	path := fmt.Sprintf("/admin/realms/%s/clients/%s/authz/resource-server/resource/%s",
+		c.realmName, clientInternalID, url.PathEscape(resourceID))
+	response, err := c.httpClient.DoRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get authorization resource: %w", err)
+	}
+	defer response.Body.Close()
+
+	var kcResource keycloakAuthorizationResource
+	if err = json.NewDecoder(response.Body).Decode(&kcResource); err != nil {
+		return nil, fmt.Errorf("failed to decode authorization resource response: %w", err)
+	}
+
+	return fromKeycloakAuthorizationResource(&kcResource), nil
+}
+
+// DeleteAuthorizationResource deletes an authorization resource by ID from Keycloak Authorization Services.
+func (c *Client) DeleteAuthorizationResource(ctx context.Context, resourceID string) error {
+	clientInternalID, err := c.getAuthorizationClientUUID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get authorization client ID: %w", err)
+	}
+
+	// Delete the resource via Keycloak Authorization Services REST API
+	path := fmt.Sprintf("/admin/realms/%s/clients/%s/authz/resource-server/resource/%s",
+		c.realmName, clientInternalID, url.PathEscape(resourceID))
+	response, err := c.httpClient.DoRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete authorization resource: %w", err)
+	}
+	defer response.Body.Close()
 
 	return nil
 }

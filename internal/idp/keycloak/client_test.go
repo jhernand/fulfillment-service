@@ -1060,6 +1060,259 @@ var _ = Describe("Keycloak Client", func() {
 			Expect(serverCalled).To(BeFalse()) // Still no HTTP call
 		})
 	})
+
+	Describe("CreateAuthorizationResource", func() {
+		It("creates an authorization resource in Keycloak", func() {
+			var receivedResource *keycloakAuthorizationResource
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// First call: lookup authorization client UUID
+				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" && r.URL.Query().Get("clientId") == "osac-authorization" {
+					response := []keycloakClient{{
+						ID:       "auth-client-uuid-123",
+						ClientID: "osac-authorization",
+					}}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				// Second call: create authorization resource
+				if r.Method == http.MethodPost && r.URL.Path == "/admin/realms/osac/clients/auth-client-uuid-123/authz/resource-server/resource" {
+					receivedResource = &keycloakAuthorizationResource{}
+					json.NewDecoder(r.Body).Decode(receivedResource)
+
+					response := keycloakAuthorizationResource{
+						ID:         "resource-uuid-456",
+						Name:       receivedResource.Name,
+						Type:       receivedResource.Type,
+						Scopes:     receivedResource.Scopes,
+						URIs:       receivedResource.URIs,
+						Attributes: receivedResource.Attributes,
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				w.WriteHeader(http.StatusNotFound)
+			}))
+
+			client = createTestClient(server.URL)
+
+			resource := &idp.AuthorizationResource{
+				Name: "PROJECT-acme-web-app",
+				Scopes: []string{
+					idp.ScopeViewProject,
+					idp.ScopeManageProject,
+				},
+				Attributes: map[string][]string{
+					"project_id": {"project-123"},
+					"tenant":     {"acme"},
+				},
+			}
+
+			createdResource, err := client.CreateAuthorizationResource(ctx, resource)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdResource).ToNot(BeNil())
+			Expect(createdResource.ID).To(Equal("resource-uuid-456"))
+			Expect(createdResource.Name).To(Equal("PROJECT-acme-web-app"))
+			Expect(createdResource.Scopes).To(ConsistOf(idp.ScopeViewProject, idp.ScopeManageProject))
+			Expect(receivedResource.Name).To(Equal("PROJECT-acme-web-app"))
+		})
+
+		It("caches the authorization client UUID on subsequent calls", func() {
+			clientLookupCount := 0
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Client UUID lookup
+				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
+					clientLookupCount++
+					response := []keycloakClient{{
+						ID:       "auth-client-uuid-123",
+						ClientID: "osac-authorization",
+					}}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				// Create resource
+				if r.Method == http.MethodPost {
+					response := keycloakAuthorizationResource{
+						ID:   "resource-uuid",
+						Name: "PROJECT-test",
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				w.WriteHeader(http.StatusNotFound)
+			}))
+
+			client = createTestClient(server.URL)
+
+			resource := &idp.AuthorizationResource{Name: "PROJECT-test"}
+
+			// First call - should lookup client UUID
+			_, err := client.CreateAuthorizationResource(ctx, resource)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(clientLookupCount).To(Equal(1))
+
+			// Second call - should use cached UUID
+			_, err = client.CreateAuthorizationResource(ctx, resource)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(clientLookupCount).To(Equal(1)) // Should still be 1 (cached)
+		})
+
+		It("returns error when authorization client not found", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
+					// Return empty list
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode([]keycloakClient{})
+					return
+				}
+				w.WriteHeader(http.StatusNotFound)
+			}))
+
+			client = createTestClient(server.URL)
+
+			resource := &idp.AuthorizationResource{Name: "PROJECT-test"}
+			_, err := client.CreateAuthorizationResource(ctx, resource)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to get authorization client ID"))
+		})
+	})
+
+	Describe("GetAuthorizationResource", func() {
+		It("retrieves an authorization resource by ID", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Client UUID lookup
+				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
+					response := []keycloakClient{{
+						ID:       "auth-client-uuid-123",
+						ClientID: "osac-authorization",
+					}}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				// Get resource
+				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients/auth-client-uuid-123/authz/resource-server/resource/resource-456" {
+					response := keycloakAuthorizationResource{
+						ID:   "resource-456",
+						Name: "PROJECT-acme-web-app",
+						Scopes: []string{
+							idp.ScopeViewProject,
+							idp.ScopeManageProject,
+						},
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				w.WriteHeader(http.StatusNotFound)
+			}))
+
+			client = createTestClient(server.URL)
+
+			resource, err := client.GetAuthorizationResource(ctx, "resource-456")
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resource).ToNot(BeNil())
+			Expect(resource.ID).To(Equal("resource-456"))
+			Expect(resource.Name).To(Equal("PROJECT-acme-web-app"))
+			Expect(resource.Scopes).To(ConsistOf(idp.ScopeViewProject, idp.ScopeManageProject))
+		})
+
+		It("returns error when resource not found", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Client UUID lookup
+				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
+					response := []keycloakClient{{
+						ID:       "auth-client-uuid-123",
+						ClientID: "osac-authorization",
+					}}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				// Resource not found
+				w.WriteHeader(http.StatusNotFound)
+			}))
+
+			client = createTestClient(server.URL)
+
+			_, err := client.GetAuthorizationResource(ctx, "nonexistent-resource")
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to get authorization resource"))
+		})
+	})
+
+	Describe("DeleteAuthorizationResource", func() {
+		It("deletes an authorization resource by ID", func() {
+			deletedResourceID := ""
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Client UUID lookup
+				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
+					response := []keycloakClient{{
+						ID:       "auth-client-uuid-123",
+						ClientID: "osac-authorization",
+					}}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				// Delete resource
+				if r.Method == http.MethodDelete && r.URL.Path == "/admin/realms/osac/clients/auth-client-uuid-123/authz/resource-server/resource/resource-456" {
+					deletedResourceID = "resource-456"
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+
+				w.WriteHeader(http.StatusNotFound)
+			}))
+
+			client = createTestClient(server.URL)
+
+			err := client.DeleteAuthorizationResource(ctx, "resource-456")
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(deletedResourceID).To(Equal("resource-456"))
+		})
+
+		It("returns error when deletion fails", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Client UUID lookup
+				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
+					response := []keycloakClient{{
+						ID:       "auth-client-uuid-123",
+						ClientID: "osac-authorization",
+					}}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(response)
+					return
+				}
+
+				// Deletion fails
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+
+			client = createTestClient(server.URL)
+
+			err := client.DeleteAuthorizationResource(ctx, "resource-456")
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to delete authorization resource"))
+		})
+	})
 })
 
 func createTestClient(serverURL string) *Client {
