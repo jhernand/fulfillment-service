@@ -50,3 +50,13 @@ var keycloakIdpManagerRoles = []string{
 	"view-identity-providers",
 	"view-realm",
 }
+
+// Authorization scope constants define actions that can be performed on protected resources.
+// These are used with Keycloak Authorization Services to control fine-grained access to Projects.
+const (
+	// ScopeViewProject allows viewing project details and status
+	ScopeViewProject = "VIEW_PROJECT"
+
+	// ScopeManageProject allows updating project metadata, deleting project, and managing permissions
+	ScopeManageProject = "MANAGE_PROJECT"
+)
