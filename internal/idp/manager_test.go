@@ -216,6 +216,27 @@ func (m *mockClient) AssignIdpManagerPermissions(ctx context.Context, userID str
 	return m.AssignClientRolesToUser(ctx, "", userID, "realm-management", roles)
 }
 
+func (m *mockClient) CreateAuthorizationResource(ctx context.Context, resource *AuthorizationResource) (*AuthorizationResource, error) {
+	return &AuthorizationResource{
+		ID:         "resource-id",
+		Name:       resource.Name,
+		Type:       resource.Type,
+		Scopes:     resource.Scopes,
+		Attributes: resource.Attributes,
+	}, nil
+}
+
+func (m *mockClient) GetAuthorizationResource(ctx context.Context, resourceID string) (*AuthorizationResource, error) {
+	return &AuthorizationResource{
+		ID:   resourceID,
+		Name: "PROJECT-test-project",
+	}, nil
+}
+
+func (m *mockClient) DeleteAuthorizationResource(ctx context.Context, resourceID string) error {
+	return nil
+}
+
 var _ = Describe("OrganizationManager", func() {
 	var (
 		ctx     context.Context

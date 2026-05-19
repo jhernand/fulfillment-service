@@ -64,4 +64,11 @@ type Client interface {
 	// - Okta: Assigns User Administrator role
 	// - Azure AD: Assigns User Administrator role
 	AssignIdpManagerPermissions(ctx context.Context, userID string) error
+
+	// Authorization resource operations (Keycloak Authorization Services / UMA 2.0)
+	// These methods manage fine-grained permissions on resources like Projects.
+	// Note: Not all IdPs support this - it's primarily a Keycloak feature.
+	CreateAuthorizationResource(ctx context.Context, resource *AuthorizationResource) (*AuthorizationResource, error)
+	GetAuthorizationResource(ctx context.Context, resourceID string) (*AuthorizationResource, error)
+	DeleteAuthorizationResource(ctx context.Context, resourceID string) error
 }

@@ -96,6 +96,21 @@ func (mr *MockClientMockRecorder) AssignOrganizationRolesToUser(ctx, organizatio
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AssignOrganizationRolesToUser", reflect.TypeOf((*MockClient)(nil).AssignOrganizationRolesToUser), ctx, organizationName, userID, roles)
 }
 
+// CreateAuthorizationResource mocks base method.
+func (m *MockClient) CreateAuthorizationResource(ctx context.Context, resource *AuthorizationResource) (*AuthorizationResource, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateAuthorizationResource", ctx, resource)
+	ret0, _ := ret[0].(*AuthorizationResource)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateAuthorizationResource indicates an expected call of CreateAuthorizationResource.
+func (mr *MockClientMockRecorder) CreateAuthorizationResource(ctx, resource any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAuthorizationResource", reflect.TypeOf((*MockClient)(nil).CreateAuthorizationResource), ctx, resource)
+}
+
 // CreateOrganization mocks base method.
 func (m *MockClient) CreateOrganization(ctx context.Context, org *Organization) (*Organization, error) {
 	m.ctrl.T.Helper()
@@ -126,6 +141,20 @@ func (mr *MockClientMockRecorder) CreateUser(ctx, organizationName, user any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateUser", reflect.TypeOf((*MockClient)(nil).CreateUser), ctx, organizationName, user)
 }
 
+// DeleteAuthorizationResource mocks base method.
+func (m *MockClient) DeleteAuthorizationResource(ctx context.Context, resourceID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAuthorizationResource", ctx, resourceID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAuthorizationResource indicates an expected call of DeleteAuthorizationResource.
+func (mr *MockClientMockRecorder) DeleteAuthorizationResource(ctx, resourceID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAuthorizationResource", reflect.TypeOf((*MockClient)(nil).DeleteAuthorizationResource), ctx, resourceID)
+}
+
 // DeleteOrganization mocks base method.
 func (m *MockClient) DeleteOrganization(ctx context.Context, name string) error {
 	m.ctrl.T.Helper()
@@ -152,6 +181,21 @@ func (m *MockClient) DeleteUser(ctx context.Context, organizationName, userID st
 func (mr *MockClientMockRecorder) DeleteUser(ctx, organizationName, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUser", reflect.TypeOf((*MockClient)(nil).DeleteUser), ctx, organizationName, userID)
+}
+
+// GetAuthorizationResource mocks base method.
+func (m *MockClient) GetAuthorizationResource(ctx context.Context, resourceID string) (*AuthorizationResource, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAuthorizationResource", ctx, resourceID)
+	ret0, _ := ret[0].(*AuthorizationResource)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAuthorizationResource indicates an expected call of GetAuthorizationResource.
+func (mr *MockClientMockRecorder) GetAuthorizationResource(ctx, resourceID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAuthorizationResource", reflect.TypeOf((*MockClient)(nil).GetAuthorizationResource), ctx, resourceID)
 }
 
 // GetOrganization mocks base method.
