@@ -91,6 +91,12 @@ func (m *ResourceManager) CreateProjectAuthorizationResource(ctx context.Context
 	if err != nil {
 		return "", fmt.Errorf("failed to create authorization resource: %w", err)
 	}
+	if createdResource == nil {
+		return "", fmt.Errorf("created authorization resource is nil")
+	}
+	if createdResource.ID == "" {
+		return "", fmt.Errorf("created authorization resource has empty ID")
+	}
 
 	m.logger.InfoContext(ctx, "Project authorization resource created",
 		slog.String("resource_id", createdResource.ID),
