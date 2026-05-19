@@ -14,139 +14,151 @@ language governing permissions and limitations under the License.
 package computeinstancespec
 
 import (
-	"testing"
-
 	"github.com/google/go-cmp/cmp"
+	. "github.com/onsi/ginkgo/v2/dsl/core"
+	. "github.com/onsi/ginkgo/v2/dsl/table"
+	. "github.com/onsi/gomega"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 )
 
-func TestEffectiveNetworkAttachments(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name    string
-		spec    *privatev1.ComputeInstanceSpec
-		want    []*privatev1.NetworkAttachment
-		wantErr bool
-	}{
-		{
-			name:    "nil spec",
-			spec:    nil,
-			want:    nil,
-			wantErr: false,
+var _ = Describe("Effective network attachments", func() {
+	type Case struct {
+		Spec    *privatev1.ComputeInstanceSpec
+		Want    []*privatev1.NetworkAttachment
+		WantErr bool
+	}
+
+	DescribeTable(
+		"Resolves network attachments",
+		func(c Case) {
+			got, err := EffectiveNetworkAttachments(c.Spec)
+			if c.WantErr {
+				Expect(err).To(HaveOccurred())
+				return
+			}
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cmp.Diff(c.Want, got, protocmp.Transform())).To(BeEmpty())
 		},
-		{
-			name:    "empty",
-			spec:    privatev1.ComputeInstanceSpec_builder{}.Build(),
-			want:    nil,
-			wantErr: false,
-		},
-		{
-			name: "legacy subnet empty string",
-			spec: privatev1.ComputeInstanceSpec_builder{
-				Subnet: proto.String(""),
-			}.Build(),
-			want:    nil,
-			wantErr: false, // treat as no networking specified
-		},
-		{
-			name: "legacy subnet only",
-			spec: privatev1.ComputeInstanceSpec_builder{
-				Subnet: proto.String("sn-1"),
-			}.Build(),
-			want: []*privatev1.NetworkAttachment{
-				privatev1.NetworkAttachment_builder{Subnet: "sn-1"}.Build(),
+		Entry(
+			"Nil spec",
+			Case{
+				Spec:    nil,
+				Want:    nil,
+				WantErr: false,
 			},
-			wantErr: false,
-		},
-		{
-			name: "legacy subnet and security groups",
-			spec: privatev1.ComputeInstanceSpec_builder{
-				Subnet:         proto.String("sn-1"),
-				SecurityGroups: []string{"sg-1", "sg-2"},
-			}.Build(),
-			want: []*privatev1.NetworkAttachment{
-				privatev1.NetworkAttachment_builder{
-					Subnet:         "sn-1",
+		),
+		Entry(
+			"Empty",
+			Case{
+				Spec:    privatev1.ComputeInstanceSpec_builder{}.Build(),
+				Want:    nil,
+				WantErr: false,
+			},
+		),
+		Entry(
+			"Legacy subnet empty string",
+			Case{
+				Spec: privatev1.ComputeInstanceSpec_builder{
+					Subnet: proto.String(""),
+				}.Build(),
+				Want:    nil,
+				WantErr: false,
+			},
+		),
+		Entry(
+			"Legacy subnet only",
+			Case{
+				Spec: privatev1.ComputeInstanceSpec_builder{
+					Subnet: proto.String("sn-1"),
+				}.Build(),
+				Want: []*privatev1.NetworkAttachment{
+					privatev1.NetworkAttachment_builder{Subnet: "sn-1"}.Build(),
+				},
+				WantErr: false,
+			},
+		),
+		Entry(
+			"Legacy subnet and security groups",
+			Case{
+				Spec: privatev1.ComputeInstanceSpec_builder{
+					Subnet:         proto.String("sn-1"),
 					SecurityGroups: []string{"sg-1", "sg-2"},
 				}.Build(),
+				Want: []*privatev1.NetworkAttachment{
+					privatev1.NetworkAttachment_builder{
+						Subnet:         "sn-1",
+						SecurityGroups: []string{"sg-1", "sg-2"},
+					}.Build(),
+				},
+				WantErr: false,
 			},
-			wantErr: false,
-		},
-		{
-			name: "legacy security groups only",
-			spec: privatev1.ComputeInstanceSpec_builder{
-				SecurityGroups: []string{"sg-1"},
-			}.Build(),
-			want:    nil,
-			wantErr: true, // subnet is required when security_groups are set
-		},
-		{
-			name: "network_attachments only",
-			spec: privatev1.ComputeInstanceSpec_builder{
-				NetworkAttachments: []*privatev1.NetworkAttachment{
+		),
+		Entry(
+			"Legacy security groups only",
+			Case{
+				Spec: privatev1.ComputeInstanceSpec_builder{
+					SecurityGroups: []string{"sg-1"},
+				}.Build(),
+				Want:    nil,
+				WantErr: true,
+			},
+		),
+		Entry(
+			"Network attachments only",
+			Case{
+				Spec: privatev1.ComputeInstanceSpec_builder{
+					NetworkAttachments: []*privatev1.NetworkAttachment{
+						privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
+						privatev1.NetworkAttachment_builder{Subnet: "b"}.Build(),
+					},
+				}.Build(),
+				Want: []*privatev1.NetworkAttachment{
 					privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
 					privatev1.NetworkAttachment_builder{Subnet: "b"}.Build(),
 				},
-			}.Build(),
-			want: []*privatev1.NetworkAttachment{
-				privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
-				privatev1.NetworkAttachment_builder{Subnet: "b"}.Build(),
+				WantErr: false,
+			}),
+		Entry(
+			"Conflict legacy subnet with network attachments",
+			Case{
+				Spec: privatev1.ComputeInstanceSpec_builder{
+					Subnet: proto.String("sn-1"),
+					NetworkAttachments: []*privatev1.NetworkAttachment{
+						privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
+					},
+				}.Build(),
+				Want:    nil,
+				WantErr: true,
 			},
-			wantErr: false,
-		},
-		{
-			name: "conflict legacy subnet with network_attachments",
-			spec: privatev1.ComputeInstanceSpec_builder{
-				Subnet: proto.String("sn-1"),
-				NetworkAttachments: []*privatev1.NetworkAttachment{
-					privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
-				},
-			}.Build(),
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "conflict legacy security_groups with network_attachments",
-			spec: privatev1.ComputeInstanceSpec_builder{
-				SecurityGroups: []string{"sg-1"},
-				NetworkAttachments: []*privatev1.NetworkAttachment{
-					privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
-				},
-			}.Build(),
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "conflict deprecated subnet present but empty string with network_attachments",
-			spec: privatev1.ComputeInstanceSpec_builder{
-				Subnet: proto.String(""),
-				NetworkAttachments: []*privatev1.NetworkAttachment{
-					privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
-				},
-			}.Build(),
-			want:    nil,
-			wantErr: true,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := EffectiveNetworkAttachments(tc.spec)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected err: %v", err)
-			}
-			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
-				t.Fatalf("(-want +got):\n%s", diff)
-			}
-		})
-	}
-}
+		),
+		Entry(
+			"Conflict legacy security groups with network attachments",
+			Case{
+				Spec: privatev1.ComputeInstanceSpec_builder{
+					SecurityGroups: []string{"sg-1"},
+					NetworkAttachments: []*privatev1.NetworkAttachment{
+						privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
+					},
+				}.Build(),
+				Want:    nil,
+				WantErr: true,
+			},
+		),
+		Entry(
+			"Conflict deprecated subnet present but empty string with network_attachments",
+			Case{
+				Spec: privatev1.ComputeInstanceSpec_builder{
+					Subnet: proto.String(""),
+					NetworkAttachments: []*privatev1.NetworkAttachment{
+						privatev1.NetworkAttachment_builder{Subnet: "a"}.Build(),
+					},
+				}.Build(),
+				Want:    nil,
+				WantErr: true,
+			},
+		),
+	)
+})
