@@ -866,6 +866,20 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	}
 	privatev1.RegisterPublicIPAttachmentsServer(grpcServer, privatePublicIPAttachmentsServer)
 
+	// Create the public public IP attachments server:
+	c.logger.InfoContext(ctx, "Creating public public IP attachments server")
+	publicIPAttachmentsServer, err := servers.NewPublicIPAttachmentsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(publicAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create public IP attachments server: %w", err)
+	}
+	publicv1.RegisterPublicIPAttachmentsServer(grpcServer, publicIPAttachmentsServer)
+
 	// Create the public organizations server:
 	c.logger.InfoContext(ctx, "Creating public organizations server")
 	publicOrganizationsServer, err := servers.NewOrganizationsServer().
