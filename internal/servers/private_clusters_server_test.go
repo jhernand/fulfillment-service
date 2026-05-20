@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/database/dao"
 	"github.com/osac-project/fulfillment-service/internal/uuid"
@@ -154,7 +155,7 @@ var _ = Describe("Private clusters server", func() {
 						Id: "acme-1ti-id",
 						Metadata: privatev1.Metadata_builder{
 							Name:   "acme-1ti-name",
-							Tenant: "shared",
+							Tenant: auth.SharedTenant,
 						}.Build(),
 						Title:       "ACME 1TiB",
 						Description: "ACME 1TiB.",
@@ -168,7 +169,7 @@ var _ = Describe("Private clusters server", func() {
 						Id: "acme-gpu-id",
 						Metadata: privatev1.Metadata_builder{
 							Name:   "acme-gpu-name",
-							Tenant: "shared",
+							Tenant: auth.SharedTenant,
 						}.Build(),
 						Title:       "ACME GPU",
 						Description: "ACME GPU.",
@@ -184,7 +185,7 @@ var _ = Describe("Private clusters server", func() {
 						Id: "my-template-id",
 						Metadata: privatev1.Metadata_builder{
 							Name:   "my-template-name",
-							Tenant: "shared",
+							Tenant: auth.SharedTenant,
 						}.Build(),
 						Title:       "My template",
 						Description: "My template",
@@ -212,7 +213,7 @@ var _ = Describe("Private clusters server", func() {
 							Title:       fmt.Sprintf("My template %d", i),
 							Description: fmt.Sprintf("My template %d", i),
 							Metadata: privatev1.Metadata_builder{
-								Tenant: "shared",
+								Tenant: auth.SharedTenant,
 							}.Build(),
 							NodeSets: map[string]*privatev1.ClusterTemplateNodeSet{
 								"compute": privatev1.ClusterTemplateNodeSet_builder{
