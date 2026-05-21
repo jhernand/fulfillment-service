@@ -399,6 +399,40 @@ var _ = Describe("Private public IP attachments server", func() {
 			Expect(updateResponse.GetObject().GetSpec().GetComputeInstance()).To(Equal(ci.GetId()))
 		})
 
+		It("Rejects full object replacement with changed spec.public_ip (nil mask)", func() {
+			pip := createPublicIPInState(ctx, publicIPDao, sharedPool.GetId(), privatev1.PublicIPState_PUBLIC_IP_STATE_ALLOCATED, false)
+			ci := createComputeInstanceInState(ctx, computeInstanceDao, privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_RUNNING)
+
+			createResponse, err := publicIPAttachmentsServer.Create(ctx, privatev1.PublicIPAttachmentsCreateRequest_builder{
+				Object: privatev1.PublicIPAttachment_builder{
+					Metadata: privatev1.Metadata_builder{
+						Name: "my-attachment",
+					}.Build(),
+					Spec: privatev1.PublicIPAttachmentSpec_builder{
+						PublicIp:        pip.GetId(),
+						ComputeInstance: proto.String(ci.GetId()),
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			pip2 := createPublicIPInState(ctx, publicIPDao, sharedPool.GetId(), privatev1.PublicIPState_PUBLIC_IP_STATE_ALLOCATED, false)
+			_, err = publicIPAttachmentsServer.Update(ctx, privatev1.PublicIPAttachmentsUpdateRequest_builder{
+				Object: privatev1.PublicIPAttachment_builder{
+					Id: createResponse.GetObject().GetId(),
+					Spec: privatev1.PublicIPAttachmentSpec_builder{
+						PublicIp:        pip2.GetId(),
+						ComputeInstance: proto.String(ci.GetId()),
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(err.Error()).To(ContainSubstring("immutable"))
+		})
+
 		It("Deletes a public IP attachment", func() {
 			pip := createPublicIPInState(ctx, publicIPDao, sharedPool.GetId(), privatev1.PublicIPState_PUBLIC_IP_STATE_ALLOCATED, false)
 			ci := createComputeInstanceInState(ctx, computeInstanceDao, privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_RUNNING)

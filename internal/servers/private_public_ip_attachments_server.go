@@ -147,6 +147,9 @@ func (s *PrivatePublicIPAttachmentsServer) Get(ctx context.Context,
 	return
 }
 
+// Create validates references, enforces uniqueness, creates the attachment, and sets
+// PublicIP.status.attached. All operations share the gRPC interceptor's database
+// transaction: if any step fails, the entire transaction rolls back.
 func (s *PrivatePublicIPAttachmentsServer) Create(ctx context.Context,
 	request *privatev1.PublicIPAttachmentsCreateRequest) (response *privatev1.PublicIPAttachmentsCreateResponse, err error) {
 	attachment := request.GetObject()
@@ -224,6 +227,8 @@ func (s *PrivatePublicIPAttachmentsServer) Update(ctx context.Context,
 	return
 }
 
+// Delete removes the attachment and clears PublicIP.status.attached.
+// All operations share the gRPC interceptor's transaction for atomicity.
 func (s *PrivatePublicIPAttachmentsServer) Delete(ctx context.Context,
 	request *privatev1.PublicIPAttachmentsDeleteRequest) (response *privatev1.PublicIPAttachmentsDeleteResponse, err error) {
 	id := request.GetId()
