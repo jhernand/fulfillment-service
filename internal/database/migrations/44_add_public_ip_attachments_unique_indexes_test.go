@@ -42,7 +42,7 @@ var _ = DescribeMigration("Add unique indexes for public IP attachments", func()
 		err := insert("a1", "pip-1", "ci-1")
 		Expect(err).ToNot(HaveOccurred())
 
-		err = tool.Migrate(ctx, 43)
+		err = tool.Migrate(ctx, 44)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = insert("a2", "pip-1", "ci-2")
@@ -53,7 +53,7 @@ var _ = DescribeMigration("Add unique indexes for public IP attachments", func()
 		err := insert("a1", "pip-1", "ci-1")
 		Expect(err).ToNot(HaveOccurred())
 
-		err = tool.Migrate(ctx, 43)
+		err = tool.Migrate(ctx, 44)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = insert("a2", "pip-2", "ci-1")
@@ -64,7 +64,7 @@ var _ = DescribeMigration("Add unique indexes for public IP attachments", func()
 		err := insert("a1", "pip-1", "ci-1")
 		Expect(err).ToNot(HaveOccurred())
 
-		err = tool.Migrate(ctx, 43)
+		err = tool.Migrate(ctx, 44)
 		Expect(err).ToNot(HaveOccurred())
 
 		softDelete("a1")
@@ -77,7 +77,7 @@ var _ = DescribeMigration("Add unique indexes for public IP attachments", func()
 		err := insert("a1", "pip-1", "ci-1")
 		Expect(err).ToNot(HaveOccurred())
 
-		err = tool.Migrate(ctx, 43)
+		err = tool.Migrate(ctx, 44)
 		Expect(err).ToNot(HaveOccurred())
 
 		softDelete("a1")
@@ -90,7 +90,7 @@ var _ = DescribeMigration("Add unique indexes for public IP attachments", func()
 		err := insert("a1", "pip-1", "ci-1")
 		Expect(err).ToNot(HaveOccurred())
 
-		err = tool.Migrate(ctx, 43)
+		err = tool.Migrate(ctx, 44)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = insert("a2", "pip-2", "ci-2")
