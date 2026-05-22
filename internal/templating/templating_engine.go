@@ -122,11 +122,14 @@ func (b *EngineBuilder) Build() (result *Engine, err error) {
 
 	// Register the built-in functions:
 	e.template.Funcs(map[string]any{
-		"base64":  e.base64Func,
-		"data":    e.dataFunc,
-		"execute": e.executeFunc,
-		"json":    e.jsonFunc,
-		"uuid":    e.uuidFunc,
+		"base64":   e.base64Func,
+		"backtick": e.backtickFunc,
+		"bt":       e.backtickFunc,
+		"data":     e.dataFunc,
+		"evaluate": e.evaluateFunc,
+		"execute":  e.executeFunc,
+		"json":     e.jsonFunc,
+		"uuid":     e.uuidFunc,
 	})
 
 	// Discover template names from all filesystems without parsing them yet. Templates will be
@@ -278,6 +281,25 @@ func (e *Engine) base64Func(value any) (result string, err error) {
 	return
 }
 
+// evaluateFunc is a template function that parses and executes an arbitrary string as a template, returning the
+// result. This is useful when a value (like a flag usage string) contains template syntax that needs to be rendered.
+// All functions registered in the engine are available inside the evaluated string. If parsing or execution fails
+// the original text is returned unchanged.
+//
+//	{{ evaluate .Usage . }}
+func (e *Engine) evaluateFunc(text string, data any) (string, error) {
+	t, err := e.template.New("").Parse(text)
+	if err != nil {
+		return text, nil
+	}
+	buffer := &bytes.Buffer{}
+	err = t.Execute(buffer, data)
+	if err != nil {
+		return text, nil
+	}
+	return buffer.String(), nil
+}
+
 // executeFunc is a template function similar to template.ExecuteTemplate but it returns the result instead of writing
 // it to the output. That is useful when some processing is needed after that, for example, to encode the result using
 // Base64:
@@ -313,6 +335,22 @@ func (e *Engine) jsonFunc(data any) (result string, err error) {
 	}
 	result = string(text)
 	return
+}
+
+// backtickFunc is a template function that returns one or more backtick characters. This is useful when templates
+// are embedded in Go source code as back-quoted strings, where literal backticks cannot appear. Called without
+// arguments it returns a single backtick; called with an integer argument it returns that many backticks (for
+// example, {{ backtick 3 }} produces the ``` fence used for code blocks).
+func (e *Engine) backtickFunc(args ...int) string {
+	n := 1
+	if len(args) > 0 && args[0] > 0 {
+		n = args[0]
+	}
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = '`'
+	}
+	return string(b)
 }
 
 // uuidFunc is a template function that generates a random UUID.

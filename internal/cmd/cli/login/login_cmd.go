@@ -45,9 +45,10 @@ var templatesFS embed.FS
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:                   "login [FLAGS] ADDRESS",
+		Use:                   "login [FLAG...] ADDRESS",
 		DisableFlagsInUseLine: true,
 		Short:                 "Save connection and authentication details.",
+		Long:                  longHelp,
 		RunE:                  runner.run,
 	}
 	flags := result.Flags()
@@ -55,111 +56,91 @@ func Cmd() *cobra.Command {
 		&runner.args.plaintext,
 		"plaintext",
 		false,
-		"Disables use of TLS for communications with the API server.",
+		plaintextFlagHelp,
 	)
 	flags.BoolVar(
 		&runner.args.insecure,
 		"insecure",
 		false,
-		"Disables verification of TLS certificates and host names of the OAuth and API servers.",
+		insecureFlagHelp,
 	)
 	flags.StringArrayVar(
 		&runner.args.caFiles,
 		"ca-file",
 		[]string{},
-		"File or directory containing trusted CA certificates.",
+		caFilesFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.address,
 		"address",
 		os.Getenv("OSAC_ADDRESS"),
-		"Server address.",
+		addressFlagHelp,
 	)
 	flags.BoolVar(
 		&runner.args.private,
 		"private",
 		false,
-		"Enables use of the private API.",
+		privateFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.token,
 		"token",
 		os.Getenv("OSAC_TOKEN"),
-		"Authentication token",
+		tokenFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.tokenScript,
 		"token-script",
 		os.Getenv("OSAC_TOKEN_SCRIPT"),
-		"Shell command that will be executed to obtain the token. For example, to automatically get the "+
-			"token of the Kubernetes 'client' service account of the 'example' namespace the value "+
-			"could be 'kubectl create token -n example client --duration 1h'. Note that is important "+
-			"to quote this shell command correctly, as it will be passed to your shell for "+
-			"execution.",
+		tokenScriptFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.oauthIssuer,
 		"oauth-issuer",
 		"",
-		"OAuth issuer URL. This is optional. By default the first issuer advertised by the server is used.",
+		oauthIssuerFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.oauthFlow,
 		"oauth-flow",
 		string(oauth.DeviceFlow),
-		fmt.Sprintf(
-			"OAuth flow to use. Must be '%s', '%s', '%s' or '%s'.",
-			oauth.CodeFlow, oauth.DeviceFlow, oauth.CredentialsFlow, oauth.PasswordFlow,
-		),
+		oauthFlowFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.oauthClientId,
 		"oauth-client-id",
 		"osac-cli",
-		"OAuth client identifier.",
+		oauthClientIdFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.oauthClientSecret,
 		"oauth-client-secret",
 		"",
-		fmt.Sprintf(
-			"OAuth client secret. This is required for the '%s' flow.",
-			oauth.CredentialsFlow,
-		),
+		oauthClientSecretFlagHelp,
 	)
 	flags.StringSliceVar(
 		&runner.args.oauthScopes,
 		"oauth-scopes",
 		[]string{},
-		"Comma separated list of OAuth scopes to request.",
+		oauthScopesFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.oauthRedirectUri,
 		"oauth-redirect-uri",
 		defaultRedirectUri,
-		fmt.Sprintf(
-			"Redirect URI to use for the OAuth code flow. The default value '%s' means "+
-				"binding to localhost on a randomly selected port.",
-			defaultRedirectUri,
-		),
+		oauthRedirectUriFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.oauthUser,
 		"oauth-user",
 		"",
-		fmt.Sprintf(
-			"OAuth user name. This is required for the '%s' flow.",
-			oauth.PasswordFlow,
-		),
+		oauthUserFlagHelp,
 	)
 	flags.StringVar(
 		&runner.args.oauthPassword,
 		"oauth-password",
 		"",
-		fmt.Sprintf(
-			"OAuth password. This is required for the '%s' flow.",
-			oauth.PasswordFlow,
-		),
+		oauthPasswordFlagHelp,
 	)
 	flags.MarkHidden("address")
 	flags.MarkHidden("private")
@@ -553,3 +534,126 @@ func (l *oauthFlowListener) End(ctx context.Context, event oauth.FlowEndEvent) e
 // defaultRedirectUri is the default redirect URI used for the OAuth code flow. The value 'http://localhost:0' means
 // binding to localhost on a randomly selected port.
 const defaultRedirectUri = "http://localhost:0"
+
+const longHelp = `
+Save connection and authentication details.
+
+The recommended way to specify the server address is to use a URL, including
+the scheme, host name and optionally the port number. For example
+{{ bt }}https://osac.example.com{{ bt }} will connect to the server at
+{{ bt }}osac.example.com{{ bt }} using TLS and port 443.
+
+With this format the {{ bt }}https{{ bt }} scheme indicates that TLS
+should be used, and the {{ bt }}http{{ bt }} scheme indicates that plaintext
+plaintext should be used.
+
+Alternatively, you can specify the server address as a host name and port number, for
+example {{ bt }}osac.example.com:8000{{ bt }} will connect to the server at
+{{ bt }}osac.example.com{{ bt }} using TLS and port 8000.
+
+Note that the connection always uses _gRPC_ on top of _HTTP/2_, regardless of the
+format used to specify the server address.
+`
+
+const plaintextFlagHelp = `
+_[BOOLEAN]_ - Enables or disables use of TLS for communications with the API
+server. Disabling TLS is insecure and should only be used for testing purposes.
+Note that TLS is also automatically enabled if the server address uses the
+{{ bt }}http{{ bt }} scheme instead of the default
+ {{ bt }}https{{ bt }}.
+`
+
+const insecureFlagHelp = `
+_[BOOLEAN]_ - Enables or disables verification of TLS certificates and host
+names of the OAuth and API servers. Disabling TLS verifications is insecure and
+should only be used for testing purposes. If you need to trust a custom CA
+certificate, consider using the {{ bt }}--ca-file{{ bt }} flag
+instead.
+`
+
+const caFilesFlagHelp = `
+_FILE|DIRECTORY_ - File or directory containing trusted CA certificates. When
+a directory is specified, all the files in the directory with extensions
+{{ bt }}.cer{{ bt }}, {{ bt }}.crt{{ bt }} and {{ bt }}.pem{{ bt }} are read
+recursively.
+
+The CA certificates trusted by the operating system are automatically loaded.
+
+When the process is running inside a _Kuberneres_ pod the cluster and service
+CA certificates are also automatically loaded; there is no need to specify them
+explicitly.
+
+It can be used multiple times to add multiple CA files or directories.
+`
+
+const addressFlagHelp = `
+_URL|HOST:PORT_ - Server address.
+`
+
+const privateFlagHelp = `
+_[BOOLEAN]_ - Enables use of the private API.
+`
+
+const tokenFlagHelp = `
+_TOKEN_ - Authentication token.
+`
+
+const tokenScriptFlagHelp = `
+_SCRIPT_ - Shell command that will be executed to obtain the token. For example, to
+automatically get the token of the Kubernetes {{ bt }}client{{ bt }}
+service account of the {{ bt }}example{{ bt }} namespace the
+value could be like this:
+
+{{ bt 3 }}shell
+kubectl create token -n example client --duration 1h
+{{ bt 3 }}
+
+Note that is important to quote this shell command correctly, as it will be
+passed to your shell for execution.
+`
+
+const oauthIssuerFlagHelp = `
+_URL_ - OAuth issuer URL. This is optional. By default the issuer advertised by the
+server is used.
+`
+
+const oauthFlowFlagHelp = `
+_FLOW_ - OAuth flow to use. Must be one of 'code', 'device', 'credentials' or 'password'.
+`
+
+const oauthClientIdFlagHelp = `
+_ID_ - OAuth client identifier. All authentication flows require a client identifier,
+but for most of them the default {{ bt }}osac-cli{{ bt }} value is
+appropriate. When using the {{ bt }}credentials{{ bt }} flow,
+typically for service accounts, you must provide the client identifier of the
+service account together with the {{ bt }}--client-secret{{ bt }}
+flag.
+`
+
+const oauthClientSecretFlagHelp = `
+_SECRET_ - OAuth client secret. When using the {{ bt }}credentials{{ bt }}
+flow, typically for service accounts, you must provide the client secret of the
+service account together with the together with the
+{{ bt }}--client-id{{ bt }} flag.
+`
+
+const oauthScopesFlagHelp = `
+_[SCOPE...]_ - Comma separated list of OAuth scopes to request.
+`
+
+const oauthRedirectUriFlagHelp = `
+_URI_ - Redirect URI to use for the OAuth {{ bt }}code{{ bt }} flow. The
+default value {{ bt }}http://localhost:0{{ bt }} means binding to
+localhost on a randomly selected port.
+`
+
+const oauthUserFlagHelp = `
+_USER_ - OAuth user name. This is required when using the
+{{ bt }}password{{ bt }} flow and should be used together with the
+ {{ bt }}--password{{ bt }} flag.
+`
+
+const oauthPasswordFlagHelp = `
+_PASSWORD_ - OAuth password. This is required when using the {{ bt }}password{{ bt }}
+flow and should be used together with the {{ bt }}--user{{ bt }} flag.
+`
