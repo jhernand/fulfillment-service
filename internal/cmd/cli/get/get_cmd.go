@@ -14,6 +14,7 @@ language governing permissions and limitations under the License.
 package get
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -157,7 +158,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check that the object type has been specified:
 	if len(args) == 0 {
-		c.console.Render(ctx, "no_object.txt", map[string]any{
+		c.console.Render(ctx, "no_object.md", map[string]any{
 			"Helper": c.globalHelper,
 		})
 		return nil
@@ -166,7 +167,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Get the object helper:
 	c.objectHelper = c.globalHelper.Lookup(args[0])
 	if c.objectHelper == nil {
-		c.console.Render(ctx, "wrong_object.txt", map[string]any{
+		c.console.Render(ctx, "wrong_object.md", map[string]any{
 			"Helper": c.globalHelper,
 			"Object": args[0],
 		})
@@ -243,23 +244,31 @@ func (c *runnerContext) list(ctx context.Context, keys []string) (results []prot
 func (c *runnerContext) renderTable(ctx context.Context, objects []proto.Message) error {
 	// Check if there are results:
 	if len(objects) == 0 {
-		c.console.Render(ctx, "no_matching_objects.txt", nil)
+		c.console.Render(ctx, "no_matching_objects.md", nil)
 		return nil
 	}
 
 	// Create the table renderer:
+	buffer := bytes.NewBuffer(nil)
 	renderer, err := rendering.NewTableRenderer().
 		SetLogger(c.logger).
 		SetHelper(c.globalHelper).
-		SetWriter(c.console).
+		SetWriter(buffer).
 		SetIncludeDeleted(c.args.includeDeleted).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create table renderer: %w", err)
 	}
 
-	// Use the table renderer to render the objects:
-	return renderer.Render(ctx, objects)
+	// Generate the Markdown text:
+	err = renderer.Render(ctx, objects)
+	if err != nil {
+		return fmt.Errorf("failed to render table: %w", err)
+	}
+
+	// Render the text to the console:
+	c.console.Render(ctx, buffer.String(), nil)
+	return nil
 }
 
 func (c *runnerContext) renderJson(ctx context.Context, objects []proto.Message) error {
@@ -348,7 +357,7 @@ Results can be filtered using CEL expressions with the
 {{ bt 3 }}
 
 For more information about the CEL expressions supported by the server see
-https://github.com/osac-project/fulfillment-service/blob/main/docs/FILTER.md.
+[FILTER.md](https://github.com/osac-project/fulfillment-service/blob/main/docs/FILTER.md).
 
 The output format can be changed with the {{ bt }}--output{{ bt }} flag. Supported formats are {{ bt }}table{{ bt }}
 (default), {{ bt }}json{{ bt }} and {{ bt }}yaml{{ bt }}:

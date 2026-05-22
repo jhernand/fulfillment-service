@@ -8,7 +8,6 @@
 {{ .UseLine }}
 ```
 
-
 {{ if .HasAvailableSubCommands }}
 ## Commands
 {{ range .Commands }}

@@ -70,7 +70,7 @@ func Cmd() *cobra.Command {
 		&runner.includeDeleted,
 		"include-deleted",
 		false,
-		"Include soft-deleted objects in resolution.",
+		includeDeletedFlagHelp,
 	)
 	return result
 }
@@ -127,7 +127,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check that the object type has been specified:
 	if len(args) == 0 {
-		c.console.Render(ctx, "no_object.txt", map[string]any{
+		c.console.Render(ctx, "no_object.md", map[string]any{
 			"Helper": helper,
 		})
 		return nil
@@ -136,7 +136,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Get the information about the object type:
 	c.helper = helper.Lookup(args[0])
 	if c.helper == nil {
-		c.console.Render(ctx, "wrong_object.txt", map[string]any{
+		c.console.Render(ctx, "wrong_object.md", map[string]any{
 			"Helper": helper,
 			"Object": args[0],
 		})
@@ -153,7 +153,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check that the object identifier or name has been specified:
 	if len(args) < 2 {
-		c.console.Render(ctx, "no_id.txt", map[string]any{})
+		c.console.Render(ctx, "no_id.md", map[string]any{})
 		return nil
 	}
 	key := args[1]
@@ -275,6 +275,44 @@ func (c *runnerContext) findEditor(ctx context.Context) string {
 	return defaultEditor
 }
 
+// findObject tries to find an object by identifier or name. It uses the list method with a filter that matches
+// either the identifier or the name. Returns an error if no match is found or if multiple matches are found.
+func (c *runnerContext) findObject(ctx context.Context, ref string) (result proto.Message, err error) {
+	// Find the objects matching the reference (identifier or name):
+	filter := fmt.Sprintf(`this.id == %[1]q || this.metadata.name == %[1]q`, ref)
+	response, err := c.helper.List(ctx, reflection.ListOptions{
+		Filter: filter,
+		Limit:  10,
+	})
+	if err != nil {
+		err = fmt.Errorf("failed to find object of type '%s' with identifier or name '%s': %w", c.helper, ref, err)
+		return
+	}
+	items := response.Items
+	total := response.Total
+
+	// Prepare the response based on the number of objects found:
+	switch len(items) {
+	case 0:
+		c.console.Render(ctx, "no_matches.md", map[string]any{
+			"Object": c.helper.Singular(),
+			"Ref":    ref,
+		})
+		return
+	case 1:
+		result = items[0]
+		return
+	default:
+		c.console.Render(ctx, "multiple_matches.md", map[string]any{
+			"Matches": items,
+			"Object":  c.helper.Singular(),
+			"Ref":     ref,
+			"Total":   total,
+		})
+		return
+	}
+}
+
 func (c *runnerContext) update(ctx context.Context, object proto.Message) (result proto.Message, err error) {
 	result, err = c.helper.Update(ctx, object)
 	return
@@ -282,7 +320,7 @@ func (c *runnerContext) update(ctx context.Context, object proto.Message) (resul
 
 func (c *runnerContext) showWatchSuggestion(ctx context.Context, object proto.Message) {
 	objectId := c.helper.GetId(object)
-	c.console.Render(ctx, "watch_suggestion.txt", map[string]any{
+	c.console.Render(ctx, "watch_suggestion.md", map[string]any{
 		"Object": c.helper.Singular(),
 		"Id":     objectId,
 	})
@@ -375,4 +413,8 @@ Objects can be referenced by their identifier or by their name.
 
 const outputFlagHelp = `
 _FORMAT_ - Format used for editing. Must be one of {{ bt }}json{{ bt }} or {{ bt }}yaml{{ bt }}.
+`
+
+const includeDeletedFlagHelp = `
+_[BOOLEAN]_ - Include objects that have been marked for deletion but have not yet been fully removed.
 `

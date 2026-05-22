@@ -1,3 +1,0 @@
-You must specify the type of object to delete.
-
-{{ execute "object_list.txt" . }}

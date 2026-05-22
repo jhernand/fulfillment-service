@@ -24,7 +24,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
@@ -90,7 +89,7 @@ type TableRendererBuilder struct {
 type TableRenderer struct {
 	logger         *slog.Logger
 	helper         *reflection.Helper
-	writer         *tabwriter.Writer
+	writer         io.Writer
 	cache          map[protoreflect.FullName]map[string]string
 	includeDeleted bool
 }
@@ -140,9 +139,6 @@ func (b *TableRendererBuilder) Build() (result *TableRenderer, err error) {
 		return
 	}
 
-	// Create a tab writer for proper column alignment of output:
-	writer := tabwriter.NewWriter(b.writer, 0, 0, 2, ' ', 0)
-
 	// Create the cache:
 	cache := map[protoreflect.FullName]map[string]string{}
 
@@ -150,7 +146,7 @@ func (b *TableRendererBuilder) Build() (result *TableRenderer, err error) {
 	result = &TableRenderer{
 		logger:         b.logger,
 		helper:         b.helper,
-		writer:         writer,
+		writer:         b.writer,
 		cache:          cache,
 		includeDeleted: b.includeDeleted,
 	}
@@ -237,8 +233,7 @@ func (r *TableRenderer) Render(ctx context.Context, objects any) error {
 		prgs[i] = prg
 	}
 
-	// Render the table and remember to flush the writer when done:
-	defer r.writer.Flush()
+	// Render the table:
 	err = r.renderHeader(table.Columns)
 	if err != nil {
 		return err
@@ -295,13 +290,14 @@ func (r *TableRenderer) defaultTable() *tableLayout {
 
 // renderHeader renders the table header with column names.
 func (r *TableRenderer) renderHeader(cols []*columnLayout) error {
-	for i, col := range cols {
-		if i > 0 {
-			fmt.Fprint(r.writer, "\t")
-		}
-		fmt.Fprintf(r.writer, "%s", col.Header)
+	for _, col := range cols {
+		fmt.Fprintf(r.writer, "| **%s** ", col.Header)
 	}
-	fmt.Fprintf(r.writer, "\n")
+	fmt.Fprintf(r.writer, "|\n")
+	for range cols {
+		fmt.Fprintf(r.writer, "| --- ")
+	}
+	fmt.Fprintf(r.writer, "|\n")
 	return nil
 }
 
@@ -321,14 +317,11 @@ func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prg
 	}
 
 	// Render each column:
-	for i := range len(cols) {
-		if i > 0 {
-			fmt.Fprintf(r.writer, "\t")
-		}
-		col := cols[i]
-		prg := prgs[i]
+	for i, col := range cols {
+		fmt.Fprintf(r.writer, "| ")
 
 		// Evaluate the CEL expression:
+		prg := prgs[i]
 		var out ref.Val
 		out, _, err = prg.Eval(celVars)
 		if err != nil {
@@ -346,8 +339,9 @@ func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prg
 				out, col.Header, helper, err,
 			)
 		}
+		fmt.Fprintf(r.writer, " ")
 	}
-	fmt.Fprintf(r.writer, "\n")
+	fmt.Fprintf(r.writer, "|\n")
 	return nil
 }
 

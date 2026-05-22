@@ -17,17 +17,13 @@ import (
 	"bytes"
 	"embed"
 	"log/slog"
-	"os"
 
-	"charm.land/glamour/v2"
-	"charm.land/glamour/v2/ansi"
-	"charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/term"
 
 	"github.com/osac-project/fulfillment-service/internal/templating"
+	"github.com/osac-project/fulfillment-service/internal/terminal"
 )
 
 //go:embed templates
@@ -50,65 +46,24 @@ func Setup(cmd *cobra.Command) {
 		return
 	}
 
-	// Select the style according to the terminal color scheme:
-	var style ansi.StyleConfig
-	if lipgloss.HasDarkBackground(os.Stdin, os.Stdout) {
-		style = styles.DarkStyleConfig
-	} else {
-		style = styles.LightStyleConfig
-	}
-
-	// Regardless of the style, we want to remove the default document margin and leading newline, so the output is
-	// flush with the left edge of the terminal.
-	zero := new(uint)
-	style.Document.Margin = zero
-	style.Document.BlockPrefix = ""
-
-	// We don't want to display the heading prefixes:
-	style.H2.Prefix = ""
-	style.H3.Prefix = ""
-	style.H4.Prefix = ""
-	style.H5.Prefix = ""
-	style.H6.Prefix = ""
-
-	// For code inside paragraphs, we don't want to change the background color or add prefixes and suffixes:
-	style.Code.BackgroundColor = nil
-	style.Code.Prefix = ""
-	style.Code.Suffix = ""
-
 	// Set the help function for the command and all its subcommands. The renderer is created each time the
 	// help is displayed, so that it can adapt to the current terminal width.
 	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
-		// If the output is a terminal, we want to adjust the width of the terminal, but never more than the
-		// maximun width that we consider readable:
-		out := c.OutOrStdout()
-		var width int
-		file, ok := out.(*os.File)
-		if ok {
-			fd := int(file.Fd())
-			if term.IsTerminal(fd) {
-				width, _, err = term.GetSize(fd)
-				if err != nil {
-					c.PrintErrln("Error getting terminal size:", err)
-					return
-				}
-			}
+		// Create the renderer:
+		out := cmd.OutOrStdout()
+		renderer, err := terminal.NewRendererBuilder().
+			SetWriter(out).
+			Build()
+		if err != nil {
+			c.PrintErrln("Failed to create help renderer:", err)
+			return
 		}
-		width = min(width, maxReadableWidth)
 
-		// Render the help output:
+		// Render the text:
 		var buffer bytes.Buffer
 		err = engine.Execute(&buffer, "command_help.md", c)
 		if err != nil {
 			c.PrintErrln("Error executing help template:", err)
-			return
-		}
-		renderer, err := glamour.NewTermRenderer(
-			glamour.WithStyles(style),
-			glamour.WithWordWrap(width),
-		)
-		if err != nil {
-			c.PrintErrln("Error creating renderer:", err)
 			return
 		}
 		text, err := renderer.Render(buffer.String())
@@ -116,9 +71,11 @@ func Setup(cmd *cobra.Command) {
 			c.Print(buffer.String())
 			return
 		}
+
+		// Display the text:
 		_, err = lipgloss.Fprint(out, text)
 		if err != nil {
-			c.PrintErrln("Error writing help output:", err)
+			c.PrintErrln("Failed to render help output:", err)
 			return
 		}
 	})
@@ -135,6 +92,3 @@ func flagsFunc(fs *pflag.FlagSet) []*pflag.Flag {
 	})
 	return result
 }
-
-// maxReadableWidth is the maximum width for help output that we consider readable.
-const maxReadableWidth = 100

@@ -1,0 +1,21 @@
+There are issues with the template parameters:
+
+{{ range .Issues }}
+- {{ . -}}
+{{ end }}
+
+{{ if .Parameters }}
+Valid parameters are the following:
+
+{{ range .Parameters }}
+- {{ .Name }} - {{ .Type }}{{ if .Title }} - {{ .Title }}{{ end -}}
+{{ end }}
+
+For more details about the template parameters, run the following command:
+{{ end }}
+
+```shell
+{{ binary }} get computeinstancetemplate {{ .Template }} -o yaml
+```
+
+Use the `--help` option to get more details about the command.

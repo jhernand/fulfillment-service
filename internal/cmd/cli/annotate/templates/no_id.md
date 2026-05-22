@@ -1,0 +1,6 @@
+You must specify the identifier or name of the object to annotate. For example, to annotate the
+cluster with identifier `123`:
+
+```shell
+{{ binary }} annotate cluster 123 my-annotation=my-value
+```

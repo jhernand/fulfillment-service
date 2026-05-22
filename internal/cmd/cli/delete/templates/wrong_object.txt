@@ -1,3 +1,0 @@
-There is no object named '{{ .Object }}'.
-
-{{ execute "object_list.txt" . }}

@@ -23,8 +23,11 @@ import (
 	iofs "io/fs"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
@@ -49,11 +52,12 @@ type ConsoleBuilder struct {
 // Console is helps writing messages to the console. Don't create objects of this type directly, use the NewConsole
 // function instead.
 type Console struct {
-	logger *slog.Logger
-	stdout io.Writer
-	stderr io.Writer
-	engine *templating.Engine
-	helper *reflection.Helper
+	logger   *slog.Logger
+	stdout   io.Writer
+	stderr   io.Writer
+	engine   *templating.Engine
+	helper   *reflection.Helper
+	renderer *glamour.TermRenderer
 }
 
 // NewConsole creates a builder that can the be used to create a template engine.
@@ -117,11 +121,19 @@ func (b *ConsoleBuilder) Build() (result *Console, err error) {
 	// Create the template engine:
 	console.engine, err = templating.NewEngine().
 		SetLogger(b.logger).
-		AddFunction("binary", console.binaryFunc).
 		AddFunction("table", console.tableFunc).
 		Build()
 	if err != nil {
 		err = fmt.Errorf("failed to create templating engine: %w", err)
+		return
+	}
+
+	// Create the renderer:
+	console.renderer, err = NewRendererBuilder().
+		SetWriter(stdout).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create help renderer: %w", err)
 		return
 	}
 
@@ -196,7 +208,7 @@ func (c *Console) Stderr() io.Writer {
 
 // Render renders the given template with the given data to stdout. The template should be a template file name that
 // was added via AddTemplatesFS. If no template file systems have been added, this method will log an error.
-func (c *Console) Render(ctx context.Context, template string, data any) {
+func (c *Console) RenderOld(ctx context.Context, template string, data any) {
 	var buffer bytes.Buffer
 	err := c.engine.Execute(&buffer, template, data)
 	if err != nil {
@@ -236,6 +248,79 @@ func (c *Console) Render(ctx context.Context, template string, data any) {
 				)
 			}
 			previousEmpty = false
+		}
+	}
+}
+
+// RenderMarkdown renders the given Markdown template with the given data to stdout. The template should be a template
+// file name that was added via AddTemplatesFS. If no template file systems have been added, this method will log an
+// error.
+func (c *Console) Render(ctx context.Context, template string, data any) {
+	// Render the Markdown text:
+	var buffer bytes.Buffer
+	err := c.engine.Execute(&buffer, template, data)
+	if err != nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to execute template",
+			slog.String("template", template),
+			slog.Any("error", err),
+		)
+		return
+	}
+	text := buffer.String()
+
+	// Convert the Markdown text to text suitable for the console:
+	text, err = c.renderer.Render(text)
+	if err != nil {
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to render Markdown",
+			slog.String("template", template),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	// Load the lines of text from the buffer:
+	lines := strings.Split(text, "\n")
+
+	// Find tables and remove the leading space and the row separator. Load the lines of text from the buffer. To do
+	// this we assume that tables are rendered using a line containing only the '─' character to separate the header
+	// from the body, we locate those liens and then remove them and the leading space from the rows.
+	i := 0
+	for i < len(lines) {
+		// If the line is not a row separator, then we can skip it:
+		if !rowSeparatorRegex.MatchString(lines[i]) {
+			i++
+			continue
+		}
+
+		// Remove the leading space from the previous line, which we assume is the table header:
+		if i > 0 && len(lines[i-1]) > 0 {
+			lines[i-1] = strings.TrimPrefix(lines[i-1], " ")
+		}
+
+		// Remove this row separator:
+		lines = append(lines[:i], lines[i+1:]...)
+
+		// Remove the leading space from the rows:
+		for i < len(lines) && len(lines[i]) > 0 {
+			lines[i] = strings.TrimPrefix(lines[i], " ")
+			i++
+		}
+	}
+
+	// Write the text to the console:
+	for _, line := range lines {
+		_, err = lipgloss.Fprintln(c.stdout, line)
+		if err != nil {
+			c.logger.ErrorContext(
+				ctx,
+				"Failed to write Markdown line",
+				slog.String("template", template),
+				slog.Any("error", err),
+			)
 		}
 	}
 }
@@ -352,13 +437,10 @@ func (c *Console) tableFunc(objects any) (result string, err error) {
 	return
 }
 
-// binaryFunc is a template function that returns the name of the binary.
-func (c *Console) binaryFunc() string {
-	return os.Args[0]
-}
-
 // Details of the color style and formatter used by the console.
 const (
 	colorStyleName     = "friendly"
 	colorFormatterName = "terminal256"
 )
+
+var rowSeparatorRegex = regexp.MustCompile(`^─*$`)

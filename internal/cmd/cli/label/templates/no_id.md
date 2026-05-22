@@ -1,0 +1,6 @@
+You must specify the identifier or name of the object to label. For example, to label the cluster
+with identifier `123`:
+
+```shell
+{{ binary }} label cluster 123 my-label=my-value
+```

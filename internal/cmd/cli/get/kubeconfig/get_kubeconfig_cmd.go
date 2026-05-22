@@ -105,7 +105,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	// Check the flags:
 	if key == "" {
-		c.console.Render(ctx, "no_key.txt", nil)
+		c.console.Render(ctx, "no_key.md", nil)
 		return exit.Error(1)
 	}
 
@@ -127,7 +127,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	var cluster *publicv1.Cluster
 	switch {
 	case total == 0:
-		c.console.Render(ctx, "no_match.txt", map[string]any{
+		c.console.Render(ctx, "no_match.md", map[string]any{
 			"Key": key,
 		})
 		return exit.Error(1)
@@ -140,7 +140,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		}
 		sort.Strings(ids)
 		ids = slices.Compact(ids)
-		c.console.Render(ctx, "multiple_matches.txt", map[string]any{
+		c.console.Render(ctx, "multiple_matches.md", map[string]any{
 			"Ids":   ids,
 			"Key":   key,
 			"Total": total,

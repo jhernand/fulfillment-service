@@ -1,0 +1,9 @@
+No objects of type `{{ .Object }}` were found matching identifier or name `{{ .Ref }}`.
+
+Use the `get` command to list all available objects of this type:
+
+```shell
+{{ binary }} get {{ .Object }}
+```
+
+Use the `--help` option to get more details about the command.

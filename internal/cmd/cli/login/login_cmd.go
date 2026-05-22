@@ -276,7 +276,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	// Check if the plaintext flag has been explcitly set, and if it conflicts with the result of parsing the
 	// address. If it does conflict, then explain the issue to the user.
 	if c.flags.Changed("plaintext") && c.plaintext != c.args.plaintext {
-		c.console.Render(ctx, "plaintext_conflict.txt", map[string]any{
+		c.console.Render(ctx, "plaintext_conflict.md", map[string]any{
 			"Address":   c.address,
 			"Plaintext": c.plaintext,
 		})
@@ -561,7 +561,7 @@ func (l *oauthFlowListener) Start(ctx context.Context, event oauth.FlowStartEven
 }
 
 func (l *oauthFlowListener) startCodeFlow(ctx context.Context, event oauth.FlowStartEvent) error {
-	l.runner.console.Render(ctx, "start_code_flow.txt", map[string]any{
+	l.runner.console.Render(ctx, "start_code_flow.md", map[string]any{
 		"AuthorizationUri": event.AuthorizationUri,
 	})
 	return nil
@@ -578,7 +578,7 @@ func (l *oauthFlowListener) startDeviceFlow(ctx context.Context, event oauth.Flo
 	// Calculate the expiration time to show to the user::
 	now := time.Now()
 	expiresIn := humanize.RelTime(now, now.Add(event.ExpiresIn), "from now", "")
-	l.runner.console.Render(ctx, "start_device_flow.txt", map[string]any{
+	l.runner.console.Render(ctx, "start_device_flow.md", map[string]any{
 		"VerificationUri": verficationUri,
 		"UserCode":        event.UserCode,
 		"ExpiresIn":       expiresIn,
@@ -588,9 +588,9 @@ func (l *oauthFlowListener) startDeviceFlow(ctx context.Context, event oauth.Flo
 
 func (l *oauthFlowListener) End(ctx context.Context, event oauth.FlowEndEvent) error {
 	if event.Outcome {
-		l.runner.console.Render(ctx, "auth_success.txt", nil)
+		l.runner.console.Render(ctx, "auth_success.md", nil)
 	} else {
-		l.runner.console.Render(ctx, "auth_failure.txt", nil)
+		l.runner.console.Render(ctx, "auth_failure.md", nil)
 	}
 	return nil
 }
