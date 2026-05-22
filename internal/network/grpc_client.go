@@ -14,6 +14,7 @@ language governing permissions and limitations under the License.
 package network
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -28,10 +29,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	experiementalcredentials "google.golang.org/grpc/experimental/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/status"
 )
 
 // GrpcClientBuilder contains the data and logic needed to create a gRPC client. Don't create instances of this object
@@ -365,6 +368,18 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 	unaryInterceptors := b.unaryInterceptors
 	streamInterceptors := b.streamInterceptors
 
+	// When a token source is configured, add interceptors that retry the request once when the server
+	// returns Unauthenticated. This handles the case where the cached token has expired or been revoked:
+	// the interceptor invalidates it and lets the next attempt fetch a fresh one via the PerRPCCredentials.
+	if b.tokenSource != nil {
+		retry := &unauthRetryInterceptor{
+			logger:      b.logger,
+			tokenSource: b.tokenSource,
+		}
+		unaryInterceptors = append([]grpc.UnaryClientInterceptor{retry.unary}, unaryInterceptors...)
+		streamInterceptors = append([]grpc.StreamClientInterceptor{retry.stream}, streamInterceptors...)
+	}
+
 	// Add the logging interceptor:
 	loggingInterceptor, err := logging.NewInterceptor().
 		SetLogger(b.logger).
@@ -402,6 +417,52 @@ func (b *GrpcClientBuilder) Build() (result *grpc.ClientConn, err error) {
 
 	// Create the client:
 	result, err = grpc.NewClient(endpoint, options...)
+	return
+}
+
+// unauthRetryInterceptor retries a gRPC call once when the server returns the unauthenticated status code. It
+// invalidates the cached token before retrying.
+type unauthRetryInterceptor struct {
+	logger      *slog.Logger
+	tokenSource auth.TokenSource
+}
+
+func (i *unauthRetryInterceptor) unary(ctx context.Context, method string, request, reply any, cc *grpc.ClientConn,
+	invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	callErr := invoker(ctx, method, request, reply, cc, opts...)
+	if status.Code(callErr) != codes.Unauthenticated {
+		return callErr
+	}
+	invalidateErr := i.tokenSource.Invalidate(ctx)
+	if invalidateErr != nil {
+		i.logger.ErrorContext(
+			ctx,
+			"Failed to invalidate token after unauthenticated response",
+			slog.Any("error", invalidateErr),
+		)
+		return callErr
+	}
+	return invoker(ctx, method, request, reply, cc, opts...)
+}
+
+func (i *unauthRetryInterceptor) stream(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string,
+	streamer grpc.Streamer, opts ...grpc.CallOption) (result grpc.ClientStream, err error) {
+	result, callErr := streamer(ctx, desc, cc, method, opts...)
+	if status.Code(callErr) != codes.Unauthenticated {
+		err = callErr
+		return
+	}
+	invalidateErr := i.tokenSource.Invalidate(ctx)
+	if invalidateErr != nil {
+		i.logger.ErrorContext(
+			ctx,
+			"Failed to invalidate token after unauthenticated response",
+			slog.Any("error", invalidateErr),
+		)
+		err = invalidateErr
+		return
+	}
+	result, err = streamer(ctx, desc, cc, method, opts...)
 	return
 }
 
