@@ -1207,8 +1207,8 @@ var _ = Describe("Private clusters server", func() {
 			})
 
 			DescribeTable("validates editable field against JSON Schema",
-				func(value string, expectError bool) {
-					createCatalogItem("cat-schema-"+value[:5], true, []*privatev1.FieldDefinition{
+				func(catID string, value string, expectError bool) {
+					createCatalogItem(catID, true, []*privatev1.FieldDefinition{
 						privatev1.FieldDefinition_builder{
 							Path:             "pull_secret",
 							Editable:         true,
@@ -1216,10 +1216,10 @@ var _ = Describe("Private clusters server", func() {
 						}.Build(),
 					})
 
-					_, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+					response, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
 						Object: privatev1.Cluster_builder{
 							Spec: privatev1.ClusterSpec_builder{
-								CatalogItem: "cat-schema-" + value[:5],
+								CatalogItem: catID,
 								PullSecret:  proto.String(value),
 							}.Build(),
 							Status: privatev1.ClusterStatus_builder{
@@ -1235,10 +1235,11 @@ var _ = Describe("Private clusters server", func() {
 						Expect(status.Message()).To(ContainSubstring("validation failed for field 'pull_secret'"))
 					} else {
 						Expect(err).ToNot(HaveOccurred())
+						Expect(response.GetObject().GetSpec().GetPullSecret()).To(Equal(value))
 					}
 				},
-				Entry("rejects value below minLength", "short-val", true),
-				Entry("accepts value meeting minLength", "long-enough-value", false),
+				Entry("rejects value below minLength", "cat-schema-reject", "short-val", true),
+				Entry("accepts value meeting minLength", "cat-schema-accept", "long-enough-value", false),
 			)
 
 			It("Applies default for editable field when not provided", func() {

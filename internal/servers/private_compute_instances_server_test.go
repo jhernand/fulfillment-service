@@ -1060,8 +1060,8 @@ var _ = Describe("Private compute instances server", func() {
 			})
 
 			DescribeTable("validates editable field against JSON Schema",
-				func(value string, expectError bool) {
-					createCICatalogItem("ci-cat-schema-"+value[:5], true, []*privatev1.FieldDefinition{
+				func(catID string, value string, expectError bool) {
+					createCICatalogItem(catID, true, []*privatev1.FieldDefinition{
 						privatev1.FieldDefinition_builder{
 							Path:             "ssh_key",
 							Editable:         true,
@@ -1069,10 +1069,10 @@ var _ = Describe("Private compute instances server", func() {
 						}.Build(),
 					})
 
-					_, err := server.Create(ctx, privatev1.ComputeInstancesCreateRequest_builder{
+					response, err := server.Create(ctx, privatev1.ComputeInstancesCreateRequest_builder{
 						Object: privatev1.ComputeInstance_builder{
 							Spec: privatev1.ComputeInstanceSpec_builder{
-								CatalogItem: "ci-cat-schema-" + value[:5],
+								CatalogItem: catID,
 								SshKey:      proto.String(value),
 							}.Build(),
 						}.Build(),
@@ -1085,10 +1085,11 @@ var _ = Describe("Private compute instances server", func() {
 						Expect(status.Message()).To(ContainSubstring("validation failed for field 'ssh_key'"))
 					} else {
 						Expect(err).ToNot(HaveOccurred())
+						Expect(response.GetObject().GetSpec().GetSshKey()).To(Equal(value))
 					}
 				},
-				Entry("rejects value below minLength", "short-val", true),
-				Entry("accepts value meeting minLength", "long-enough-key", false),
+				Entry("rejects value below minLength", "ci-cat-schema-reject", "short-val", true),
+				Entry("accepts value meeting minLength", "ci-cat-schema-accept", "long-enough-key", false),
 			)
 
 			It("Applies default for editable field when not provided", func() {
