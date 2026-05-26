@@ -153,11 +153,15 @@ func (s *PublicIPPoolsServer) List(ctx context.Context,
 	// Apply offset and limit in Go after filtering.
 	total := int32(len(eligible))
 	offset := request.GetOffset()
+	limit := request.GetLimit()
+	if offset < 0 || limit < 0 {
+		return nil, grpcstatus.Errorf(grpccodes.InvalidArgument, "offset and limit must be non-negative")
+	}
 	if offset > total {
 		offset = total
 	}
 	paged := eligible[offset:]
-	if limit := request.GetLimit(); limit > 0 && int32(len(paged)) > limit {
+	if limit > 0 && int32(len(paged)) > limit {
 		paged = paged[:limit]
 	}
 
