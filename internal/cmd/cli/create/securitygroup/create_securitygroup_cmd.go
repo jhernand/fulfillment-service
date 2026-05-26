@@ -281,13 +281,13 @@ Examples:
 
 {{ bt 3 }}shell
 # Create a security group with an HTTP ingress rule
-{{ binary }} create securitygroup --name web-sg --virtual-network vnet-abc123 \
+{{ binary }} create securitygroup --name web-sg --virtual-network <virtualnetwork-id> \
 --ingress protocol=tcp,port-from=80,port-to=80,ipv4-cidr=0.0.0.0/0
 {{ bt 3 }}
 
 {{ bt 3 }}shell
 # Create a security group with multiple rules
-{{ binary }} create securitygroup --name app-sg --virtual-network vnet-abc123 \
+{{ binary }} create securitygroup --name app-sg --virtual-network <virtualnetwork-id> \
 --ingress protocol=tcp,port-from=443,port-to=443,ipv4-cidr=0.0.0.0/0 \
 --ingress protocol=icmp,ipv4-cidr=10.0.0.0/8 \
 --egress protocol=all
