@@ -7,10 +7,34 @@ FROM ${BASE} AS builder
 # Set this to 'true' to build the binary with debugging symbols and disabling optimizations.
 ARG DEBUG=false
 
+# TODO: Currently we install Go from a tarball because the package for UBI 10 seems to be broken:
+#
+# podman build --no-cache .
+# [1/2] STEP 1/9: FROM registry.access.redhat.com/ubi10/ubi:10.1-1773895909 AS builder
+#
+# ...
+# Error:
+#  Problem: package golang-bin-1.26.2-2.el10_2.x86_64 from ubi-10-for-x86_64-appstream-rpms requires gcc, but none of the providers can be installed
+#   - package golang-1.26.2-2.el10_2.x86_64 from ubi-10-for-x86_64-appstream-rpms requires golang-bin = 1.26.2-2.el10_2, but none of the providers can be installed
+#   - package gcc-14.3.1-4.4.el10.x86_64 from ubi-10-for-x86_64-appstream-rpms requires glibc-devel >= 2.2.90-12, but none of the providers can be installed
+#   - conflicting requests
+#   - nothing provides glibc = 2.39-124.el10_2 needed by glibc-devel-2.39-124.el10_2.x86_64 from ubi-10-for-x86_64-appstream-rpms
+# (try to add '--skip-broken' to skip uninstallable packages or '--nobest' to use not only best candidate packages)
+# Error: building at STEP "RUN set -e;   pkgs=(git golang);   dnf install -y "${pkgs[@]}";   dnf clean all -y": while running runtime: exit status 1
+#
+# When there is a solution for that we s hould restore the 'golang' package below, and remove this.
+RUN \
+  curl -Lo /tmp/tarball https://dl.google.com/go/go1.25.10.linux-amd64.tar.gz && \
+  echo 42d4f7a32316aa66591eca7e89867256057a4264451aca10570a715b3637ba70 /tmp/tarball | sha256sum -c && \
+  tar -C /usr/local -x -f /tmp/tarball && \
+  rm /tmp/tarball
+ENV \
+  PATH="${PATH}:/usr/local/go/bin"
+
 # Install packages:
 RUN \
   set -e; \
-  pkgs=(git golang); \
+  pkgs=(git); \
   dnf install -y "${pkgs[@]}"; \
   dnf clean all -y
 
