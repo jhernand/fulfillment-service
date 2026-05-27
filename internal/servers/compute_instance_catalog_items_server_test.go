@@ -254,8 +254,9 @@ var _ = Describe("Compute instance catalog items server", func() {
 		It("Get returns not found for unpublished object", func() {
 			createResponse, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
 				Object: publicv1.ComputeInstanceCatalogItem_builder{
-					Title:    "Unpublished item",
-					Template: "my-ci-template-id",
+					Title:     "Unpublished item",
+					Template:  "my-ci-template-id",
+					Published: false,
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
