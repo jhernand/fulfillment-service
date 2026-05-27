@@ -199,8 +199,9 @@ var _ = Describe("Cluster catalog items server", func() {
 
 			_, err = server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
 				Object: publicv1.ClusterCatalogItem_builder{
-					Title:    "Unpublished item",
-					Template: "my-template-id",
+					Title:     "Unpublished item",
+					Template:  "my-template-id",
+					Published: false,
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -211,11 +212,51 @@ var _ = Describe("Cluster catalog items server", func() {
 			Expect(response.GetItems()[0].GetTitle()).To(Equal("Published item"))
 		})
 
+		It("List with user filter excludes unpublished objects", func() {
+			publishedResponse, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
+				Object: publicv1.ClusterCatalogItem_builder{
+					Title:     "Target published",
+					Template:  "my-template-id",
+					Published: true,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
+				Object: publicv1.ClusterCatalogItem_builder{
+					Title:     "Other published",
+					Template:  "my-template-id",
+					Published: true,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			unpublishedResponse, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
+				Object: publicv1.ClusterCatalogItem_builder{
+					Title:     "Target unpublished",
+					Template:  "my-template-id",
+					Published: false,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			targetID := publishedResponse.GetObject().GetId()
+			unpublishedID := unpublishedResponse.GetObject().GetId()
+			filter := fmt.Sprintf("this.id == '%s' || this.id == '%s'", targetID, unpublishedID)
+			response, err := server.List(ctx, publicv1.ClusterCatalogItemsListRequest_builder{
+				Filter: proto.String(filter),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.GetItems()).To(HaveLen(1))
+			Expect(response.GetItems()[0].GetId()).To(Equal(targetID))
+		})
+
 		It("Get returns not found for unpublished object", func() {
 			createResponse, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
 				Object: publicv1.ClusterCatalogItem_builder{
-					Title:    "Unpublished item",
-					Template: "my-template-id",
+					Title:     "Unpublished item",
+					Template:  "my-template-id",
+					Published: false,
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
