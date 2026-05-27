@@ -36,6 +36,17 @@ type catalogItem interface {
 	GetMetadata() *privatev1.Metadata
 }
 
+const publishedFilter = "this.published == true"
+
+// addPublishedFilter appends a CEL clause that restricts results to published catalog items.
+// Used by public servers to hide unpublished items from end users.
+func addPublishedFilter(filter string) string {
+	if filter == "" {
+		return publishedFilter
+	}
+	return "(" + filter + ") && " + publishedFilter
+}
+
 // applyFieldDefinitions processes field definitions from a catalog item against a resource spec.
 // For non-editable fields: overrides user-provided values with the catalog item default.
 // For editable fields with user values: validates against the JSON Schema.

@@ -126,7 +126,7 @@ func (s *ClusterCatalogItemsServer) List(ctx context.Context,
 	privateRequest := &privatev1.ClusterCatalogItemsListRequest{}
 	privateRequest.SetOffset(request.GetOffset())
 	privateRequest.SetLimit(request.GetLimit())
-	privateRequest.SetFilter(request.GetFilter())
+	privateRequest.SetFilter(addPublishedFilter(request.GetFilter()))
 	privateRequest.SetOrder(request.GetOrder())
 
 	privateResponse, err := s.delegate.List(ctx, privateRequest)
@@ -161,6 +161,10 @@ func (s *ClusterCatalogItemsServer) Get(ctx context.Context,
 	privateResponse, err := s.delegate.Get(ctx, privateRequest)
 	if err != nil {
 		return nil, err
+	}
+
+	if !privateResponse.GetObject().GetPublished() {
+		return nil, grpcstatus.Errorf(grpccodes.NotFound, "catalog item not found")
 	}
 
 	publicCatalogItem := &publicv1.ClusterCatalogItem{}

@@ -19,6 +19,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
@@ -126,8 +128,9 @@ var _ = Describe("Compute instance catalog items server", func() {
 			for i := range count {
 				_, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
 					Object: publicv1.ComputeInstanceCatalogItem_builder{
-						Title:    fmt.Sprintf("CI catalog item %d", i),
-						Template: "my-ci-template-id",
+						Title:     fmt.Sprintf("CI catalog item %d", i),
+						Template:  "my-ci-template-id",
+						Published: true,
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
@@ -144,8 +147,9 @@ var _ = Describe("Compute instance catalog items server", func() {
 			for i := range count {
 				_, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
 					Object: publicv1.ComputeInstanceCatalogItem_builder{
-						Title:    fmt.Sprintf("CI catalog item %d", i),
-						Template: "my-ci-template-id",
+						Title:     fmt.Sprintf("CI catalog item %d", i),
+						Template:  "my-ci-template-id",
+						Published: true,
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
@@ -164,8 +168,9 @@ var _ = Describe("Compute instance catalog items server", func() {
 			for i := range count {
 				response, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
 					Object: publicv1.ComputeInstanceCatalogItem_builder{
-						Title:    fmt.Sprintf("CI catalog item %d", i),
-						Template: "my-ci-template-id",
+						Title:     fmt.Sprintf("CI catalog item %d", i),
+						Template:  "my-ci-template-id",
+						Published: true,
 					}.Build(),
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
@@ -182,12 +187,53 @@ var _ = Describe("Compute instance catalog items server", func() {
 			}
 		})
 
+		It("List excludes unpublished objects", func() {
+			_, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
+				Object: publicv1.ComputeInstanceCatalogItem_builder{
+					Title:     "Published item",
+					Template:  "my-ci-template-id",
+					Published: true,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
+				Object: publicv1.ComputeInstanceCatalogItem_builder{
+					Title:    "Unpublished item",
+					Template: "my-ci-template-id",
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			response, err := server.List(ctx, publicv1.ComputeInstanceCatalogItemsListRequest_builder{}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.GetItems()).To(HaveLen(1))
+			Expect(response.GetItems()[0].GetTitle()).To(Equal("Published item"))
+		})
+
+		It("Get returns not found for unpublished object", func() {
+			createResponse, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
+				Object: publicv1.ComputeInstanceCatalogItem_builder{
+					Title:    "Unpublished item",
+					Template: "my-ci-template-id",
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = server.Get(ctx, publicv1.ComputeInstanceCatalogItemsGetRequest_builder{
+				Id: createResponse.GetObject().GetId(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(status.Code(err)).To(Equal(codes.NotFound))
+		})
+
 		It("Get object", func() {
 			createResponse, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
 				Object: publicv1.ComputeInstanceCatalogItem_builder{
 					Title:       "My CI catalog item",
 					Description: "My description.",
 					Template:    "my-ci-template-id",
+					Published:   true,
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -205,6 +251,7 @@ var _ = Describe("Compute instance catalog items server", func() {
 					Title:       "Original title",
 					Description: "Original description.",
 					Template:    "my-ci-template-id",
+					Published:   true,
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -216,6 +263,7 @@ var _ = Describe("Compute instance catalog items server", func() {
 					Title:       "Updated title",
 					Description: "Updated description.",
 					Template:    "my-ci-template-id",
+					Published:   true,
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -233,8 +281,9 @@ var _ = Describe("Compute instance catalog items server", func() {
 		It("Delete object", func() {
 			createResponse, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
 				Object: publicv1.ComputeInstanceCatalogItem_builder{
-					Title:    "My CI catalog item",
-					Template: "my-ci-template-id",
+					Title:     "My CI catalog item",
+					Template:  "my-ci-template-id",
+					Published: true,
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
