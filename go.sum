@@ -271,8 +271,8 @@ github.com/nwidger/jsoncolor v0.3.2 h1:rVJJlwAWDJShnbTYOQ5RM7yTA20INyKXlJ/fg4JMh
 github.com/nwidger/jsoncolor v0.3.2/go.mod h1:Cs34umxLbJvgBMnVNVqhji9BhoT/N/KinHqZptQ7cf4=
 github.com/onsi/ginkgo/v2 v2.29.0 h1:rfh+ZFjgJhYWRoIqVf3Uwx/W20yLrcrE2h2GmYVRaag=
 github.com/onsi/ginkgo/v2 v2.29.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
-github.com/onsi/gomega v1.40.0 h1:Vtol0e1MghCD2ZVIilPDIg44XSL9l2QAn8ZNaljWcJc=
-github.com/onsi/gomega v1.40.0/go.mod h1:M/Uqpu/8qTjtzCLUA2zJHX9Iilrau25x1PdoSRbWh5A=
+github.com/onsi/gomega v1.41.0 h1:OwKp4pXNgVxf6sCplzYo794OFNuoL2q2SBMU5NSWOjA=
+github.com/onsi/gomega v1.41.0/go.mod h1:M/Uqpu/8qTjtzCLUA2zJHX9Iilrau25x1PdoSRbWh5A=
 github.com/open-policy-agent/opa v1.16.2 h1:5gzbXeioG9TCguGOI9EKigeBP/1ZoD8VH/ca50ihGxI=
 github.com/open-policy-agent/opa v1.16.2/go.mod h1:21uy+TcBM9muN9DvE9B6lcnovwTIBcE2Y9DRscar/uM=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=

@@ -147,7 +147,7 @@ require (
 	github.com/itchyny/gojq v0.12.19
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/onsi/ginkgo/v2 v2.29.0
-	github.com/onsi/gomega v1.40.0
+	github.com/onsi/gomega v1.41.0
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
