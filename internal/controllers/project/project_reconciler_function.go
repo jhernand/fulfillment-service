@@ -204,8 +204,6 @@ func (t *task) validateAndActivate(ctx context.Context) error {
 		}
 	}
 
-	//TODO: Sync project to Openshift Cluster(s)
-
 	// Create Keycloak Authorization Resource
 	if err := t.createKeycloakAuthorizationResource(ctx); err != nil {
 		// Transient error - return it to retry later
@@ -274,6 +272,58 @@ func (t *task) checkCircularDependency(ctx context.Context, parent *privatev1.Pr
 
 // delete performs the deletion cleanup for a project.
 func (t *task) delete(ctx context.Context) error {
+	// Check for child projects before deletion
+	listResp, err := t.r.projectsClient.List(ctx, &privatev1.ProjectsListRequest{
+		//TODO: Update to use metadata.project once OSAC-1064 is implemented
+		Filter: proto.String(fmt.Sprintf("this.spec.parent == '%s'", t.project.GetId())),
+		Limit:  proto.Int32(1), // We only need to know if any exist
+	})
+	if err != nil {
+		// Transient error - retry later
+		return fmt.Errorf("failed to query for child projects: %w", err)
+	}
+
+	// Block deletion if children exist
+	if listResp.GetSize() > 0 {
+		if !t.project.HasStatus() {
+			t.project.SetStatus(&privatev1.ProjectStatus{})
+		}
+		t.project.GetStatus().SetState(privatev1.ProjectState_PROJECT_STATE_DELETE_FAILED)
+		t.project.GetStatus().SetMessage(fmt.Sprintf("Cannot delete project with %d child project(s). Delete children first.", listResp.GetSize()))
+		t.r.logger.WarnContext(ctx, "Cannot delete project with children",
+			slog.String("project_id", t.project.GetId()),
+			slog.Int("child_count", int(listResp.GetSize())),
+		)
+		// Don't remove finalizer - deletion is blocked
+		return nil
+	}
+
+	// Clean up Keycloak authorization resource if it exists
+	if t.project.HasStatus() && t.project.GetStatus().HasKeycloakResourceId() {
+		resourceID := t.project.GetStatus().GetKeycloakResourceId()
+		err := t.r.resourceManager.DeleteAuthorizationResource(ctx, resourceID)
+		if err != nil {
+			// Log warning but don't block deletion - resource might already be gone
+			t.r.logger.WarnContext(ctx, "Failed to delete Keycloak authorization resource",
+				slog.String("project_id", t.project.GetId()),
+				slog.String("resource_id", resourceID),
+				slog.Any("error", err),
+			)
+			// Update condition to reflect deletion failure
+			t.updateCondition(
+				privatev1.ProjectConditionType_PROJECT_CONDITION_TYPE_KEYCLOAK_SYNC,
+				privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
+				"DeletionFailed",
+				fmt.Sprintf("Failed to delete Keycloak authorization resource: %v", err),
+			)
+		} else {
+			t.r.logger.InfoContext(ctx, "Deleted Keycloak authorization resource",
+				slog.String("project_id", t.project.GetId()),
+				slog.String("resource_id", resourceID),
+			)
+		}
+	}
+
 	t.removeFinalizer()
 	return nil
 }
@@ -303,6 +353,12 @@ func (t *task) createKeycloakAuthorizationResource(ctx context.Context) error {
 		// Return error to trigger retry (could be transient)
 		return fmt.Errorf("failed to create Keycloak authorization resource: %w", err)
 	}
+
+	// Store resource ID in status for deletion cleanup
+	if !t.project.HasStatus() {
+		t.project.SetStatus(&privatev1.ProjectStatus{})
+	}
+	t.project.GetStatus().SetKeycloakResourceId(resourceID)
 
 	// Update condition with success
 	t.updateCondition(

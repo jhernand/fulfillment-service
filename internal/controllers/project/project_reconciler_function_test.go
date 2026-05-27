@@ -21,6 +21,7 @@ import (
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/controllers/finalizers"
@@ -221,6 +222,41 @@ var _ = Describe("Validation and Activation", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(project.GetStatus().GetState()).To(Equal(privatev1.ProjectState_PROJECT_STATE_ACTIVE))
 			Expect(project.GetStatus().HasMessage()).To(BeFalse())
+		})
+
+		It("should store Keycloak resource ID in status", func() {
+			project := privatev1.Project_builder{
+				Id: "project-1",
+				Metadata: privatev1.Metadata_builder{
+					Name:   "test-project",
+					Tenant: "acme",
+				}.Build(),
+				Spec: privatev1.ProjectSpec_builder{
+					Title: "Test Project",
+				}.Build(),
+				Status: privatev1.ProjectStatus_builder{
+					State: privatev1.ProjectState_PROJECT_STATE_PENDING,
+				}.Build(),
+			}.Build()
+
+			// Expect authorization resource creation
+			mockIdpClient.EXPECT().
+				CreateAuthorizationResource(gomock.Any(), gomock.Any()).
+				Return(&idp.AuthorizationResource{
+					ID:   "resource-abc-123",
+					Name: "PROJECT-acme-test-project",
+				}, nil)
+
+			task := &task{
+				r:       functionObj,
+				project: project,
+			}
+
+			err := task.validateAndActivate(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			// Verify resource ID is stored in status
+			Expect(project.GetStatus().HasKeycloakResourceId()).To(BeTrue())
+			Expect(project.GetStatus().GetKeycloakResourceId()).To(Equal("resource-abc-123"))
 		})
 	})
 
@@ -614,6 +650,230 @@ var _ = Describe("Validation and Activation", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(project.GetStatus().GetState()).To(Equal(privatev1.ProjectState_PROJECT_STATE_FAILED))
 		})
+	})
+})
+
+var _ = Describe("Deletion Cleanup", func() {
+	var (
+		ctrl            *gomock.Controller
+		mockClient      *MockProjectsClient
+		mockIdpClient   *idp.MockClient
+		resourceManager *idp.ResourceManager
+		ctx             context.Context
+		functionObj     *function
+	)
+
+	BeforeEach(func() {
+		ctrl = gomock.NewController(GinkgoT())
+		mockClient = NewMockProjectsClient(ctrl)
+		mockIdpClient = idp.NewMockClient(ctrl)
+		ctx = context.Background()
+
+		var err error
+		resourceManager, err = idp.NewResourceManager().
+			SetLogger(logger).
+			SetClient(mockIdpClient).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		functionObj = &function{
+			logger:          logger,
+			projectsClient:  mockClient,
+			resourceManager: resourceManager,
+		}
+	})
+
+	AfterEach(func() {
+		ctrl.Finish()
+	})
+
+	It("should block deletion when child projects exist", func() {
+		project := privatev1.Project_builder{
+			Id: "parent-1",
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+			}.Build(),
+			Status: privatev1.ProjectStatus_builder{}.Build(),
+		}.Build()
+
+		// Expect query for children
+		mockClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.ProjectsListResponse{
+				Size: 2, // Has 2 children
+			}, nil)
+
+		task := &task{
+			r:       functionObj,
+			project: project,
+		}
+
+		err := task.delete(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		// State should be DELETE_FAILED
+		Expect(project.GetStatus().GetState()).To(Equal(privatev1.ProjectState_PROJECT_STATE_DELETE_FAILED))
+		Expect(project.GetStatus().GetMessage()).To(ContainSubstring("Cannot delete project with 2 child project(s)"))
+		// Finalizer should NOT be removed
+		Expect(project.GetMetadata().GetFinalizers()).To(ContainElement(finalizers.Controller))
+	})
+
+	It("should delete Keycloak authorization resource when no children exist", func() {
+		project := privatev1.Project_builder{
+			Id: "project-1",
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+			}.Build(),
+			Status: privatev1.ProjectStatus_builder{
+				KeycloakResourceId: proto.String("resource-123"),
+			}.Build(),
+		}.Build()
+
+		// Expect query for children (returns 0)
+		mockClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.ProjectsListResponse{
+				Size: 0,
+			}, nil)
+
+		// Expect deletion call
+		mockIdpClient.EXPECT().
+			DeleteAuthorizationResource(gomock.Any(), "resource-123").
+			Return(nil)
+
+		task := &task{
+			r:       functionObj,
+			project: project,
+		}
+
+		err := task.delete(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(project.GetMetadata().GetFinalizers()).ToNot(ContainElement(finalizers.Controller))
+	})
+
+	It("should remove finalizer even if Keycloak deletion fails", func() {
+		project := privatev1.Project_builder{
+			Id: "project-1",
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+			}.Build(),
+			Status: privatev1.ProjectStatus_builder{
+				KeycloakResourceId: proto.String("resource-456"),
+			}.Build(),
+		}.Build()
+
+		// Expect query for children (returns 0)
+		mockClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.ProjectsListResponse{
+				Size: 0,
+			}, nil)
+
+		// Expect deletion call that fails
+		mockIdpClient.EXPECT().
+			DeleteAuthorizationResource(gomock.Any(), "resource-456").
+			Return(status.Error(codes.NotFound, "resource not found"))
+
+		task := &task{
+			r:       functionObj,
+			project: project,
+		}
+
+		err := task.delete(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		// Finalizer should still be removed even though Keycloak deletion failed
+		Expect(project.GetMetadata().GetFinalizers()).ToNot(ContainElement(finalizers.Controller))
+		// Condition should be updated to reflect failure
+		conditions := project.GetStatus().GetConditions()
+		var keycloakCondition *privatev1.ProjectCondition
+		for _, cond := range conditions {
+			if cond.GetType() == privatev1.ProjectConditionType_PROJECT_CONDITION_TYPE_KEYCLOAK_SYNC {
+				keycloakCondition = cond
+				break
+			}
+		}
+		Expect(keycloakCondition).ToNot(BeNil())
+		Expect(keycloakCondition.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_FALSE))
+		Expect(keycloakCondition.GetReason()).To(Equal("DeletionFailed"))
+	})
+
+	It("should skip Keycloak deletion if no resource ID annotation exists", func() {
+		project := privatev1.Project_builder{
+			Id: "project-1",
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+			}.Build(),
+		}.Build()
+
+		// Expect query for children (returns 0)
+		mockClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.ProjectsListResponse{
+				Size: 0,
+			}, nil)
+
+		// No IDP client calls expected
+
+		task := &task{
+			r:       functionObj,
+			project: project,
+		}
+
+		err := task.delete(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(project.GetMetadata().GetFinalizers()).ToNot(ContainElement(finalizers.Controller))
+	})
+
+	It("should skip Keycloak deletion if resource ID is not set", func() {
+		project := privatev1.Project_builder{
+			Id: "project-1",
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+			}.Build(),
+			Status: privatev1.ProjectStatus_builder{}.Build(),
+		}.Build()
+
+		// Expect query for children (returns 0)
+		mockClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.ProjectsListResponse{
+				Size: 0,
+			}, nil)
+
+		// No IDP client calls expected
+
+		task := &task{
+			r:       functionObj,
+			project: project,
+		}
+
+		err := task.delete(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(project.GetMetadata().GetFinalizers()).ToNot(ContainElement(finalizers.Controller))
+	})
+
+	It("should return error if querying for children fails", func() {
+		project := privatev1.Project_builder{
+			Id: "project-1",
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+			}.Build(),
+		}.Build()
+
+		// Expect query for children to fail
+		mockClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(nil, status.Error(codes.Unavailable, "database unavailable"))
+
+		task := &task{
+			r:       functionObj,
+			project: project,
+		}
+
+		err := task.delete(ctx)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("failed to query for child projects"))
+		// Finalizer should NOT be removed on error
+		Expect(project.GetMetadata().GetFinalizers()).To(ContainElement(finalizers.Controller))
 	})
 })
 
