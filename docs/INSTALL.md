@@ -588,8 +588,8 @@ full reference.
 Install the Keycloak custom resource definitions:
 
 ```shell
-oc apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.6.0/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
-oc apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.6.0/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
+oc apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.6.2/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
+oc apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.6.2/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
 ```
 
 Install the operator deployment in the `keycloak` namespace. The operator watches the namespace
@@ -599,7 +599,7 @@ where it is installed, so the Keycloak instance will also be created there:
 oc new-project keycloak || true
 
 oc apply -n keycloak \
--f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.6.0/kubernetes/kubernetes.yml
+-f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.6.2/kubernetes/kubernetes.yml
 ```
 
 Wait for the operator to be ready:

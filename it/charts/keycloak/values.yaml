@@ -38,7 +38,7 @@ admin:
 
 # Image configuration:
 images:
-  keycloak: quay.io/keycloak/keycloak:26.3
+  keycloak: quay.io/keycloak/keycloak:26.6.2
 
 # Database connection configuration. Keycloak expects an external PostgreSQL database to be available. The database
 # should be created before installing this chart.
