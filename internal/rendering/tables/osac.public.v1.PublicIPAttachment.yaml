@@ -19,9 +19,12 @@ columns:
 - header: NAME
   value: "has(this.metadata.name)? this.metadata.name: '-'"
 
-- header: CIDRS
-  value: "size(this.spec.cidrs) > 0? this.spec.cidrs.join(', '): '-'"
+- header: PUBLIC-IP
+  value: this.spec.public_ip
 
-- header: IP-FAMILY
-  value: this.spec.ip_family
-  type: osac.public.v1.IPFamily
+- header: COMPUTE-INSTANCE
+  value: "has(this.spec.compute_instance)? this.spec.compute_instance: '-'"
+
+- header: STATE
+  value: this.status.state
+  type: osac.public.v1.PublicIPAttachmentState

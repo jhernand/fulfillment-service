@@ -17,15 +17,15 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/database"
-	"github.com/osac-project/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Public IP pools server", func() {
@@ -40,19 +40,22 @@ var _ = Describe("Public IP pools server", func() {
 
 		ctx = context.Background()
 
+		// Prepare the database pool:
 		db, err := server.NewInstance().Build()
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(db.Close)
-		pool, err := pgxpool.New(ctx, db.Url())
+		pool, err := db.Pool(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(pool.Close)
 
+		// Create the transaction manager:
 		tm, err := database.NewTxManager().
 			SetLogger(logger).
 			SetPool(pool).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
+		// Start a transaction and add it to the context:
 		tx, err = tm.Begin(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() {
@@ -60,9 +63,6 @@ var _ = Describe("Public IP pools server", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 		ctx = database.TxIntoContext(ctx, tx)
-
-		err = dao.CreateTables[*privatev1.PublicIPPool](ctx)
-		Expect(err).ToNot(HaveOccurred())
 
 		// The private server is used to seed pool data for list/get tests.
 		privatePool, err = NewPrivatePublicIPPoolsServer().
@@ -139,6 +139,7 @@ var _ = Describe("Public IP pools server", func() {
 			Expect(err).ToNot(HaveOccurred())
 			pool := createResp.GetObject()
 			pool.GetStatus().SetState(state)
+			pool.GetStatus().SetAvailable(256)
 			updateResp, err := privatePool.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
 				Object: pool,
 			}.Build())
@@ -215,27 +216,46 @@ var _ = Describe("Public IP pools server", func() {
 			Expect(response.GetTotal()).To(Equal(int32(count)))
 		})
 
-		It("Gets a pool by ID regardless of state", func() {
-			createResp, err := privatePool.Create(ctx, privatev1.PublicIPPoolsCreateRequest_builder{
-				Object: privatev1.PublicIPPool_builder{
-					Metadata: privatev1.Metadata_builder{Name: "my-pool"}.Build(),
-					Spec: privatev1.PublicIPPoolSpec_builder{
-						Cidrs:    []string{"192.168.1.0/24"},
-						IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
-					}.Build(),
-				}.Build(),
+		It("Lists ready pools with offset and limit", func() {
+			const count = 5
+			for i := range count {
+				makePool(fmt.Sprintf("pool-%d", i), fmt.Sprintf("10.%d.0.0/24", i),
+					privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_READY)
+			}
+
+			response, err := publicPool.List(ctx, publicv1.PublicIPPoolsListRequest_builder{
+				Offset: proto.Int32(2),
+				Limit:  proto.Int32(2),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			id := createResp.GetObject().GetId()
+			Expect(response.GetItems()).To(HaveLen(2))
+			Expect(response.GetSize()).To(Equal(int32(2)))
+			Expect(response.GetTotal()).To(Equal(int32(count)))
+		})
+
+		It("Gets a ready pool by ID", func() {
+			pool := makePool("my-pool", "192.168.1.0/24",
+				privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_READY)
 
 			getResp, err := publicPool.Get(ctx, publicv1.PublicIPPoolsGetRequest_builder{
-				Id: id,
+				Id: pool.GetId(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(getResp.GetObject().GetId()).To(Equal(id))
+			Expect(getResp.GetObject().GetId()).To(Equal(pool.GetId()))
 			Expect(getResp.GetObject().GetMetadata().GetName()).To(Equal("my-pool"))
 			Expect(getResp.GetObject().GetSpec().GetCidrs()).To(ConsistOf("192.168.1.0/24"))
 			Expect(getResp.GetObject().GetSpec().GetIpFamily()).To(Equal(publicv1.IPFamily_IP_FAMILY_IPV4))
+		})
+
+		It("Returns not found for pool in PENDING state", func() {
+			pool := makePool("pending-pool", "10.0.0.0/24",
+				privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_PENDING)
+
+			_, err := publicPool.Get(ctx, publicv1.PublicIPPoolsGetRequest_builder{
+				Id: pool.GetId(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(grpcstatus.Code(err)).To(Equal(grpccodes.NotFound))
 		})
 
 		It("Returns not found for non-existent pool", func() {

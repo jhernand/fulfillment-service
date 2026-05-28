@@ -127,6 +127,13 @@ func (b *PublicIPPoolsServerBuilder) Build() (result *PublicIPPoolsServer, err e
 	return
 }
 
+// isPoolPubliclyVisible returns true when a pool should be exposed via the public API.
+// A pool is visible when it is in the READY state and has available capacity.
+func isPoolPubliclyVisible(p *privatev1.PublicIPPool) bool {
+	return p.GetStatus().GetState() == privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_READY &&
+		p.GetStatus().GetAvailable() > 0
+}
+
 func (s *PublicIPPoolsServer) List(ctx context.Context,
 	request *publicv1.PublicIPPoolsListRequest) (response *publicv1.PublicIPPoolsListResponse, err error) {
 	// Fetch all pools matching the user's filter from the private server without a limit, so that
@@ -144,8 +151,7 @@ func (s *PublicIPPoolsServer) List(ctx context.Context,
 	// The CEL filter translator does not support enum fields, so this check must be done in Go.
 	var eligible []*privatev1.PublicIPPool
 	for _, p := range privateResponse.GetItems() {
-		if p.GetStatus().GetState() == privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_READY &&
-			p.GetStatus().GetAvailable() > 0 {
+		if isPoolPubliclyVisible(p) {
 			eligible = append(eligible, p)
 		}
 	}
@@ -193,8 +199,16 @@ func (s *PublicIPPoolsServer) Get(ctx context.Context,
 		return nil, err
 	}
 
+	pool := privateResponse.GetObject()
+	if !isPoolPubliclyVisible(pool) {
+		s.logger.DebugContext(ctx, "Pool not eligible for public API",
+			slog.String("id", request.GetId()),
+		)
+		return nil, grpcstatus.Errorf(grpccodes.NotFound, "public IP pool not found")
+	}
+
 	publicPool := &publicv1.PublicIPPool{}
-	err = s.outMapper.Copy(ctx, privateResponse.GetObject(), publicPool)
+	err = s.outMapper.Copy(ctx, pool, publicPool)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to map private public IP pool to public", slog.Any("error", err))
 		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process public IP pool")
