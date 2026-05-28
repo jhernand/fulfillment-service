@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/controllers/finalizers"
 	"github.com/osac-project/fulfillment-service/internal/idp"
 	"github.com/osac-project/fulfillment-service/internal/masks"
@@ -164,7 +165,8 @@ func (t *task) syncToIDP(ctx context.Context) error {
 
 	orgName := t.organization.GetMetadata().GetName()
 	config := &idp.OrganizationConfig{
-		Name: orgName,
+		Name:    orgName,
+		Enabled: new(!t.isBuiltin()),
 	}
 
 	credentials, err := t.r.idpManager.CreateOrganization(ctx, config)
@@ -237,6 +239,13 @@ func (t *task) removeFinalizer() {
 		})
 		t.organization.GetMetadata().SetFinalizers(list)
 	}
+}
+
+// isBuiltin returns true if the organization is a builtin organization that should not be user-accessible in the
+// identity provider. Builtin organizations like "shared" and "system" are created disabled.
+func (t *task) isBuiltin() bool {
+	name := t.organization.GetMetadata().GetName()
+	return name == auth.SharedTenant || name == auth.SystemTenant
 }
 
 // delete performs the deletion cleanup for an organization.
