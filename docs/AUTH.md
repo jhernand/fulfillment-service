@@ -446,7 +446,7 @@ Example with a JWT user:
   - She can see clusters from: `["team-a", "team-b", "shared"]`
 
 Example with a service account:
-- Service account `system:serviceaccount:osac:controller`
+- Service account `system:serviceaccount:osac:client`
 - Authorino extracts the namespace `osac` as the tenant: `["osac"]`
 - Assignable tenants: `["osac"]`
 - Default tenant: `"osac"`
@@ -513,7 +513,6 @@ The authorization policy distinguishes between two types of subjects:
 
 1. **Admin Subjects**: Service accounts with administrative privileges
    - `system:serviceaccount:<namespace>:admin`
-   - `system:serviceaccount:<namespace>:controller`
 
 2. **Client Subjects**: All other authenticated users (JWT tokens
    from Keycloak or other service accounts)
@@ -566,7 +565,6 @@ Example: To add a new admin subject, add it to the `admin_subjects` set:
 ```rego
 admin_subjects := {
   "system:serviceaccount:osac:admin",
-  "system:serviceaccount:osac:controller",
   "system:serviceaccount:osac:new-admin",  # New admin
 }
 ```
@@ -767,8 +765,7 @@ The fulfillment service does not have an explicit "role" concept, but it disting
 
 1. **Admin Users**:
    - Defined by service account names in the Rego policy
-   - Currently: `system:serviceaccount:<namespace>:admin` and
-     `system:serviceaccount:<namespace>:controller`
+   - Currently: `system:serviceaccount:<namespace>:admin`
    - Have full access to all operations
 
 2. **Client Users**:
@@ -874,8 +871,7 @@ Test that authorization rules are working:
    - Verify denial of admin-only methods
 
 2. **Test as an admin** (should have full access):
-   - Use a service account token from the `admin` or `controller`
-     service account
+   - Use a service account token from the `admin` service account
    - Verify access to all methods
 
 ## Troubleshooting
