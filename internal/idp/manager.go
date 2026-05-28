@@ -79,6 +79,9 @@ type OrganizationConfig struct {
 	// DisplayName is the human-readable name
 	DisplayName string
 
+	// Enabled indicates whether the organization should be enabled in the identity provider. Nil defaults to true.
+	Enabled *bool
+
 	// BreakGlassUsername is the username for the break-glass account
 	// If empty, defaults to "osac-break-glass"
 	BreakGlassUsername string
@@ -147,10 +150,14 @@ func (m *OrganizationManager) CreateOrganization(ctx context.Context, config *Or
 	}()
 
 	// Step 1: Create the organization
+	enabled := true
+	if config.Enabled != nil {
+		enabled = *config.Enabled
+	}
 	org := &Organization{
 		Name:        config.Name,
 		DisplayName: config.DisplayName,
-		Enabled:     true,
+		Enabled:     enabled,
 	}
 	createdOrg, err := m.client.CreateOrganization(ctx, org)
 	if err != nil {

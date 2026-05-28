@@ -278,6 +278,7 @@ var _ = Describe("OrganizationManager", func() {
 			config := &OrganizationConfig{
 				Name:               "test-org",
 				DisplayName:        "Test Organization",
+				Enabled:            new(true),
 				BreakGlassPassword: "breakglass123",
 			}
 
@@ -288,6 +289,7 @@ var _ = Describe("OrganizationManager", func() {
 			// Verify realm was created
 			Expect(mock.createdRealm).ToNot(BeNil())
 			Expect(mock.createdRealm.Name).To(Equal("test-org"))
+			Expect(mock.createdRealm.Enabled).To(BeTrue())
 
 			// Verify break-glass user was created
 			Expect(mock.createdUsers).To(HaveLen(1))
@@ -308,10 +310,28 @@ var _ = Describe("OrganizationManager", func() {
 			Expect(breakGlassUser.Credentials[0].Temporary).To(BeTrue())
 		})
 
+		It("creates a disabled organization when Enabled is false", func() {
+			config := &OrganizationConfig{
+				Name:               "test-org",
+				DisplayName:        "Test Organization",
+				Enabled:            new(false),
+				BreakGlassPassword: "breakglass123",
+			}
+
+			credentials, err := manager.CreateOrganization(ctx, config)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(credentials).ToNot(BeNil())
+
+			Expect(mock.createdRealm).ToNot(BeNil())
+			Expect(mock.createdRealm.Name).To(Equal("test-org"))
+			Expect(mock.createdRealm.Enabled).To(BeFalse())
+		})
+
 		It("assigns IdP manager roles to break-glass account", func() {
 			config := &OrganizationConfig{
 				Name:               "test-org",
 				DisplayName:        "Test Organization",
+				Enabled:            new(true),
 				BreakGlassPassword: "breakglass123",
 			}
 
@@ -357,6 +377,7 @@ var _ = Describe("OrganizationManager", func() {
 			config := &OrganizationConfig{
 				Name:               "test-org",
 				DisplayName:        "Test Organization",
+				Enabled:            new(true),
 				BreakGlassUsername: "custom-break-glass",
 				BreakGlassEmail:    "custom@example.com",
 				BreakGlassPassword: "breakglass123",
@@ -380,7 +401,7 @@ var _ = Describe("OrganizationManager", func() {
 			config := &OrganizationConfig{
 				Name:        "test-org",
 				DisplayName: "Test Organization",
-				// BreakGlassPassword not set
+				Enabled:     new(true),
 			}
 
 			credentials, err := manager.CreateOrganization(ctx, config)
@@ -408,6 +429,7 @@ var _ = Describe("OrganizationManager", func() {
 			config := &OrganizationConfig{
 				Name:               "test-org",
 				DisplayName:        "Test Organization",
+				Enabled:            new(true),
 				BreakGlassPassword: "breakglass123",
 			}
 
@@ -436,6 +458,7 @@ var _ = Describe("OrganizationManager", func() {
 			config := &OrganizationConfig{
 				Name:               "test-org",
 				DisplayName:        "Test Organization",
+				Enabled:            new(true),
 				BreakGlassPassword: "breakglass123",
 			}
 
@@ -473,6 +496,7 @@ var _ = Describe("OrganizationManager", func() {
 			config := &OrganizationConfig{
 				Name:               "test-org",
 				DisplayName:        "Test Organization",
+				Enabled:            new(true),
 				BreakGlassPassword: "breakglass123",
 			}
 

@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/controllers/finalizers"
 	"github.com/osac-project/fulfillment-service/internal/idp"
 )
@@ -208,6 +209,7 @@ var _ = Describe("IDP Sync", func() {
 			CreateOrganization(gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, org *idp.Organization) (*idp.Organization, error) {
 				Expect(org.Name).To(Equal("test-org"))
+				Expect(org.Enabled).To(BeTrue())
 				return &idp.Organization{
 					Name:    "test-org",
 					Enabled: true,
@@ -331,6 +333,125 @@ var _ = Describe("IDP Sync", func() {
 
 		err := task.update(ctx)
 		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("should create builtin organizations as disabled", func() {
+		organization := privatev1.Organization_builder{
+			Id: "org-shared",
+			Metadata: privatev1.Metadata_builder{
+				Name:       auth.SharedTenant,
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     "tenant-1",
+			}.Build(),
+		}.Build()
+
+		mockClient.EXPECT().
+			CreateOrganization(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, org *idp.Organization) (*idp.Organization, error) {
+				Expect(org.Name).To(Equal(auth.SharedTenant))
+				Expect(org.Enabled).To(BeFalse())
+				return &idp.Organization{
+					Name:    auth.SharedTenant,
+					Enabled: false,
+				}, nil
+			}).
+			Times(1)
+
+		mockClient.EXPECT().
+			CreateUser(gomock.Any(), auth.SharedTenant, gomock.Any()).
+			Return(&idp.User{ID: "user-shared"}, nil).
+			Times(1)
+
+		mockClient.EXPECT().
+			AssignIdpManagerPermissions(gomock.Any(), "user-shared").
+			Return(nil).
+			Times(1)
+
+		task := &task{
+			r:            reconciler,
+			organization: organization,
+		}
+
+		err := task.update(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(organization.GetStatus().GetState()).To(Equal(privatev1.OrganizationState_ORGANIZATION_STATE_SYNCED))
+	})
+
+	It("should create system organization as disabled", func() {
+		organization := privatev1.Organization_builder{
+			Id: "org-system",
+			Metadata: privatev1.Metadata_builder{
+				Name:       auth.SystemTenant,
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     "tenant-1",
+			}.Build(),
+		}.Build()
+
+		mockClient.EXPECT().
+			CreateOrganization(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, org *idp.Organization) (*idp.Organization, error) {
+				Expect(org.Name).To(Equal(auth.SystemTenant))
+				Expect(org.Enabled).To(BeFalse())
+				return &idp.Organization{
+					Name:    auth.SystemTenant,
+					Enabled: false,
+				}, nil
+			}).
+			Times(1)
+
+		mockClient.EXPECT().
+			CreateUser(gomock.Any(), auth.SystemTenant, gomock.Any()).
+			Return(&idp.User{ID: "user-system"}, nil).
+			Times(1)
+
+		mockClient.EXPECT().
+			AssignIdpManagerPermissions(gomock.Any(), "user-system").
+			Return(nil).
+			Times(1)
+
+		task := &task{
+			r:            reconciler,
+			organization: organization,
+		}
+
+		err := task.update(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(organization.GetStatus().GetState()).To(Equal(privatev1.OrganizationState_ORGANIZATION_STATE_SYNCED))
+	})
+})
+
+var _ = Describe("Builtin Organization Detection", func() {
+	It("should return true for the shared tenant", func() {
+		organization := privatev1.Organization_builder{
+			Metadata: privatev1.Metadata_builder{
+				Name: auth.SharedTenant,
+			}.Build(),
+		}.Build()
+
+		task := &task{organization: organization}
+		Expect(task.isBuiltin()).To(BeTrue())
+	})
+
+	It("should return true for the system tenant", func() {
+		organization := privatev1.Organization_builder{
+			Metadata: privatev1.Metadata_builder{
+				Name: auth.SystemTenant,
+			}.Build(),
+		}.Build()
+
+		task := &task{organization: organization}
+		Expect(task.isBuiltin()).To(BeTrue())
+	})
+
+	It("should return false for a regular organization", func() {
+		organization := privatev1.Organization_builder{
+			Metadata: privatev1.Metadata_builder{
+				Name: "my-org",
+			}.Build(),
+		}.Build()
+
+		task := &task{organization: organization}
+		Expect(task.isBuiltin()).To(BeFalse())
 	})
 })
 
