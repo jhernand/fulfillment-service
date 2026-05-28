@@ -42,12 +42,19 @@ func Cmd() *cobra.Command {
 		Args:                  cobra.ExactArgs(1),
 		RunE:                  runner.run,
 	}
+	result.Flags().BoolVar(
+		&runner.includeDeleted,
+		"include-deleted",
+		false,
+		"Include soft-deleted objects in resolution.",
+	)
 	return result
 }
 
 type runnerContext struct {
-	logger  *slog.Logger
-	console *terminal.Console
+	logger         *slog.Logger
+	console        *terminal.Console
+	includeDeleted bool
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -71,7 +78,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	client := publicv1.NewSubnetsClient(conn)
 
-	matched, err := lookup.Find(ref, "subnet", func(filter string, limit int32) ([]*publicv1.Subnet, error) {
+	matched, err := lookup.Find(ref, "subnet", lookup.FindOptions{IncludeDeleted: c.includeDeleted}, func(filter string, limit int32) ([]*publicv1.Subnet, error) {
 		resp, err := client.List(ctx, publicv1.SubnetsListRequest_builder{
 			Filter: proto.String(filter),
 			Limit:  proto.Int32(limit),

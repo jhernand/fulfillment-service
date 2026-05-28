@@ -230,15 +230,7 @@ func (c *runnerContext) list(ctx context.Context, keys []string) (results []prot
 		}
 	}
 
-	// Exclude deleted objects unless explicitly requested.
-	if !c.args.includeDeleted {
-		const notDeletedFilter = "!has(this.metadata.deletion_timestamp)"
-		if options.Filter != "" {
-			options.Filter = fmt.Sprintf("%s && (%s)", notDeletedFilter, options.Filter)
-		} else {
-			options.Filter = notDeletedFilter
-		}
-	}
+	options.IncludeDeleted = c.args.includeDeleted
 
 	listResult, err := c.objectHelper.List(ctx, options)
 	if err != nil {

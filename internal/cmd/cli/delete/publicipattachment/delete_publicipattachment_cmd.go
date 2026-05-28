@@ -64,7 +64,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 
 	client := publicv1.NewPublicIPAttachmentsClient(conn)
 
-	attachment, err := lookup.Find(args[0], "public IP attachment", func(filter string, limit int32) ([]*publicv1.PublicIPAttachment, error) {
+	attachment, err := lookup.Find(args[0], "public IP attachment", lookup.FindOptions{}, func(filter string, limit int32) ([]*publicv1.PublicIPAttachment, error) {
 		resp, err := client.List(ctx, publicv1.PublicIPAttachmentsListRequest_builder{
 			Filter: proto.String(filter),
 			Limit:  proto.Int32(limit),

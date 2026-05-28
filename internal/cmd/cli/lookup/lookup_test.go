@@ -51,10 +51,33 @@ func captureListFn(captured *string) ListFunc[*fakeItem] {
 }
 
 var _ = Describe("Find", func() {
-	table.DescribeTable("CEL filter construction",
+	table.DescribeTable("CEL filter construction (exclude deleted)",
 		func(ref, expectedFilter string) {
 			var got string
-			_, _ = Find(ref, "compute instance", captureListFn(&got))
+			_, _ = Find(ref, "compute instance", FindOptions{}, captureListFn(&got))
+			Expect(got).To(Equal(expectedFilter))
+		},
+		table.Entry("plain name",
+			"my-vm",
+			`!has(this.metadata.deletion_timestamp) && (this.id == "my-vm" || this.metadata.name == "my-vm")`),
+		table.Entry("UUID-style ID",
+			"550e8400-e29b-41d4-a716-446655440000",
+			`!has(this.metadata.deletion_timestamp) && (this.id == "550e8400-e29b-41d4-a716-446655440000" || this.metadata.name == "550e8400-e29b-41d4-a716-446655440000")`),
+		table.Entry("double quotes are escaped",
+			`my"vm`,
+			`!has(this.metadata.deletion_timestamp) && (this.id == "my\"vm" || this.metadata.name == "my\"vm")`),
+		table.Entry("backslashes are escaped",
+			`my\vm`,
+			`!has(this.metadata.deletion_timestamp) && (this.id == "my\\vm" || this.metadata.name == "my\\vm")`),
+		table.Entry("single quotes pass through unescaped",
+			"my'vm",
+			`!has(this.metadata.deletion_timestamp) && (this.id == "my'vm" || this.metadata.name == "my'vm")`),
+	)
+
+	table.DescribeTable("CEL filter construction (include deleted)",
+		func(ref, expectedFilter string) {
+			var got string
+			_, _ = Find(ref, "compute instance", FindOptions{IncludeDeleted: true}, captureListFn(&got))
 			Expect(got).To(Equal(expectedFilter))
 		},
 		table.Entry("plain name",
@@ -63,27 +86,18 @@ var _ = Describe("Find", func() {
 		table.Entry("UUID-style ID",
 			"550e8400-e29b-41d4-a716-446655440000",
 			`this.id == "550e8400-e29b-41d4-a716-446655440000" || this.metadata.name == "550e8400-e29b-41d4-a716-446655440000"`),
-		table.Entry("double quotes are escaped",
-			`my"vm`,
-			`this.id == "my\"vm" || this.metadata.name == "my\"vm"`),
-		table.Entry("backslashes are escaped",
-			`my\vm`,
-			`this.id == "my\\vm" || this.metadata.name == "my\\vm"`),
-		table.Entry("single quotes pass through unescaped",
-			"my'vm",
-			`this.id == "my'vm" || this.metadata.name == "my'vm"`),
 	)
 
 	Describe("match count handling", func() {
 		It("should return the single item on exactly one match", func() {
 			item := &fakeItem{id: "abc"}
-			result, err := Find("abc", "compute instance", makeListFn([]*fakeItem{item}))
+			result, err := Find("abc", "compute instance", FindOptions{}, makeListFn([]*fakeItem{item}))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(item))
 		})
 
 		It("should return ErrNotFound on zero matches", func() {
-			_, err := Find("missing", "virtual network", makeListFn(nil))
+			_, err := Find("missing", "virtual network", FindOptions{}, makeListFn(nil))
 			Expect(err).To(HaveOccurred())
 			var notFound *ErrNotFound
 			Expect(errors.As(err, &notFound)).To(BeTrue())
@@ -96,7 +110,7 @@ var _ = Describe("Find", func() {
 
 		It("should return ErrAmbiguous on two or more matches", func() {
 			items := []*fakeItem{{id: "a"}, {id: "b"}}
-			_, err := Find("shared-name", "subnet", makeListFn(items))
+			_, err := Find("shared-name", "subnet", FindOptions{}, makeListFn(items))
 			Expect(err).To(HaveOccurred())
 			var ambiguous *ErrAmbiguous
 			Expect(errors.As(err, &ambiguous)).To(BeTrue())
@@ -115,7 +129,7 @@ var _ = Describe("Find", func() {
 				called = true
 				return nil, nil
 			}
-			_, err := Find("", "compute instance", listFn)
+			_, err := Find("", "compute instance", FindOptions{}, listFn)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("compute instance"))
 			Expect(err.Error()).To(ContainSubstring("must not be empty"))
@@ -125,7 +139,7 @@ var _ = Describe("Find", func() {
 
 	Describe("list function error propagation", func() {
 		It("should propagate errors returned by the list function", func() {
-			_, err := Find("ref", "cluster", errorListFn("connection refused"))
+			_, err := Find("ref", "cluster", FindOptions{}, errorListFn("connection refused"))
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("connection refused"))
 			var notFound *ErrNotFound
