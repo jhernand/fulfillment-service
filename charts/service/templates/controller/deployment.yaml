@@ -34,7 +34,6 @@ spec:
       labels:
         app: fulfillment-controller
     spec:
-      serviceAccountName: controller
       volumes:
       - name: cas
         configMap:

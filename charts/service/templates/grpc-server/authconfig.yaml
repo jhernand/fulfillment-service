@@ -76,7 +76,6 @@ spec:
           # of emergency situations where it isn't possible to get a valid JWT token from the identity provider.
           emergency_service_accounts := {
             "system:serviceaccount:{{ .Release.Namespace }}:admin",
-            "system:serviceaccount:{{ .Release.Namespace }}:controller",
           }
 
           # Admin service accounts are service accounts that are allowed to act as administrators.

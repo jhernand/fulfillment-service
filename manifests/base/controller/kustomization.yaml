@@ -19,6 +19,5 @@ labels:
     component: controller
 
 resources:
-- sa.yaml
 - certificate.yaml
 - deployment.yaml
