@@ -14,6 +14,7 @@ language governing permissions and limitations under the License.
 package servers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/auth"
 )
 
 var (
@@ -51,6 +53,18 @@ func validateCELSyntax(filter string) error {
 		return fmt.Errorf("syntax error: %w", issues.Err())
 	}
 	return nil
+}
+
+// buildPublishedClause returns a CEL clause that shows published items to everyone
+// and unpublished items only to the user who created them.
+func buildPublishedClause(ctx context.Context) string {
+	user := auth.SubjectFromContext(ctx).User
+	return fmt.Sprintf("(this.published || this.metadata.creator == '%s')", user)
+}
+
+// isCreator checks whether the current user created the given item.
+func isCreator(ctx context.Context, itemCreator string) bool {
+	return itemCreator != "" && auth.SubjectFromContext(ctx).User == itemCreator
 }
 
 // catalogItem is implemented by both ClusterCatalogItem and ComputeInstanceCatalogItem.
