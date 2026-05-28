@@ -126,7 +126,11 @@ func (s *ComputeInstanceCatalogItemsServer) List(ctx context.Context,
 	privateRequest := &privatev1.ComputeInstanceCatalogItemsListRequest{}
 	privateRequest.SetOffset(request.GetOffset())
 	privateRequest.SetLimit(request.GetLimit())
-	privateRequest.SetFilter(addPublishedFilter(request.GetFilter()))
+	composedFilter, err := s.addPublishedFilter(request.GetFilter())
+	if err != nil {
+		return nil, err
+	}
+	privateRequest.SetFilter(composedFilter)
 	privateRequest.SetOrder(request.GetOrder())
 
 	privateResponse, err := s.delegate.List(ctx, privateRequest)
@@ -261,6 +265,16 @@ func (s *ComputeInstanceCatalogItemsServer) Update(ctx context.Context,
 	response = &publicv1.ComputeInstanceCatalogItemsUpdateResponse{}
 	response.SetObject(updatedPublicCatalogItem)
 	return
+}
+
+func (s *ComputeInstanceCatalogItemsServer) addPublishedFilter(filter string) (string, error) {
+	if filter == "" {
+		return "this.published", nil
+	}
+	if err := validateCELSyntax(filter); err != nil {
+		return "", grpcstatus.Errorf(grpccodes.InvalidArgument, "invalid filter: %v", err)
+	}
+	return "(" + filter + ") && this.published", nil
 }
 
 func (s *ComputeInstanceCatalogItemsServer) Delete(ctx context.Context,

@@ -18,14 +18,32 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Catalog item validation", func() {
-	DescribeTable("addPublishedFilter",
+var _ = Describe("addPublishedFilter", func() {
+	var server *ClusterCatalogItemsServer
+
+	BeforeEach(func() {
+		server = &ClusterCatalogItemsServer{}
+	})
+
+	DescribeTable("composes filter correctly",
 		func(input string, expected string) {
-			Expect(addPublishedFilter(input)).To(Equal(expected))
+			result, err := server.addPublishedFilter(input)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(expected))
 		},
-		Entry("empty filter", "", "this.published == true"),
-		Entry("simple filter", "this.id == '123'", "(this.id == '123') && this.published == true"),
+		Entry("empty filter", "", "this.published"),
+		Entry("simple filter", "this.id == '123'", "(this.id == '123') && this.published"),
 		Entry("compound filter", "this.title == 'a' && this.template == 'b'",
-			"(this.title == 'a' && this.template == 'b') && this.published == true"),
+			"(this.title == 'a' && this.template == 'b') && this.published"),
+	)
+
+	DescribeTable("rejects malformed filters",
+		func(input string) {
+			_, err := server.addPublishedFilter(input)
+			Expect(err).To(HaveOccurred())
+		},
+		Entry("unbalanced parens to bypass published", `true) || (true`),
+		Entry("unbalanced closing paren", `true)`),
+		Entry("unbalanced opening paren", `(true`),
 	)
 })
