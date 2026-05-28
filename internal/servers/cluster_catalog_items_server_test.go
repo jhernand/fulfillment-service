@@ -24,8 +24,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
-	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/collections"
 	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
@@ -38,10 +36,7 @@ var _ = Describe("Cluster catalog items server", func() {
 	BeforeEach(func() {
 		var err error
 
-		ctx = auth.ContextWithSubject(context.Background(), &auth.Subject{
-			User:    "system",
-			Tenants: collections.NewUniversalSet[string](),
-		})
+		ctx = context.Background()
 
 		db, err := server.NewInstance().Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -192,36 +187,7 @@ var _ = Describe("Cluster catalog items server", func() {
 			}
 		})
 
-		It("List excludes unpublished objects from other creators", func() {
-			_, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
-				Object: publicv1.ClusterCatalogItem_builder{
-					Title:     "Published item",
-					Template:  "my-template-id",
-					Published: true,
-				}.Build(),
-			}.Build())
-			Expect(err).ToNot(HaveOccurred())
-
-			_, err = server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
-				Object: publicv1.ClusterCatalogItem_builder{
-					Title:     "Unpublished item",
-					Template:  "my-template-id",
-					Published: false,
-				}.Build(),
-			}.Build())
-			Expect(err).ToNot(HaveOccurred())
-
-			otherUserCtx := auth.ContextWithSubject(ctx, &auth.Subject{
-				User:    "other-user",
-				Tenants: collections.NewUniversalSet[string](),
-			})
-			response, err := server.List(otherUserCtx, publicv1.ClusterCatalogItemsListRequest_builder{}.Build())
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response.GetItems()).To(HaveLen(1))
-			Expect(response.GetItems()[0].GetTitle()).To(Equal("Published item"))
-		})
-
-		It("List shows unpublished objects to their creator", func() {
+		It("List excludes unpublished objects", func() {
 			_, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
 				Object: publicv1.ClusterCatalogItem_builder{
 					Title:     "Published item",
@@ -242,10 +208,11 @@ var _ = Describe("Cluster catalog items server", func() {
 
 			response, err := server.List(ctx, publicv1.ClusterCatalogItemsListRequest_builder{}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(response.GetItems()).To(HaveLen(2))
+			Expect(response.GetItems()).To(HaveLen(1))
+			Expect(response.GetItems()[0].GetTitle()).To(Equal("Published item"))
 		})
 
-		It("List with user filter excludes unpublished objects from other creators", func() {
+		It("List with user filter excludes unpublished objects", func() {
 			publishedResponse, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
 				Object: publicv1.ClusterCatalogItem_builder{
 					Title:     "Target published",
@@ -276,11 +243,7 @@ var _ = Describe("Cluster catalog items server", func() {
 			targetID := publishedResponse.GetObject().GetId()
 			unpublishedID := unpublishedResponse.GetObject().GetId()
 			filter := fmt.Sprintf("this.id == '%s' || this.id == '%s'", targetID, unpublishedID)
-			otherUserCtx := auth.ContextWithSubject(ctx, &auth.Subject{
-				User:    "other-user",
-				Tenants: collections.NewUniversalSet[string](),
-			})
-			response, err := server.List(otherUserCtx, publicv1.ClusterCatalogItemsListRequest_builder{
+			response, err := server.List(ctx, publicv1.ClusterCatalogItemsListRequest_builder{
 				Filter: proto.String(filter),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -288,7 +251,7 @@ var _ = Describe("Cluster catalog items server", func() {
 			Expect(response.GetItems()[0].GetId()).To(Equal(targetID))
 		})
 
-		It("Get returns not found for unpublished object from other creator", func() {
+		It("Get returns not found for unpublished object", func() {
 			createResponse, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
 				Object: publicv1.ClusterCatalogItem_builder{
 					Title:     "Unpublished item",
@@ -298,32 +261,11 @@ var _ = Describe("Cluster catalog items server", func() {
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 
-			otherUserCtx := auth.ContextWithSubject(ctx, &auth.Subject{
-				User:    "other-user",
-				Tenants: collections.NewUniversalSet[string](),
-			})
-			_, err = server.Get(otherUserCtx, publicv1.ClusterCatalogItemsGetRequest_builder{
+			_, err = server.Get(ctx, publicv1.ClusterCatalogItemsGetRequest_builder{
 				Id: createResponse.GetObject().GetId(),
 			}.Build())
 			Expect(err).To(HaveOccurred())
 			Expect(status.Code(err)).To(Equal(codes.NotFound))
-		})
-
-		It("Get returns unpublished object to its creator", func() {
-			createResponse, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
-				Object: publicv1.ClusterCatalogItem_builder{
-					Title:     "Unpublished item",
-					Template:  "my-template-id",
-					Published: false,
-				}.Build(),
-			}.Build())
-			Expect(err).ToNot(HaveOccurred())
-
-			getResponse, err := server.Get(ctx, publicv1.ClusterCatalogItemsGetRequest_builder{
-				Id: createResponse.GetObject().GetId(),
-			}.Build())
-			Expect(err).ToNot(HaveOccurred())
-			Expect(getResponse.GetObject().GetTitle()).To(Equal("Unpublished item"))
 		})
 
 		It("Get object", func() {

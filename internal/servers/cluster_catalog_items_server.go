@@ -126,7 +126,7 @@ func (s *ClusterCatalogItemsServer) List(ctx context.Context,
 	privateRequest := &privatev1.ClusterCatalogItemsListRequest{}
 	privateRequest.SetOffset(request.GetOffset())
 	privateRequest.SetLimit(request.GetLimit())
-	composedFilter, err := s.addPublishedFilter(ctx, request.GetFilter())
+	composedFilter, err := s.addPublishedFilter(request.GetFilter())
 	if err != nil {
 		return nil, err
 	}
@@ -167,8 +167,7 @@ func (s *ClusterCatalogItemsServer) Get(ctx context.Context,
 		return nil, err
 	}
 
-	obj := privateResponse.GetObject()
-	if !obj.GetPublished() && !isCreator(ctx, obj.GetMetadata().GetCreator()) {
+	if !privateResponse.GetObject().GetPublished() {
 		return nil, grpcstatus.Errorf(grpccodes.NotFound, "catalog item not found")
 	}
 
@@ -268,15 +267,14 @@ func (s *ClusterCatalogItemsServer) Update(ctx context.Context,
 	return
 }
 
-func (s *ClusterCatalogItemsServer) addPublishedFilter(ctx context.Context, filter string) (string, error) {
-	publishedClause := buildPublishedClause(ctx)
+func (s *ClusterCatalogItemsServer) addPublishedFilter(filter string) (string, error) {
 	if filter == "" {
-		return publishedClause, nil
+		return "this.published", nil
 	}
 	if err := validateCELSyntax(filter); err != nil {
 		return "", grpcstatus.Errorf(grpccodes.InvalidArgument, "invalid filter: %v", err)
 	}
-	return "(" + filter + ") && " + publishedClause, nil
+	return "(" + filter + ") && this.published", nil
 }
 
 func (s *ClusterCatalogItemsServer) Delete(ctx context.Context,
