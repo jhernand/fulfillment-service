@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/google/cel-go/cel"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -29,15 +30,23 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 )
 
+var (
+	celSyntaxEnv     *cel.Env
+	celSyntaxEnvOnce sync.Once
+	celSyntaxEnvErr  error
+)
+
 // validateCELSyntax checks that a filter string is a syntactically valid, complete CEL expression.
 // This prevents filter bypass attacks where a malicious filter like "true) || (true" could
 // break out of parenthesized composition and change operator precedence.
 func validateCELSyntax(filter string) error {
-	env, err := cel.NewEnv()
-	if err != nil {
-		return fmt.Errorf("failed to create CEL environment: %w", err)
+	celSyntaxEnvOnce.Do(func() {
+		celSyntaxEnv, celSyntaxEnvErr = cel.NewEnv()
+	})
+	if celSyntaxEnvErr != nil {
+		return fmt.Errorf("failed to create CEL environment: %w", celSyntaxEnvErr)
 	}
-	_, issues := env.Parse(filter)
+	_, issues := celSyntaxEnv.Parse(filter)
 	if issues != nil && issues.Err() != nil {
 		return fmt.Errorf("syntax error: %w", issues.Err())
 	}

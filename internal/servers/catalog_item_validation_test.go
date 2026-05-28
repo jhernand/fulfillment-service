@@ -35,6 +35,8 @@ var _ = Describe("addPublishedFilter", func() {
 		Entry("simple filter", "this.id == '123'", "(this.id == '123') && this.published"),
 		Entry("compound filter", "this.title == 'a' && this.template == 'b'",
 			"(this.title == 'a' && this.template == 'b') && this.published"),
+		Entry("valid filter with OR is safely composed", "true || true",
+			"(true || true) && this.published"),
 	)
 
 	DescribeTable("rejects malformed filters",
