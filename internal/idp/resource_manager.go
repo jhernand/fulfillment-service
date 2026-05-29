@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 // ResourceManager handles authorization resource operations.
@@ -70,6 +71,7 @@ func (b *ResourceManagerBuilder) Build() (result *ResourceManager, err error) {
 
 // CreateProjectAuthorizationResource creates an Authorization Resource for a project.
 // The resource name follows the format: PROJECT-{tenant}-{projectName}
+// This also creates authorization groups for viewer and manager access.
 func (m *ResourceManager) CreateProjectAuthorizationResource(ctx context.Context, projectID, tenant, projectName string, scopes []string) (string, error) {
 	resourceName := fmt.Sprintf("PROJECT-%s-%s", tenant, projectName)
 
@@ -104,6 +106,24 @@ func (m *ResourceManager) CreateProjectAuthorizationResource(ctx context.Context
 		slog.String("project_id", projectID),
 	)
 
+	// Create authorization groups for the project
+	err = m.createProjectAuthorizationGroups(ctx, createdResource.ID, tenant, projectName)
+	if err != nil {
+		// Clean up the resource if group creation fails
+		m.logger.ErrorContext(ctx, "Failed to create authorization groups, cleaning up resource",
+			slog.String("resource_id", createdResource.ID),
+			slog.Any("error", err),
+		)
+		if cleanupErr := m.client.DeleteAuthorizationResource(ctx, createdResource.ID); cleanupErr != nil {
+			m.logger.ErrorContext(ctx, "Failed to cleanup authorization resource during rollback",
+				slog.String("resource_id", createdResource.ID),
+				slog.Any("cleanup_error", cleanupErr),
+			)
+			return "", fmt.Errorf("failed to create authorization groups: %w (cleanup also failed: %v)", err, cleanupErr)
+		}
+		return "", fmt.Errorf("failed to create authorization groups: %w", err)
+	}
+
 	return createdResource.ID, nil
 }
 
@@ -115,9 +135,8 @@ func (m *ResourceManager) createProjectAuthorizationGroups(ctx context.Context, 
 
 	// Create viewers group using new naming convention
 	// Group path: /{projects}/{project-name}/{viewers}
-	viewersGroupName := GroupNameViewers
 	viewersGroupPath := fmt.Sprintf("/%s/%s/%s", GroupPathProjects, projectName, GroupNameViewers)
-	err := m.client.CreateAuthorizationGroup(ctx, organizationName, viewersGroupName, viewersGroupPath)
+	err := m.client.CreateAuthorizationGroup(ctx, organizationName, GroupNameViewers, viewersGroupPath)
 	if err != nil {
 		return fmt.Errorf("failed to create viewers group: %w", err)
 	}
@@ -135,9 +154,24 @@ func (m *ResourceManager) createProjectAuthorizationGroups(ctx context.Context, 
 	err = m.client.CreateAuthorizationGroup(ctx, organizationName, managersGroupName, managersGroupPath)
 	if err != nil {
 		// Clean up viewers group on failure
-		viewersGroupID, _ := m.getGroupIDByPath(ctx, organizationName, viewersGroupPath)
+		viewersGroupID, getErr := m.getGroupIDByPath(ctx, organizationName, viewersGroupPath)
+		if getErr != nil {
+			m.logger.ErrorContext(ctx, "Failed to get viewers group ID during rollback",
+				slog.String("group_path", viewersGroupPath),
+				slog.Any("get_error", getErr),
+			)
+			// Return composite error including lookup failure
+			return fmt.Errorf("failed to create managers group: %w (rollback also failed to lookup viewers group: %v)", err, getErr)
+		}
 		if viewersGroupID != "" {
-			_ = m.client.DeleteAuthorizationGroup(ctx, organizationName, viewersGroupID)
+			if cleanupErr := m.client.DeleteAuthorizationGroup(ctx, organizationName, viewersGroupID); cleanupErr != nil {
+				m.logger.ErrorContext(ctx, "Failed to cleanup viewers group during rollback",
+					slog.String("group_id", viewersGroupID),
+					slog.String("group_path", viewersGroupPath),
+					slog.Any("cleanup_error", cleanupErr),
+				)
+				return fmt.Errorf("failed to create managers group: %w (rollback also failed to delete viewers group: %v)", err, cleanupErr)
+			}
 		}
 		return fmt.Errorf("failed to create managers group: %w", err)
 	}
@@ -156,6 +190,7 @@ func (m *ResourceManager) createProjectAuthorizationGroups(ctx context.Context, 
 }
 
 // DeleteAuthorizationResource deletes an Authorization Resource by ID.
+// This also deletes the associated groups
 func (m *ResourceManager) DeleteAuthorizationResource(ctx context.Context, resourceID string) error {
 	m.logger.DebugContext(ctx, "Deleting authorization resource",
 		slog.String("resource_id", resourceID),
@@ -209,8 +244,15 @@ func (m *ResourceManager) deleteProjectAuthorizationGroups(ctx context.Context, 
 	}
 
 	// Extract project name from resource name (format: PROJECT-{tenant}-{name})
+	resourcePrefix := "PROJECT-"
+	if !strings.HasPrefix(resourceName, resourcePrefix) {
+		m.logger.WarnContext(ctx, "Unexpected resource name format, skipping group deletion",
+			slog.String("resource_name", resourceName),
+		)
+		return nil
+	}
 	// Remove "PROJECT-{tenant}-" prefix to get just the project name
-	parts := resourceName[len("PROJECT-"):] // Remove "PROJECT-" to get "{tenant}-{name}"
+	parts := resourceName[len(resourcePrefix):]
 	// Find the first '-' to split tenant from project name
 	firstDash := len(organizationName)
 	if len(parts) > firstDash+1 {
