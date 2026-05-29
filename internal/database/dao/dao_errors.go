@@ -146,6 +146,17 @@ func (e *ErrInUse) Error() string {
 	return e.Reason
 }
 
+// ErrNotUnique is an error type that indicates that a value that must be globally unique is already in use. For
+// example, this is returned when an organization e-mail domain is already assigned to another organization.
+type ErrNotUnique struct {
+	// Reason is a human-readable description of the uniqueness violation.
+	Reason string
+}
+
+func (e *ErrNotUnique) Error() string {
+	return e.Reason
+}
+
 // Custom PostgreSQL SQLSTATE error codes used by database triggers. These codes use the 'Z' class, which is reserved
 // for user-defined conditions and will not collide with any standard PostgreSQL error code.
 const (
@@ -161,4 +172,10 @@ const (
 	// errInUseCode is the SQLSTATE error code returned by the 'check_subnet_not_in_use' trigger when a
 	// soft-delete is rejected because the object is still referenced by other objects.
 	errInUseCode = "Z0003"
+
+	// errNotUniqueCode is the SQLSTATE error code returned by database triggers when an insert or update violates a
+	// custom uniqueness constraint enforced via a helper trigger. For example, the trigger that materializes the
+	// relationship between organizations and domains returns this code when a domain is already assigned to
+	// another tenant.
+	errNotUniqueCode = "Z0004"
 )

@@ -232,6 +232,10 @@ func (r *CreateRequest[O]) translateError(ctx context.Context, id, name, tenant 
 			)
 			return &ErrReference{}
 		}
+	case errNotUniqueCode:
+		return &ErrNotUnique{
+			Reason: pgErr.Message,
+		}
 	}
 	return err
 }
