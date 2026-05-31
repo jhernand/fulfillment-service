@@ -22,7 +22,6 @@ import (
 	. "github.com/onsi/gomega"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
@@ -217,7 +216,7 @@ var _ = Describe("Virtual networks server", func() {
 
 			// List the objects via public server:
 			response, err := publicServer.List(ctx, publicv1.VirtualNetworksListRequest_builder{
-				Limit: proto.Int32(1),
+				Limit: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))
@@ -232,7 +231,7 @@ var _ = Describe("Virtual networks server", func() {
 
 			// List the objects via public server:
 			response, err := publicServer.List(ctx, publicv1.VirtualNetworksListRequest_builder{
-				Offset: proto.Int32(1),
+				Offset: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", count-1))

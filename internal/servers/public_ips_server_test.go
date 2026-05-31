@@ -208,7 +208,7 @@ var _ = Describe("Public IPs server", func() {
 
 			// List the objects:
 			response, err := publicIPsServer.List(ctx, publicv1.PublicIPsListRequest_builder{
-				Limit: proto.Int32(1),
+				Limit: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))
@@ -230,7 +230,7 @@ var _ = Describe("Public IPs server", func() {
 
 			// List the objects:
 			response, err := publicIPsServer.List(ctx, publicv1.PublicIPsListRequest_builder{
-				Offset: proto.Int32(1),
+				Offset: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", count-1))

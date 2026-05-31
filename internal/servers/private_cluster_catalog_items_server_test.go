@@ -172,7 +172,7 @@ var _ = Describe("Private cluster catalog items server", func() {
 			}
 
 			response, err := server.List(ctx, privatev1.ClusterCatalogItemsListRequest_builder{
-				Limit: proto.Int32(1),
+				Limit: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))

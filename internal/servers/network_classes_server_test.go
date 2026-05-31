@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
@@ -184,7 +183,7 @@ var _ = Describe("Network classes server", func() {
 
 			// List the objects via public server:
 			response, err := publicServer.List(ctx, publicv1.NetworkClassesListRequest_builder{
-				Limit: proto.Int32(1),
+				Limit: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))
@@ -199,7 +198,7 @@ var _ = Describe("Network classes server", func() {
 
 			// List the objects via public server:
 			response, err := publicServer.List(ctx, publicv1.NetworkClassesListRequest_builder{
-				Offset: proto.Int32(1),
+				Offset: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", count-1))

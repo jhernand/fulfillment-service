@@ -19,8 +19,6 @@ import (
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
 
-	"google.golang.org/protobuf/proto"
-
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 )
 
@@ -53,8 +51,8 @@ var _ = Describe("Describe Security Group", func() {
 					Ingress: []*publicv1.SecurityRule{
 						publicv1.SecurityRule_builder{
 							Protocol: publicv1.Protocol_PROTOCOL_TCP,
-							PortFrom: proto.Int32(80),
-							PortTo:   proto.Int32(80),
+							PortFrom: new(int32(80)),
+							PortTo:   new(int32(80)),
 							Ipv4Cidr: new("0.0.0.0/0"),
 						}.Build(),
 					},
@@ -111,8 +109,8 @@ var _ = Describe("Describe Security Group", func() {
 					Ingress: []*publicv1.SecurityRule{
 						publicv1.SecurityRule_builder{
 							Protocol: publicv1.Protocol_PROTOCOL_TCP,
-							PortFrom: proto.Int32(443),
-							PortTo:   proto.Int32(443),
+							PortFrom: new(int32(443)),
+							PortTo:   new(int32(443)),
 						}.Build(),
 					},
 				}.Build(),

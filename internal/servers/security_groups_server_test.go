@@ -179,8 +179,8 @@ var _ = Describe("SecurityGroups server", func() {
 						Ingress: []*publicv1.SecurityRule{
 							{
 								Protocol: publicv1.Protocol_PROTOCOL_TCP,
-								PortFrom: proto.Int32(80),
-								PortTo:   proto.Int32(80),
+								PortFrom: new(int32(80)),
+								PortTo:   new(int32(80)),
 								Ipv4Cidr: new("0.0.0.0/0"),
 							},
 						},
@@ -216,8 +216,8 @@ var _ = Describe("SecurityGroups server", func() {
 							Ingress: []*publicv1.SecurityRule{
 								{
 									Protocol: publicv1.Protocol_PROTOCOL_TCP,
-									PortFrom: proto.Int32(443),
-									PortTo:   proto.Int32(443),
+									PortFrom: new(int32(443)),
+									PortTo:   new(int32(443)),
 									Ipv4Cidr: new("0.0.0.0/0"),
 								},
 							},
@@ -251,7 +251,7 @@ var _ = Describe("SecurityGroups server", func() {
 
 			// List the objects:
 			response, err := server.List(ctx, publicv1.SecurityGroupsListRequest_builder{
-				Limit: proto.Int32(1),
+				Limit: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))
@@ -273,7 +273,7 @@ var _ = Describe("SecurityGroups server", func() {
 
 			// List the objects:
 			response, err := server.List(ctx, publicv1.SecurityGroupsListRequest_builder{
-				Offset: proto.Int32(1),
+				Offset: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", count-1))
@@ -315,8 +315,8 @@ var _ = Describe("SecurityGroups server", func() {
 						Ingress: []*publicv1.SecurityRule{
 							{
 								Protocol: publicv1.Protocol_PROTOCOL_TCP,
-								PortFrom: proto.Int32(22),
-								PortTo:   proto.Int32(22),
+								PortFrom: new(int32(22)),
+								PortTo:   new(int32(22)),
 								Ipv4Cidr: new("10.0.0.0/8"),
 							},
 						},
@@ -360,8 +360,8 @@ var _ = Describe("SecurityGroups server", func() {
 						Ingress: []*publicv1.SecurityRule{
 							{
 								Protocol: publicv1.Protocol_PROTOCOL_UDP,
-								PortFrom: proto.Int32(53),
-								PortTo:   proto.Int32(53),
+								PortFrom: new(int32(53)),
+								PortTo:   new(int32(53)),
 								Ipv4Cidr: new("0.0.0.0/0"),
 							},
 						},

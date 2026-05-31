@@ -19,7 +19,6 @@ import (
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 // ResolveInstance resolves a name or ID to a compute instance ID.
@@ -31,7 +30,7 @@ func ResolveInstance(ctx context.Context, conn *grpc.ClientConn, key string) (st
 	)
 	resp, err := client.List(ctx, publicv1.ComputeInstancesListRequest_builder{
 		Filter: new(listFilter),
-		Limit:  proto.Int32(2),
+		Limit:  new(int32(2)),
 	}.Build())
 	if err != nil {
 		return "", fmt.Errorf("failed to look up compute instance: %w", err)

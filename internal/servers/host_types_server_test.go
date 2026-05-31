@@ -158,7 +158,7 @@ var _ = Describe("Host types server", func() {
 
 			// List the objects:
 			response, err := server.List(ctx, publicv1.HostTypesListRequest_builder{
-				Limit: proto.Int32(1),
+				Limit: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))
@@ -176,7 +176,7 @@ var _ = Describe("Host types server", func() {
 
 			// List the objects:
 			response, err := server.List(ctx, publicv1.HostTypesListRequest_builder{
-				Offset: proto.Int32(1),
+				Offset: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", count-1))

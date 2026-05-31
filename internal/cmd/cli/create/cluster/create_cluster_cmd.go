@@ -360,7 +360,7 @@ func (c *runnerContext) findTemplate(ctx context.Context) (result *publicv1.Clus
 	)
 	response, err := c.templatesClient.List(ctx, publicv1.ClusterTemplatesListRequest_builder{
 		Filter: new(filter),
-		Limit:  proto.Int32(10),
+		Limit:  new(int32(10)),
 	}.Build())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)
@@ -387,7 +387,7 @@ func (c *runnerContext) findTemplate(ctx context.Context) (result *publicv1.Clus
 
 	// If we are here then no matches were found, we will show to the user some of the available templates:
 	response, err = c.templatesClient.List(ctx, publicv1.ClusterTemplatesListRequest_builder{
-		Limit: proto.Int32(10),
+		Limit: new(int32(10)),
 	}.Build())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list templates: %w", err)
