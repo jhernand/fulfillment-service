@@ -19,6 +19,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -262,16 +263,12 @@ var _ = Describe("Compute instance catalog items server", func() {
 			Expect(err).ToNot(HaveOccurred())
 			catalogItemID := createResponse.GetObject().GetId()
 
-			_, err = tx.Exec(ctx,
-				`insert into compute_instances (id, data, tenant) values ($1, $2, $3)`,
-				"ref-ci-001",
-				fmt.Sprintf(`{"spec":{"catalog_item":"%s","template":"my-ci-template-id"}}`, catalogItemID),
-				"shared",
-			)
-			Expect(err).ToNot(HaveOccurred())
-			DeferCleanup(func() {
-				_, _ = tx.Exec(ctx, `delete from compute_instances where id = $1`, "ref-ci-001")
-			})
+			mockCtrl := gomock.NewController(GinkgoT())
+			mockChecker := NewMockCatalogItemReferenceChecker(mockCtrl)
+			mockChecker.EXPECT().hasReference(gomock.Any(), catalogItemID).Return(true, nil)
+			originalChecker := server.referenceChecker
+			server.referenceChecker = mockChecker
+			DeferCleanup(func() { server.referenceChecker = originalChecker })
 
 			getResponse, err := server.Get(ctx, publicv1.ComputeInstanceCatalogItemsGetRequest_builder{
 				Id: catalogItemID,
