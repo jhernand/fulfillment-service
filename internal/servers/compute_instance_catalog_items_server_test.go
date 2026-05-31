@@ -251,6 +251,35 @@ var _ = Describe("Compute instance catalog items server", func() {
 			Expect(response.GetItems()[0].GetId()).To(Equal(targetID))
 		})
 
+		It("Get returns unpublished item when caller has a referencing compute instance", func() {
+			createResponse, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
+				Object: publicv1.ComputeInstanceCatalogItem_builder{
+					Title:     "Unpublished item",
+					Template:  "my-ci-template-id",
+					Published: false,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catalogItemID := createResponse.GetObject().GetId()
+
+			_, err = tx.Exec(ctx,
+				`insert into compute_instances (id, data, tenant) values ($1, $2, $3)`,
+				"ref-ci-001",
+				fmt.Sprintf(`{"spec":{"catalog_item":"%s","template":"my-ci-template-id"}}`, catalogItemID),
+				"shared",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			DeferCleanup(func() {
+				_, _ = tx.Exec(ctx, `delete from compute_instances where id = $1`, "ref-ci-001")
+			})
+
+			getResponse, err := server.Get(ctx, publicv1.ComputeInstanceCatalogItemsGetRequest_builder{
+				Id: catalogItemID,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject().GetTitle()).To(Equal("Unpublished item"))
+		})
+
 		It("Get returns not found for unpublished object", func() {
 			createResponse, err := server.Create(ctx, publicv1.ComputeInstanceCatalogItemsCreateRequest_builder{
 				Object: publicv1.ComputeInstanceCatalogItem_builder{

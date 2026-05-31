@@ -16,6 +16,7 @@ package servers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,6 +26,7 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
+	"github.com/osac-project/fulfillment-service/internal/database/dao"
 	"github.com/osac-project/fulfillment-service/internal/events"
 )
 
@@ -41,10 +43,11 @@ var _ publicv1.ClusterCatalogItemsServer = (*ClusterCatalogItemsServer)(nil)
 type ClusterCatalogItemsServer struct {
 	publicv1.UnimplementedClusterCatalogItemsServer
 
-	logger    *slog.Logger
-	delegate  privatev1.ClusterCatalogItemsServer
-	inMapper  *GenericMapper[*publicv1.ClusterCatalogItem, *privatev1.ClusterCatalogItem]
-	outMapper *GenericMapper[*privatev1.ClusterCatalogItem, *publicv1.ClusterCatalogItem]
+	logger      *slog.Logger
+	clustersDao *dao.GenericDAO[*privatev1.Cluster]
+	delegate    privatev1.ClusterCatalogItemsServer
+	inMapper    *GenericMapper[*publicv1.ClusterCatalogItem, *privatev1.ClusterCatalogItem]
+	outMapper   *GenericMapper[*privatev1.ClusterCatalogItem, *publicv1.ClusterCatalogItem]
 }
 
 func NewClusterCatalogItemsServer() *ClusterCatalogItemsServerBuilder {
@@ -101,6 +104,15 @@ func (b *ClusterCatalogItemsServerBuilder) Build() (result *ClusterCatalogItemsS
 		return
 	}
 
+	clustersDao, err := dao.NewGenericDAO[*privatev1.Cluster]().
+		SetLogger(b.logger).
+		SetTenancyLogic(b.tenancyLogic).
+		SetMetricsRegisterer(b.metricsRegisterer).
+		Build()
+	if err != nil {
+		return
+	}
+
 	delegate, err := NewPrivateClusterCatalogItemsServer().
 		SetLogger(b.logger).
 		SetNotifier(b.notifier).
@@ -113,10 +125,11 @@ func (b *ClusterCatalogItemsServerBuilder) Build() (result *ClusterCatalogItemsS
 	}
 
 	result = &ClusterCatalogItemsServer{
-		logger:    b.logger,
-		delegate:  delegate,
-		inMapper:  inMapper,
-		outMapper: outMapper,
+		logger:      b.logger,
+		clustersDao: clustersDao,
+		delegate:    delegate,
+		inMapper:    inMapper,
+		outMapper:   outMapper,
 	}
 	return
 }
@@ -168,7 +181,13 @@ func (s *ClusterCatalogItemsServer) Get(ctx context.Context,
 	}
 
 	if !privateResponse.GetObject().GetPublished() {
-		return nil, grpcstatus.Errorf(grpccodes.NotFound, "catalog item not found")
+		hasRef, refErr := s.callerHasReferencingCluster(ctx, request.GetId())
+		if refErr != nil {
+			return nil, refErr
+		}
+		if !hasRef {
+			return nil, grpcstatus.Errorf(grpccodes.NotFound, "catalog item not found")
+		}
 	}
 
 	publicCatalogItem := &publicv1.ClusterCatalogItem{}
@@ -265,6 +284,19 @@ func (s *ClusterCatalogItemsServer) Update(ctx context.Context,
 	response = &publicv1.ClusterCatalogItemsUpdateResponse{}
 	response.SetObject(updatedPublicCatalogItem)
 	return
+}
+
+func (s *ClusterCatalogItemsServer) callerHasReferencingCluster(ctx context.Context, catalogItemID string) (bool, error) {
+	filter := fmt.Sprintf("this.spec.catalog_item == %q", catalogItemID)
+	response, err := s.clustersDao.List().
+		SetFilter(filter).
+		SetLimit(1).
+		Do(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to check cluster references", slog.Any("error", err))
+		return false, grpcstatus.Errorf(grpccodes.Internal, "failed to check cluster references")
+	}
+	return response.GetTotal() > 0, nil
 }
 
 func (s *ClusterCatalogItemsServer) addPublishedFilter(filter string) (string, error) {

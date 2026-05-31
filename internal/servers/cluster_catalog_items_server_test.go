@@ -251,6 +251,35 @@ var _ = Describe("Cluster catalog items server", func() {
 			Expect(response.GetItems()[0].GetId()).To(Equal(targetID))
 		})
 
+		It("Get returns unpublished item when caller has a referencing cluster", func() {
+			createResponse, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
+				Object: publicv1.ClusterCatalogItem_builder{
+					Title:     "Unpublished item",
+					Template:  "my-template-id",
+					Published: false,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catalogItemID := createResponse.GetObject().GetId()
+
+			_, err = tx.Exec(ctx,
+				`insert into clusters (id, data, tenant) values ($1, $2, $3)`,
+				"ref-cluster-001",
+				fmt.Sprintf(`{"spec":{"catalog_item":"%s","template":"my-template-id"}}`, catalogItemID),
+				"shared",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			DeferCleanup(func() {
+				_, _ = tx.Exec(ctx, `delete from clusters where id = $1`, "ref-cluster-001")
+			})
+
+			getResponse, err := server.Get(ctx, publicv1.ClusterCatalogItemsGetRequest_builder{
+				Id: catalogItemID,
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject().GetTitle()).To(Equal("Unpublished item"))
+		})
+
 		It("Get returns not found for unpublished object", func() {
 			createResponse, err := server.Create(ctx, publicv1.ClusterCatalogItemsCreateRequest_builder{
 				Object: publicv1.ClusterCatalogItem_builder{

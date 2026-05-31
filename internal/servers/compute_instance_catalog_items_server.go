@@ -16,6 +16,7 @@ package servers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,6 +26,7 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
+	"github.com/osac-project/fulfillment-service/internal/database/dao"
 	"github.com/osac-project/fulfillment-service/internal/events"
 )
 
@@ -41,10 +43,11 @@ var _ publicv1.ComputeInstanceCatalogItemsServer = (*ComputeInstanceCatalogItems
 type ComputeInstanceCatalogItemsServer struct {
 	publicv1.UnimplementedComputeInstanceCatalogItemsServer
 
-	logger    *slog.Logger
-	delegate  privatev1.ComputeInstanceCatalogItemsServer
-	inMapper  *GenericMapper[*publicv1.ComputeInstanceCatalogItem, *privatev1.ComputeInstanceCatalogItem]
-	outMapper *GenericMapper[*privatev1.ComputeInstanceCatalogItem, *publicv1.ComputeInstanceCatalogItem]
+	logger              *slog.Logger
+	computeInstancesDao *dao.GenericDAO[*privatev1.ComputeInstance]
+	delegate            privatev1.ComputeInstanceCatalogItemsServer
+	inMapper            *GenericMapper[*publicv1.ComputeInstanceCatalogItem, *privatev1.ComputeInstanceCatalogItem]
+	outMapper           *GenericMapper[*privatev1.ComputeInstanceCatalogItem, *publicv1.ComputeInstanceCatalogItem]
 }
 
 func NewComputeInstanceCatalogItemsServer() *ComputeInstanceCatalogItemsServerBuilder {
@@ -101,6 +104,15 @@ func (b *ComputeInstanceCatalogItemsServerBuilder) Build() (result *ComputeInsta
 		return
 	}
 
+	computeInstancesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstance]().
+		SetLogger(b.logger).
+		SetTenancyLogic(b.tenancyLogic).
+		SetMetricsRegisterer(b.metricsRegisterer).
+		Build()
+	if err != nil {
+		return
+	}
+
 	delegate, err := NewPrivateComputeInstanceCatalogItemsServer().
 		SetLogger(b.logger).
 		SetNotifier(b.notifier).
@@ -113,10 +125,11 @@ func (b *ComputeInstanceCatalogItemsServerBuilder) Build() (result *ComputeInsta
 	}
 
 	result = &ComputeInstanceCatalogItemsServer{
-		logger:    b.logger,
-		delegate:  delegate,
-		inMapper:  inMapper,
-		outMapper: outMapper,
+		logger:              b.logger,
+		computeInstancesDao: computeInstancesDao,
+		delegate:            delegate,
+		inMapper:            inMapper,
+		outMapper:           outMapper,
 	}
 	return
 }
@@ -168,7 +181,13 @@ func (s *ComputeInstanceCatalogItemsServer) Get(ctx context.Context,
 	}
 
 	if !privateResponse.GetObject().GetPublished() {
-		return nil, grpcstatus.Errorf(grpccodes.NotFound, "catalog item not found")
+		hasRef, refErr := s.callerHasReferencingComputeInstance(ctx, request.GetId())
+		if refErr != nil {
+			return nil, refErr
+		}
+		if !hasRef {
+			return nil, grpcstatus.Errorf(grpccodes.NotFound, "catalog item not found")
+		}
 	}
 
 	publicCatalogItem := &publicv1.ComputeInstanceCatalogItem{}
@@ -265,6 +284,19 @@ func (s *ComputeInstanceCatalogItemsServer) Update(ctx context.Context,
 	response = &publicv1.ComputeInstanceCatalogItemsUpdateResponse{}
 	response.SetObject(updatedPublicCatalogItem)
 	return
+}
+
+func (s *ComputeInstanceCatalogItemsServer) callerHasReferencingComputeInstance(ctx context.Context, catalogItemID string) (bool, error) {
+	filter := fmt.Sprintf("this.spec.catalog_item == %q", catalogItemID)
+	response, err := s.computeInstancesDao.List().
+		SetFilter(filter).
+		SetLimit(1).
+		Do(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to check compute instance references", slog.Any("error", err))
+		return false, grpcstatus.Errorf(grpccodes.Internal, "failed to check compute instance references")
+	}
+	return response.GetTotal() > 0, nil
 }
 
 func (s *ComputeInstanceCatalogItemsServer) addPublishedFilter(filter string) (string, error) {
