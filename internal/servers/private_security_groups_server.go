@@ -153,7 +153,7 @@ func (s *PrivateSecurityGroupsServer) Create(ctx context.Context,
 	if securityGroup.GetMetadata().GetAnnotations() == nil {
 		securityGroup.Metadata.Annotations = make(map[string]string)
 	}
-	securityGroup.Metadata.Annotations["osac.io/owner-reference"] = securityGroup.GetSpec().GetVirtualNetwork()
+	securityGroup.Metadata.Annotations["osac.openshift.io/owner-reference"] = securityGroup.GetSpec().GetVirtualNetwork()
 
 	err = s.generic.Create(ctx, request, &response)
 	return
