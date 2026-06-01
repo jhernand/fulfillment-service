@@ -712,7 +712,7 @@ var _ = Describe("Private subnets server", func() {
 				if subnet.GetMetadata().GetAnnotations() == nil {
 					subnet.Metadata.Annotations = make(map[string]string)
 				}
-				subnet.Metadata.Annotations["osac.io/owner-reference"] = subnet.GetSpec().GetVirtualNetwork()
+				subnet.Metadata.Annotations["osac.openshift.io/owner-reference"] = subnet.GetSpec().GetVirtualNetwork()
 
 				// Create the subnet
 				createResponse, err := subnetDao.Create().
@@ -722,8 +722,8 @@ var _ = Describe("Private subnets server", func() {
 				created := createResponse.GetObject()
 
 				// Verify annotation is set
-				Expect(created.GetMetadata().GetAnnotations()).To(HaveKey("osac.io/owner-reference"))
-				Expect(created.GetMetadata().GetAnnotations()["osac.io/owner-reference"]).To(Equal(vn.GetId()))
+				Expect(created.GetMetadata().GetAnnotations()).To(HaveKey("osac.openshift.io/owner-reference"))
+				Expect(created.GetMetadata().GetAnnotations()["osac.openshift.io/owner-reference"]).To(Equal(vn.GetId()))
 			})
 		})
 

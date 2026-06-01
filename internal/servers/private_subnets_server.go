@@ -152,7 +152,7 @@ func (s *PrivateSubnetsServer) Create(ctx context.Context,
 	if subnet.GetMetadata().GetAnnotations() == nil {
 		subnet.Metadata.Annotations = make(map[string]string)
 	}
-	subnet.Metadata.Annotations["osac.io/owner-reference"] = subnet.GetSpec().GetVirtualNetwork()
+	subnet.Metadata.Annotations["osac.openshift.io/owner-reference"] = subnet.GetSpec().GetVirtualNetwork()
 
 	err = s.generic.Create(ctx, request, &response)
 	return
