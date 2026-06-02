@@ -629,7 +629,7 @@ var _ = Describe("selectHub", func() {
 		publicIPsClient := &fakePublicIPsClient{
 			getResponse: privatev1.PublicIPsGetResponse_builder{
 				Object: privatev1.PublicIP_builder{
-					Id: "pip-no-hub",
+					Id:     "pip-no-hub",
 					Status: privatev1.PublicIPStatus_builder{}.Build(),
 				}.Build(),
 			}.Build(),
