@@ -34,5 +34,5 @@ columns:
   type: osac.private.v1.Hub
   lookup: true
 
-- header: COMPUTE-INSTANCE
-  value: "has(this.spec.compute_instance)? this.spec.compute_instance: '-'"
+- header: ATTACHED
+  value: this.status.attached
