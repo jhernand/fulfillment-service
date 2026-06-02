@@ -35,6 +35,7 @@ const (
 	PublicIPAttachments_List_FullMethodName   = "/osac.public.v1.PublicIPAttachments/List"
 	PublicIPAttachments_Get_FullMethodName    = "/osac.public.v1.PublicIPAttachments/Get"
 	PublicIPAttachments_Create_FullMethodName = "/osac.public.v1.PublicIPAttachments/Create"
+	PublicIPAttachments_Update_FullMethodName = "/osac.public.v1.PublicIPAttachments/Update"
 	PublicIPAttachments_Delete_FullMethodName = "/osac.public.v1.PublicIPAttachments/Delete"
 )
 
@@ -48,6 +49,8 @@ type PublicIPAttachmentsClient interface {
 	Get(ctx context.Context, in *PublicIPAttachmentsGetRequest, opts ...grpc.CallOption) (*PublicIPAttachmentsGetResponse, error)
 	// Creates a new public IP attachment. Binds a PublicIP to a target resource.
 	Create(ctx context.Context, in *PublicIPAttachmentsCreateRequest, opts ...grpc.CallOption) (*PublicIPAttachmentsCreateResponse, error)
+	// Updates an existing public IP attachment. Allows modifying metadata (labels, annotations).
+	Update(ctx context.Context, in *PublicIPAttachmentsUpdateRequest, opts ...grpc.CallOption) (*PublicIPAttachmentsUpdateResponse, error)
 	// Deletes a public IP attachment. Triggers the detach workflow to unbind the PublicIP from the target.
 	Delete(ctx context.Context, in *PublicIPAttachmentsDeleteRequest, opts ...grpc.CallOption) (*PublicIPAttachmentsDeleteResponse, error)
 }
@@ -90,6 +93,16 @@ func (c *publicIPAttachmentsClient) Create(ctx context.Context, in *PublicIPAtta
 	return out, nil
 }
 
+func (c *publicIPAttachmentsClient) Update(ctx context.Context, in *PublicIPAttachmentsUpdateRequest, opts ...grpc.CallOption) (*PublicIPAttachmentsUpdateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublicIPAttachmentsUpdateResponse)
+	err := c.cc.Invoke(ctx, PublicIPAttachments_Update_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *publicIPAttachmentsClient) Delete(ctx context.Context, in *PublicIPAttachmentsDeleteRequest, opts ...grpc.CallOption) (*PublicIPAttachmentsDeleteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(PublicIPAttachmentsDeleteResponse)
@@ -110,6 +123,8 @@ type PublicIPAttachmentsServer interface {
 	Get(context.Context, *PublicIPAttachmentsGetRequest) (*PublicIPAttachmentsGetResponse, error)
 	// Creates a new public IP attachment. Binds a PublicIP to a target resource.
 	Create(context.Context, *PublicIPAttachmentsCreateRequest) (*PublicIPAttachmentsCreateResponse, error)
+	// Updates an existing public IP attachment. Allows modifying metadata (labels, annotations).
+	Update(context.Context, *PublicIPAttachmentsUpdateRequest) (*PublicIPAttachmentsUpdateResponse, error)
 	// Deletes a public IP attachment. Triggers the detach workflow to unbind the PublicIP from the target.
 	Delete(context.Context, *PublicIPAttachmentsDeleteRequest) (*PublicIPAttachmentsDeleteResponse, error)
 	mustEmbedUnimplementedPublicIPAttachmentsServer()
@@ -130,6 +145,9 @@ func (UnimplementedPublicIPAttachmentsServer) Get(context.Context, *PublicIPAtta
 }
 func (UnimplementedPublicIPAttachmentsServer) Create(context.Context, *PublicIPAttachmentsCreateRequest) (*PublicIPAttachmentsCreateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
+}
+func (UnimplementedPublicIPAttachmentsServer) Update(context.Context, *PublicIPAttachmentsUpdateRequest) (*PublicIPAttachmentsUpdateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
 }
 func (UnimplementedPublicIPAttachmentsServer) Delete(context.Context, *PublicIPAttachmentsDeleteRequest) (*PublicIPAttachmentsDeleteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
@@ -209,6 +227,24 @@ func _PublicIPAttachments_Create_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PublicIPAttachments_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublicIPAttachmentsUpdateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PublicIPAttachmentsServer).Update(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PublicIPAttachments_Update_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PublicIPAttachmentsServer).Update(ctx, req.(*PublicIPAttachmentsUpdateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PublicIPAttachments_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PublicIPAttachmentsDeleteRequest)
 	if err := dec(in); err != nil {
@@ -245,6 +281,10 @@ var PublicIPAttachments_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Create",
 			Handler:    _PublicIPAttachments_Create_Handler,
+		},
+		{
+			MethodName: "Update",
+			Handler:    _PublicIPAttachments_Update_Handler,
 		},
 		{
 			MethodName: "Delete",
