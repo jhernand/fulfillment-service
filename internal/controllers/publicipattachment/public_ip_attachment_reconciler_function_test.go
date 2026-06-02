@@ -98,12 +98,12 @@ func newTaskForDelete(attachmentID, hubID string, hubCache controllers.HubCache)
 
 var _ = Describe("buildSpec", func() {
 	It("Includes publicIP and computeInstance in spec", func() {
-		ci := "ci-abc123"
+		ci := "ci-uuid-abc123"
 		t := &task{
 			publicIPAttachment: privatev1.PublicIPAttachment_builder{
-				Id: "pia-test-1",
+				Id: "pia-uuid-test-1",
 				Spec: privatev1.PublicIPAttachmentSpec_builder{
-					PublicIp:        "pip-abc123",
+					PublicIp:        "pip-uuid-abc123",
 					ComputeInstance: &ci,
 				}.Build(),
 			}.Build(),
@@ -111,34 +111,34 @@ var _ = Describe("buildSpec", func() {
 
 		spec := t.buildSpec()
 
-		Expect(spec.PublicIP).To(Equal("pip-abc123"))
+		Expect(spec.PublicIP).To(Equal("pip-uuid-abc123"))
 		Expect(spec.ComputeInstance).ToNot(BeNil())
-		Expect(*spec.ComputeInstance).To(Equal("ci-abc123"))
+		Expect(*spec.ComputeInstance).To(Equal("ci-uuid-abc123"))
 	})
 
 	It("Handles nil computeInstance", func() {
 		t := &task{
 			publicIPAttachment: privatev1.PublicIPAttachment_builder{
-				Id: "pia-test-2",
+				Id: "pia-uuid-test-2",
 				Spec: privatev1.PublicIPAttachmentSpec_builder{
-					PublicIp: "pip-abc456",
+					PublicIp: "pip-uuid-abc456",
 				}.Build(),
 			}.Build(),
 		}
 
 		spec := t.buildSpec()
 
-		Expect(spec.PublicIP).To(Equal("pip-abc456"))
+		Expect(spec.PublicIP).To(Equal("pip-uuid-abc456"))
 		Expect(spec.ComputeInstance).To(BeNil())
 	})
 
 	It("Does not include status fields", func() {
-		ci := "ci-xyz"
+		ci := "ci-uuid-xyz"
 		t := &task{
 			publicIPAttachment: privatev1.PublicIPAttachment_builder{
-				Id: "pia-test-3",
+				Id: "pia-uuid-test-3",
 				Spec: privatev1.PublicIPAttachmentSpec_builder{
-					PublicIp:        "pip-abc789",
+					PublicIp:        "pip-uuid-abc789",
 					ComputeInstance: &ci,
 				}.Build(),
 				Status: privatev1.PublicIPAttachmentStatus_builder{
@@ -151,13 +151,13 @@ var _ = Describe("buildSpec", func() {
 
 		spec := t.buildSpec()
 
-		Expect(spec.PublicIP).To(Equal("pip-abc789"))
+		Expect(spec.PublicIP).To(Equal("pip-uuid-abc789"))
 	})
 })
 
 var _ = Describe("delete", func() {
 	const (
-		attachmentID = "pia-delete-id"
+		attachmentID = "pia-uuid-delete-id"
 		hubID        = "test-hub"
 		hubNamespace = "test-ns"
 		crName       = "publicipattachment-test"
@@ -368,7 +368,7 @@ var _ = Describe("validateTenant", func() {
 var _ = Describe("setDefaults", func() {
 	It("should set PENDING state when status is unspecified", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-defaults",
+			Id: "pia-uuid-defaults",
 		}.Build()
 
 		t := &task{
@@ -384,7 +384,7 @@ var _ = Describe("setDefaults", func() {
 
 	It("should not overwrite existing state", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-existing-state",
+			Id: "pia-uuid-existing-state",
 			Status: privatev1.PublicIPAttachmentStatus_builder{
 				State: privatev1.PublicIPAttachmentState_PUBLIC_IP_ATTACHMENT_STATE_READY,
 			}.Build(),
@@ -403,7 +403,7 @@ var _ = Describe("setDefaults", func() {
 
 	It("should create status if it doesn't exist", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-no-status",
+			Id: "pia-uuid-no-status",
 		}.Build()
 
 		t := &task{
@@ -424,7 +424,7 @@ var _ = Describe("setDefaults", func() {
 var _ = Describe("addFinalizer", func() {
 	It("should add finalizer when not present", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-no-finalizer",
+			Id: "pia-uuid-no-finalizer",
 			Metadata: privatev1.Metadata_builder{
 				Finalizers: []string{},
 			}.Build(),
@@ -442,7 +442,7 @@ var _ = Describe("addFinalizer", func() {
 
 	It("should not add finalizer when already present", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-has-finalizer",
+			Id: "pia-uuid-has-finalizer",
 			Metadata: privatev1.Metadata_builder{
 				Finalizers: []string{finalizers.Controller},
 			}.Build(),
@@ -461,7 +461,7 @@ var _ = Describe("addFinalizer", func() {
 
 	It("should create metadata if it doesn't exist", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-no-metadata",
+			Id: "pia-uuid-no-metadata",
 		}.Build()
 
 		t := &task{
@@ -481,7 +481,7 @@ var _ = Describe("addFinalizer", func() {
 var _ = Describe("removeFinalizer", func() {
 	It("should remove finalizer when present", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-has-finalizer",
+			Id: "pia-uuid-has-finalizer",
 			Metadata: privatev1.Metadata_builder{
 				Finalizers: []string{finalizers.Controller, "other-finalizer"},
 			}.Build(),
@@ -501,7 +501,7 @@ var _ = Describe("removeFinalizer", func() {
 
 	It("should do nothing when finalizer not present", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-no-finalizer",
+			Id: "pia-uuid-no-finalizer",
 			Metadata: privatev1.Metadata_builder{
 				Finalizers: []string{"other-finalizer"},
 			}.Build(),
@@ -521,7 +521,7 @@ var _ = Describe("removeFinalizer", func() {
 
 	It("should do nothing when metadata doesn't exist", func() {
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-no-metadata",
+			Id: "pia-uuid-no-metadata",
 		}.Build()
 
 		t := &task{
@@ -556,9 +556,9 @@ var _ = Describe("selectHub", func() {
 			}, nil)
 
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-existing-hub",
+			Id: "pia-uuid-existing-hub",
 			Spec: privatev1.PublicIPAttachmentSpec_builder{
-				PublicIp: "pip-1",
+				PublicIp: "pip-uuid-1",
 			}.Build(),
 			Status: privatev1.PublicIPAttachmentStatus_builder{
 				Hub: "hub-1",
@@ -585,7 +585,7 @@ var _ = Describe("selectHub", func() {
 		publicIPsClient := &fakePublicIPsClient{
 			getResponse: privatev1.PublicIPsGetResponse_builder{
 				Object: privatev1.PublicIP_builder{
-					Id: "pip-1",
+					Id: "pip-uuid-1",
 					Status: privatev1.PublicIPStatus_builder{
 						Hub: "pip-hub-1",
 					}.Build(),
@@ -602,9 +602,9 @@ var _ = Describe("selectHub", func() {
 			}, nil)
 
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-derive-hub",
+			Id: "pia-uuid-derive-hub",
 			Spec: privatev1.PublicIPAttachmentSpec_builder{
-				PublicIp: "pip-1",
+				PublicIp: "pip-uuid-1",
 			}.Build(),
 		}.Build()
 
@@ -629,16 +629,16 @@ var _ = Describe("selectHub", func() {
 		publicIPsClient := &fakePublicIPsClient{
 			getResponse: privatev1.PublicIPsGetResponse_builder{
 				Object: privatev1.PublicIP_builder{
-					Id:     "pip-no-hub",
+					Id:     "pip-uuid-no-hub",
 					Status: privatev1.PublicIPStatus_builder{}.Build(),
 				}.Build(),
 			}.Build(),
 		}
 
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-pip-no-hub",
+			Id: "pia-uuid-pip-no-hub",
 			Spec: privatev1.PublicIPAttachmentSpec_builder{
-				PublicIp: "pip-no-hub",
+				PublicIp: "pip-uuid-no-hub",
 			}.Build(),
 		}.Build()
 
@@ -663,9 +663,9 @@ var _ = Describe("selectHub", func() {
 		}
 
 		attachment := privatev1.PublicIPAttachment_builder{
-			Id: "pia-pip-error",
+			Id: "pia-uuid-pip-error",
 			Spec: privatev1.PublicIPAttachmentSpec_builder{
-				PublicIp: "pip-missing",
+				PublicIp: "pip-uuid-missing",
 			}.Build(),
 		}.Build()
 
