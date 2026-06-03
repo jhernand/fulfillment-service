@@ -16,6 +16,7 @@ package console
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -36,20 +37,17 @@ const (
 	subresourceVNC     = "vnc"
 )
 
-// HubConfigProvider returns a *rest.Config for the given hub ID.
-type HubConfigProvider func(ctx context.Context, hubID string) (*rest.Config, error)
-
 // KubeVirtBackendBuilder builds a KubeVirtBackend.
 type KubeVirtBackendBuilder struct {
-	logger            *slog.Logger
-	hubConfigProvider HubConfigProvider
+	logger *slog.Logger
+	caPool *x509.CertPool
 }
 
-// kubeVirtBackend connects to compute instance serial consoles on hub clusters
-// via the console.osac.openshift.io aggregated API.
+// kubeVirtBackend connects to compute instance consoles via pre-computed
+// WebSocket URIs embedded in encrypted console tickets.
 type kubeVirtBackend struct {
-	logger            *slog.Logger
-	hubConfigProvider HubConfigProvider
+	logger *slog.Logger
+	caPool *x509.CertPool
 }
 
 // NewKubeVirtBackend creates a new builder for the KubeVirt backend.
@@ -62,8 +60,9 @@ func (b *KubeVirtBackendBuilder) SetLogger(value *slog.Logger) *KubeVirtBackendB
 	return b
 }
 
-func (b *KubeVirtBackendBuilder) SetHubConfigProvider(value HubConfigProvider) *KubeVirtBackendBuilder {
-	b.hubConfigProvider = value
+// SetCAPool sets a CA pool for TLS when dialing backend WebSocket endpoints.
+func (b *KubeVirtBackendBuilder) SetCAPool(value *x509.CertPool) *KubeVirtBackendBuilder {
+	b.caPool = value
 	return b
 }
 
@@ -71,37 +70,22 @@ func (b *KubeVirtBackendBuilder) Build() (Backend, error) {
 	if b.logger == nil {
 		return nil, errors.New("logger is mandatory")
 	}
-	if b.hubConfigProvider == nil {
-		return nil, errors.New("hub config provider is mandatory")
-	}
 	return &kubeVirtBackend{
-		logger:            b.logger,
-		hubConfigProvider: b.hubConfigProvider,
+		logger: b.logger,
+		caPool: b.caPool,
 	}, nil
 }
 
-// Connect opens a WebSocket to the compute instance console subresource on the target hub.
-func (b *kubeVirtBackend) Connect(ctx context.Context, target Target) (io.ReadWriteCloser, error) {
-	b.logger.InfoContext(ctx, "Connecting to console",
-		slog.String("hub", target.HubID),
-		slog.String("namespace", target.Namespace),
-		slog.String("compute_instance", target.CRName),
-		slog.String("console_type", target.ConsoleType),
-	)
-
-	config, err := b.hubConfigProvider(ctx, target.HubID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get hub config for %q: %w", target.HubID, err)
-	}
-
-	// Build the WebSocket URL for the console subresource.
+// buildConsoleURL constructs the WebSocket URL and origin for a console subresource
+// from a REST config.
+func buildConsoleURL(config *rest.Config, namespace, crName, consoleType string) (wsURL, origin string, err error) {
 	host := config.Host
 	if !strings.Contains(host, "://") {
 		host = "https://" + host
 	}
 	parsed, err := url.Parse(host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse host %q: %w", host, err)
+		return "", "", fmt.Errorf("failed to parse host %q: %w", host, err)
 	}
 
 	scheme := "wss"
@@ -110,60 +94,78 @@ func (b *kubeVirtBackend) Connect(ctx context.Context, target Target) (io.ReadWr
 	}
 
 	var subresource string
-	switch target.ConsoleType {
+	switch consoleType {
 	case ConsoleTypeSerial:
 		subresource = subresourceConsole
 	case ConsoleTypeVNC:
 		subresource = subresourceVNC
 	default:
-		return nil, fmt.Errorf("unsupported console type %q", target.ConsoleType)
+		return "", "", fmt.Errorf("unsupported console type %q", consoleType)
 	}
 
 	consolePath := fmt.Sprintf(
 		"/apis/console.osac.openshift.io/v1alpha1/namespaces/%s/computeinstances/%s/%s",
-		url.PathEscape(target.Namespace),
-		url.PathEscape(target.CRName),
+		url.PathEscape(namespace),
+		url.PathEscape(crName),
 		subresource,
 	)
 
-	wsURL := fmt.Sprintf("%s://%s%s", scheme, parsed.Host, consolePath)
+	wsURL = fmt.Sprintf("%s://%s%s", scheme, parsed.Host, consolePath)
 	originScheme := "https"
 	if scheme == "ws" {
 		originScheme = "http"
 	}
+	origin = fmt.Sprintf("%s://%s", originScheme, parsed.Host)
+	return wsURL, origin, nil
+}
+
+// extractBearerToken extracts the bearer token from a rest.Config using the
+// same transport wrapper chain that client-go uses internally.
+func extractBearerToken(config *rest.Config) (string, error) {
+	authHeaders, err := authHeadersFromConfig(config)
+	if err != nil {
+		return "", err
+	}
+	authValue := authHeaders.Get("Authorization")
+	if strings.HasPrefix(authValue, "Bearer ") {
+		return authValue[7:], nil
+	}
+	return "", nil
+}
+
+// Connect dials the pre-computed WebSocket URI from the target, using the
+// backend's CA pool for TLS verification.
+func (b *kubeVirtBackend) Connect(ctx context.Context, target Target) (io.ReadWriteCloser, error) {
+	b.logger.InfoContext(ctx, "Connecting to console",
+		slog.String("uri", target.BackendURI),
+	)
+
+	parsed, err := url.Parse(target.BackendURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse backend URI %q: %w", target.BackendURI, err)
+	}
+
+	originScheme := "https"
+	if parsed.Scheme == "ws" {
+		originScheme = "http"
+	}
 	origin := fmt.Sprintf("%s://%s", originScheme, parsed.Host)
 
-	// Create WebSocket config.
-	wsConfig, err := websocket.NewConfig(wsURL, origin)
+	wsConfig, err := websocket.NewConfig(target.BackendURI, origin)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create websocket config: %w", err)
 	}
 
-	// Build TLS config from the REST config (only for wss).
-	if scheme == "wss" {
-		tlsConfig, err := rest.TLSConfigFor(config)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create TLS config: %w", err)
-		}
-		if tlsConfig == nil {
-			tlsConfig = &tls.Config{}
-		}
-		wsConfig.TlsConfig = tlsConfig
+	if target.BackendToken != "" {
+		wsConfig.Header.Set("Authorization", "Bearer "+target.BackendToken)
 	}
 
-	// Extract authentication headers from the REST config using client-go's
-	// transport layer. This handles all auth methods: BearerToken, BearerTokenFile,
-	// ExecProvider, and basic auth. Client certificates are handled separately
-	// by the TLS config above.
-	authHeaders, err := authHeadersFromConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build auth headers for hub %q: %w", target.HubID, err)
-	}
-	for key, values := range authHeaders {
-		wsConfig.Header.Del(key)
-		for _, value := range values {
-			wsConfig.Header.Add(key, value)
+	if parsed.Scheme == "wss" {
+		tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13}
+		if b.caPool != nil {
+			tlsConfig.RootCAs = b.caPool
 		}
+		wsConfig.TlsConfig = tlsConfig
 	}
 
 	conn, err := websocket.DialConfig(wsConfig)
@@ -171,14 +173,10 @@ func (b *kubeVirtBackend) Connect(ctx context.Context, target Target) (io.ReadWr
 		return nil, fmt.Errorf("failed to connect to console: %w", err)
 	}
 
-	// Set binary mode for raw console I/O.
 	conn.PayloadType = websocket.BinaryFrame
 
 	b.logger.InfoContext(ctx, "Connected to console",
-		slog.String("hub", target.HubID),
-		slog.String("namespace", target.Namespace),
-		slog.String("compute_instance", target.CRName),
-		slog.String("console_type", target.ConsoleType),
+		slog.String("uri", target.BackendURI),
 	)
 
 	return conn, nil
@@ -233,18 +231,24 @@ func (h *headerCaptureRoundTripper) RoundTrip(req *http.Request) (*http.Response
 	return nil, errHeaderCaptureOnly
 }
 
-// HubConfigProviderFromKubeconfigs returns a HubConfigProvider that builds
-// REST configs from raw kubeconfig bytes retrieved by the given function.
-func HubConfigProviderFromKubeconfigs(hubGetter func(ctx context.Context, id string) ([]byte, error)) HubConfigProvider {
-	return func(ctx context.Context, hubID string) (*rest.Config, error) {
-		kubeconfig, err := hubGetter(ctx, hubID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get kubeconfig for hub %q: %w", hubID, err)
-		}
-		config, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse kubeconfig for hub %q: %w", hubID, err)
-		}
-		return config, nil
+// BuildBackendTarget extracts the WebSocket URI and bearer token from a raw
+// kubeconfig. This is called at CreateSession time to pre-compute the values
+// that are embedded in the encrypted ticket.
+func BuildBackendTarget(kubeconfig []byte, namespace, crName, consoleType string) (uri, token string, err error) {
+	config, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse kubeconfig: %w", err)
 	}
+
+	uri, _, err = buildConsoleURL(config, namespace, crName, consoleType)
+	if err != nil {
+		return "", "", err
+	}
+
+	token, err = extractBearerToken(config)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to extract bearer token: %w", err)
+	}
+
+	return uri, token, nil
 }
