@@ -1,0 +1,90 @@
+//
+// Copyright (c) 2025 Red Hat, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//
+
+syntax = "proto3";
+
+package osac.public.v1;
+
+import "google/protobuf/timestamp.proto";
+import "osac/public/v1/metadata_type.proto";
+
+// Lifecycle states for InstanceType resources.
+enum InstanceTypeState {
+  // State is unknown or has not been determined yet.
+  INSTANCE_TYPE_STATE_UNSPECIFIED = 0;
+
+  // The instance type is fully available for new VM creation.
+  INSTANCE_TYPE_STATE_ACTIVE = 1;
+
+  // The instance type is available with warnings; migration to a replacement is recommended.
+  INSTANCE_TYPE_STATE_DEPRECATED = 2;
+
+  // The instance type is not available for new VMs; visible for lookups only.
+  INSTANCE_TYPE_STATE_OBSOLETE = 3;
+}
+
+// Contains deprecation details for an instance type.
+//
+// This message is only meaningful when the parent InstanceType state is DEPRECATED or OBSOLETE.
+// The state field mirrors the parent InstanceType.state, making this message self-contained when
+// serialized independently.
+message InstanceTypeDeprecation {
+  // Current deprecation state (DEPRECATED or OBSOLETE). Mirrors parent InstanceType.state.
+  InstanceTypeState state = 1;
+
+  // Suggested replacement instance type name (e.g., "standard-8-32").
+  string replacement = 2;
+
+  // When deprecation was announced. Auto-set on transition to DEPRECATED.
+  optional google.protobuf.Timestamp deprecated = 3;
+
+  // When the instance type becomes or became obsolete. Admin-specified or auto-set on transition to OBSOLETE.
+  optional google.protobuf.Timestamp obsolete = 4;
+}
+
+// Describes a pre-configured compute bundle (cores, memory) that can be referenced by name when creating VMs.
+//
+// Instance types are admin-managed catalog resources. Organization users select an instance type by name instead
+// of specifying raw compute resources. Cloud Provider Admins control the available configurations through
+// lifecycle-managed instance types.
+//
+// This is similar to the instance type concepts used by cloud providers (AWS EC2 instance types, Azure VM sizes,
+// GCP machine types).
+message InstanceType {
+  // Primary user-facing identifier of the instance type (globally unique, immutable).
+  //
+  // DNS-label style: lowercase alphanumeric and hyphens, max 63 chars, must start with a letter
+  // (e.g., "standard-4-16", "highmem-8-64").
+  string name = 1;
+
+  // Metadata of the instance type.
+  Metadata metadata = 2;
+
+  // Number of CPU cores. Immutable after creation.
+  int32 cores = 3;
+
+  // Amount of memory in GiB. Immutable after creation.
+  int32 memory_gib = 4;
+
+  // Human friendly description of the instance type, using Markdown format.
+  string description = 5;
+
+  // Current lifecycle state of the instance type.
+  InstanceTypeState state = 6;
+
+  // Deprecation details. Only meaningful when state is DEPRECATED or OBSOLETE.
+  InstanceTypeDeprecation deprecation = 7;
+
+  // Unique identifier of the instance type. Holds the same value as the name field for GenericDAO compatibility.
+  string id = 8;
+}

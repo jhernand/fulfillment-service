@@ -1,0 +1,44 @@
+//
+// Copyright (c) 2025 Red Hat, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//
+
+syntax = "proto3";
+
+package osac.private.v1;
+
+import "google/protobuf/timestamp.proto";
+import "osac/private/v1/metadata_type.proto";
+
+enum InstanceTypeState {
+  INSTANCE_TYPE_STATE_UNSPECIFIED = 0;
+  INSTANCE_TYPE_STATE_ACTIVE = 1;
+  INSTANCE_TYPE_STATE_DEPRECATED = 2;
+  INSTANCE_TYPE_STATE_OBSOLETE = 3;
+}
+
+message InstanceTypeDeprecation {
+  InstanceTypeState state = 1;
+  string replacement = 2;
+  optional google.protobuf.Timestamp deprecated = 3;
+  optional google.protobuf.Timestamp obsolete = 4;
+}
+
+message InstanceType {
+  string name = 1;
+  Metadata metadata = 2;
+  int32 cores = 3;
+  int32 memory_gib = 4;
+  string description = 5;
+  InstanceTypeState state = 6;
+  InstanceTypeDeprecation deprecation = 7;
+  string id = 8;
+}
