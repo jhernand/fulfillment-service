@@ -113,7 +113,7 @@ var _ = Describe("ConsoleProxyCore", func() {
 			// channel to unblock Read(), but doesn't close an underlying connection.
 			// Without this, the relay hangs indefinitely.
 			client := &failingRWC{
-				Reader: &blockingReader{},
+				Reader: &blockingReader{ch: make(chan struct{})},
 				Writer: io.Discard,
 			}
 			backendSide, backendRemote := net.Pipe()
@@ -158,7 +158,7 @@ var _ = Describe("ConsoleProxyCore", func() {
 				Writer: io.Discard,
 			}
 			backend := &failingRWC{
-				Reader: &blockingReader{},
+				Reader: &blockingReader{ch: make(chan struct{})},
 				Writer: &failWriter{err: errors.New("backend write failed")},
 			}
 
@@ -317,18 +317,12 @@ type blockingReader struct {
 }
 
 func (r *blockingReader) Read(p []byte) (int, error) {
-	if r.ch == nil {
-		r.ch = make(chan struct{})
-	}
 	<-r.ch
 	return 0, io.EOF
 }
 
 func (r *blockingReader) Close() error {
 	r.once.Do(func() {
-		if r.ch == nil {
-			r.ch = make(chan struct{})
-		}
 		close(r.ch)
 	})
 	return nil

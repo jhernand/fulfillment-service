@@ -23,4 +23,4 @@ resources:
 - certificate.yaml
 - deployment.yaml
 - service.yaml
-- token-signer-certificate.yaml
+- token-certificates.yaml

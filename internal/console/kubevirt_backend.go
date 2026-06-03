@@ -249,6 +249,9 @@ func BuildBackendTarget(kubeconfig []byte, namespace, crName, consoleType string
 	if err != nil {
 		return "", "", fmt.Errorf("failed to extract bearer token: %w", err)
 	}
+	if token == "" {
+		return "", "", fmt.Errorf("no bearer token found in kubeconfig")
+	}
 
 	return uri, token, nil
 }

@@ -20,7 +20,5 @@ labels:
 
 resources:
 - certificate.yaml
-- encryption-certificate.yaml
 - deployment.yaml
-- sa.yaml
 - service.yaml

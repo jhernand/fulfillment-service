@@ -15,6 +15,25 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   namespace: {{ .Release.Namespace }}
+  name: fulfillment-token-signer
+spec:
+  issuerRef:
+    kind: {{ .Values.certs.issuerRef.kind }}
+    name: {{ required "certs.issuerRef.name is required" .Values.certs.issuerRef.name }}
+  dnsNames:
+  - fulfillment-token-signer
+  secretName: fulfillment-token-signer-keypair
+  privateKey:
+    rotationPolicy: Always
+  usages:
+  - digital signature
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  namespace: {{ .Release.Namespace }}
   name: fulfillment-token-encryption
 spec:
   issuerRef:
@@ -22,7 +41,7 @@ spec:
     name: {{ required "certs.issuerRef.name is required" .Values.certs.issuerRef.name }}
   dnsNames:
   - fulfillment-token-encryption
-  secretName: fulfillment-token-encryption-tls
+  secretName: fulfillment-token-encryption-keypair
   privateKey:
     algorithm: RSA
     size: 3072

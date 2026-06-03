@@ -76,11 +76,13 @@ func (s *signingKeysServer) Get(
 ) (*httpbody.HttpBody, error) {
 	set, err := s.sealer.JWKSet()
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to build JWKS: %v", err)
+		s.logger.ErrorContext(ctx, "Failed to build JWKS", slog.String("error", err.Error()))
+		return nil, status.Errorf(codes.Internal, "failed to build JWKS")
 	}
 	data, err := json.Marshal(set)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to encode JWKS: %v", err)
+		s.logger.ErrorContext(ctx, "Failed to marshal JWKS", slog.String("error", err.Error()))
+		return nil, status.Errorf(codes.Internal, "failed to encode JWKS")
 	}
 	return &httpbody.HttpBody{
 		ContentType: "application/json",

@@ -26,36 +26,50 @@ import (
 )
 
 // certKeyReloader watches a PEM certificate + key pair and reloads when
-// the cert file's mtime changes. Used by the Sealer (signing key) and
+// either file's mtime changes. Used by the Sealer (signing key) and
 // encryption key loader.
 type certKeyReloader struct {
-	logger     *slog.Logger
-	certFile   string
-	keyFile    string // empty for public-key-only use (encryption cert)
-	mu         sync.Mutex
-	timestamp  time.Time
-	publicKey  *rsa.PublicKey
-	privateKey *rsa.PrivateKey // nil for public-key-only use
-	jwkKey     jwk.Key         // JWK representation of the public key
+	logger      *slog.Logger
+	certFile    string
+	keyFile     string // empty for public-key-only use (encryption cert)
+	mu          sync.Mutex
+	certModTime time.Time
+	keyModTime  time.Time
+	publicKey   *rsa.PublicKey
+	privateKey  *rsa.PrivateKey // nil for public-key-only use
+	jwkKey      jwk.Key         // JWK representation of the public key
 }
 
-// ensureLoaded checks the cert file's mtime and reloads if changed.
+// ensureLoaded checks the cert and key file mtimes and reloads if changed.
 func (r *certKeyReloader) ensureLoaded() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	info, err := os.Stat(r.certFile)
+	// Phase A: stat both files, decide if reload is needed.
+	certInfo, err := os.Stat(r.certFile)
 	if err != nil {
 		return fmt.Errorf("failed to stat cert file %q: %w", r.certFile, err)
 	}
+	certChanged := r.certModTime.IsZero() || certInfo.ModTime().After(r.certModTime)
 
-	if !r.timestamp.IsZero() && !info.ModTime().After(r.timestamp) {
+	var keyInfo os.FileInfo
+	keyChanged := false
+	if r.keyFile != "" {
+		keyInfo, err = os.Stat(r.keyFile)
+		if err != nil {
+			return fmt.Errorf("failed to stat key file %q: %w", r.keyFile, err)
+		}
+		keyChanged = r.keyModTime.IsZero() || keyInfo.ModTime().After(r.keyModTime)
+	}
+
+	if !certChanged && !keyChanged {
 		return nil
 	}
 
+	// Phase B: parse everything into local variables.
 	r.logger.Info("Loading certificate",
 		slog.String("cert_file", r.certFile),
-		slog.Time("mtime", info.ModTime()),
+		slog.Time("mtime", certInfo.ModTime()),
 	)
 
 	certPEM, err := os.ReadFile(r.certFile)
@@ -72,7 +86,6 @@ func (r *certKeyReloader) ensureLoaded() error {
 	if !ok {
 		return fmt.Errorf("certificate public key is not RSA (got %T)", cert.PublicKey)
 	}
-	r.publicKey = pubKey
 
 	// Build JWK from the public key with kid = thumbprint.
 	k, err := jwk.Import(pubKey)
@@ -88,25 +101,31 @@ func (r *certKeyReloader) ensureLoaded() error {
 	if err := k.Set(jwk.KeyUsageKey, "sig"); err != nil {
 		return fmt.Errorf("failed to set use on JWK: %w", err)
 	}
-	r.jwkKey = k
 
 	// Load private key (Sealer only).
+	var privKey *rsa.PrivateKey
 	if r.keyFile != "" {
 		keyPEM, err := os.ReadFile(r.keyFile)
 		if err != nil {
 			return fmt.Errorf("failed to read key file %q: %w", r.keyFile, err)
 		}
-		privKey, err := parsePrivateKey(keyPEM)
+		privKey, err = parsePrivateKey(keyPEM)
 		if err != nil {
 			return fmt.Errorf("failed to parse private key from %q: %w", r.keyFile, err)
 		}
 		if !privKey.PublicKey.Equal(pubKey) {
 			return fmt.Errorf("private key does not match certificate public key from %q", r.certFile)
 		}
-		r.privateKey = privKey
 	}
 
-	r.timestamp = info.ModTime()
+	// Phase C: all parsing succeeded -- swap fields atomically.
+	r.publicKey = pubKey
+	r.jwkKey = k
+	r.privateKey = privKey
+	r.certModTime = certInfo.ModTime()
+	if keyInfo != nil {
+		r.keyModTime = keyInfo.ModTime()
+	}
 	return nil
 }
 

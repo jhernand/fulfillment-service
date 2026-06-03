@@ -11,6 +11,29 @@
 # specific language governing permissions and limitations under the License.
 #
 
+# Signing keypair for console session tokens (JWS RS256). Separate from the
+# TLS serving cert so that token signing and transport use independent keys.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fulfillment-token-signer
+spec:
+  issuerRef:
+    kind: ClusterIssuer
+    name: default-ca
+  dnsNames:
+  - fulfillment-token-signer
+  secretName: fulfillment-token-signer-keypair
+  privateKey:
+    rotationPolicy: Always
+  usages:
+  - digital signature
+
+---
+
+# Encryption keypair for JWE-wrapping console session tokens. The gRPC server
+# encrypts with the public key; the console-proxy decrypts with the private
+# key. 3072-bit RSA is chosen to match the security strength of A256GCM.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -21,7 +44,7 @@ spec:
     name: default-ca
   dnsNames:
   - fulfillment-token-encryption
-  secretName: fulfillment-token-encryption-tls
+  secretName: fulfillment-token-encryption-keypair
   privateKey:
     algorithm: RSA
     size: 3072

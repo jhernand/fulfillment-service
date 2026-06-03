@@ -144,7 +144,11 @@ func getTicket(ctx context.Context, conn *grpc.ClientConn, opts Options) (string
 	if err != nil {
 		return "", fmt.Errorf("failed to create console session: %w", err)
 	}
-	return sessionResp.GetTicket(), nil
+	ticket := sessionResp.GetTicket()
+	if ticket == "" {
+		return "", fmt.Errorf("server returned empty console session ticket")
+	}
+	return ticket, nil
 }
 
 // connectOnce obtains a fresh ticket, then opens a single gRPC proxy stream

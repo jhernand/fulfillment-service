@@ -1067,12 +1067,14 @@ func (b0 ConsoleSessionsCreateRequest_builder) Build() *ConsoleSessionsCreateReq
 	return m0
 }
 
-// Response with a signed JWT ticket for console access.
+// Response with an opaque encrypted ticket for console access.
 type ConsoleSessionsCreateResponse struct {
 	state protoimpl.MessageState `protogen:"hybrid.v1"`
-	// Signed JWT ticket. Treat as a secret -- it grants console access
-	// without further authentication.
-	Ticket        string                 `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	// Opaque encrypted ticket (nested JWE+JWS). Do not parse or log --
+	// it grants console access without further authentication.
+	// Use expires_at for expiry metadata.
+	Ticket string `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	// Authoritative expiry time for the ticket.
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1139,9 +1141,11 @@ func (x *ConsoleSessionsCreateResponse) ClearExpiresAt() {
 type ConsoleSessionsCreateResponse_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
-	// Signed JWT ticket. Treat as a secret -- it grants console access
-	// without further authentication.
-	Ticket    string
+	// Opaque encrypted ticket (nested JWE+JWS). Do not parse or log --
+	// it grants console access without further authentication.
+	// Use expires_at for expiry metadata.
+	Ticket string
+	// Authoritative expiry time for the ticket.
 	ExpiresAt *timestamppb.Timestamp
 }
 

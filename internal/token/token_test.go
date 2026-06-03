@@ -301,6 +301,85 @@ var _ = Describe("Token", func() {
 			// The two tokens should be different (different keys, different JTI).
 			Expect(tokenString1).ToNot(Equal(tokenString2))
 		})
+
+		It("Preserves consistent state when private key reload fails", func() {
+			// Seal with original keys -- should work.
+			_, _, err := sealer.Seal("jane", nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Overwrite key file with a key from a different cert pair.
+			otherCertFile := filepath.Join(tmpDir, "other-split.crt")
+			otherKeyFile := filepath.Join(tmpDir, "other-split.key")
+			generateLeafCert(otherCertFile, otherKeyFile, "other-split", testCA)
+			otherKeyPEM, err := os.ReadFile(otherKeyFile)
+			Expect(err).ToNot(HaveOccurred())
+			time.Sleep(10 * time.Millisecond)
+			Expect(os.WriteFile(signingKeyFile, otherKeyPEM, 0o600)).To(Succeed())
+
+			// Touch cert file so mtime triggers reload.
+			certPEM, err := os.ReadFile(signingCertFile)
+			Expect(err).ToNot(HaveOccurred())
+			time.Sleep(10 * time.Millisecond)
+			Expect(os.WriteFile(signingCertFile, certPEM, 0o600)).To(Succeed())
+
+			// Seal should fail with mismatch error.
+			_, _, err = sealer.Seal("jane", nil, 30*time.Second)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does not match"))
+
+			// Restore the correct key pair.
+			time.Sleep(10 * time.Millisecond)
+			generateLeafCert(signingCertFile, signingKeyFile, "fulfillment-token-signer", testCA)
+
+			// Seal should succeed -- struct was not corrupted by the failed reload.
+			_, _, err = sealer.Seal("jane", nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("Reloads when only the key file changes", func() {
+			_, _, err := sealer.Seal("jane", nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Record original cert mtime.
+			certInfo, err := os.Stat(signingCertFile)
+			Expect(err).ToNot(HaveOccurred())
+			origCertMtime := certInfo.ModTime()
+
+			// Generate a new key pair (writes both files).
+			time.Sleep(10 * time.Millisecond)
+			generateLeafCert(signingCertFile, signingKeyFile, "fulfillment-token-signer", testCA)
+
+			// Reset cert file mtime to original so only key mtime differs.
+			Expect(os.Chtimes(signingCertFile, origCertMtime, origCertMtime)).To(Succeed())
+
+			// Seal should use the new key (reload triggered by key mtime).
+			_, _, err = sealer.Seal("jane", nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("Does not reload when neither file has changed", func() {
+			_, _, err := sealer.Seal("jane", nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			set1, err := sealer.JWKSet()
+			Expect(err).ToNot(HaveOccurred())
+			key1, ok := set1.Key(0)
+			Expect(ok).To(BeTrue())
+			kid1, ok := key1.KeyID()
+			Expect(ok).To(BeTrue())
+
+			// Seal again without touching any files.
+			_, _, err = sealer.Seal("jane", nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			set2, err := sealer.JWKSet()
+			Expect(err).ToNot(HaveOccurred())
+			key2, ok := set2.Key(0)
+			Expect(ok).To(BeTrue())
+			kid2, ok := key2.KeyID()
+			Expect(ok).To(BeTrue())
+			Expect(kid2).To(Equal(kid1))
+		})
 	})
 })
 

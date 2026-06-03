@@ -41,8 +41,8 @@ const (
 //
 // Service for console session ticket management.
 type ConsoleSessionsClient interface {
-	// Create a console session ticket. The ticket is a signed JWT that
-	// authorizes a single console connection via the console-proxy service.
+	// Create a console session ticket. The ticket is an opaque encrypted token
+	// that authorizes a single console connection via the console-proxy service.
 	Create(ctx context.Context, in *ConsoleSessionsCreateRequest, opts ...grpc.CallOption) (*ConsoleSessionsCreateResponse, error)
 }
 
@@ -70,8 +70,8 @@ func (c *consoleSessionsClient) Create(ctx context.Context, in *ConsoleSessionsC
 //
 // Service for console session ticket management.
 type ConsoleSessionsServer interface {
-	// Create a console session ticket. The ticket is a signed JWT that
-	// authorizes a single console connection via the console-proxy service.
+	// Create a console session ticket. The ticket is an opaque encrypted token
+	// that authorizes a single console connection via the console-proxy service.
 	Create(context.Context, *ConsoleSessionsCreateRequest) (*ConsoleSessionsCreateResponse, error)
 	mustEmbedUnimplementedConsoleSessionsServer()
 }

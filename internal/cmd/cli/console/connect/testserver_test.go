@@ -16,6 +16,7 @@ package connect
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"sync/atomic"
@@ -34,6 +35,22 @@ import (
 )
 
 const testTicket = "test-ticket-value"
+
+// testTLSConfig returns a tls.Config that trusts the self-signed localhost
+// certificate used by testing.NewTLSServer. This avoids InsecureSkipVerify.
+func testTLSConfig() *tls.Config {
+	cert := testing.LocalhostCertificate()
+	pool := x509.NewCertPool()
+	pool.AddCert(must(x509.ParseCertificate(cert.Certificate[0])))
+	return &tls.Config{
+		RootCAs: pool,
+	}
+}
+
+func must[T any](v T, err error) T {
+	Expect(err).NotTo(HaveOccurred())
+	return v
+}
 
 // sendProxyStatus sends a ConsoleStatus message on the proxy stream.
 func sendProxyStatus(stream publicv1.ConsoleProxy_ConnectServer, state publicv1.ConsoleConnectionState, msg string) error {
@@ -79,7 +96,7 @@ func openTestStream(proxySrv publicv1.ConsoleProxyServer) (
 	addr, grpcCleanup := startTestGRPCServer(proxySrv)
 
 	conn, err := grpc.NewClient(addr,
-		grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(&tls.Config{InsecureSkipVerify: true})),
+		grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(testTLSConfig())),
 	)
 	Expect(err).NotTo(HaveOccurred())
 

@@ -15,7 +15,6 @@ package connect
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"log/slog"
@@ -80,7 +79,7 @@ var _ = Describe("Auto-reconnect", func() {
 		DeferCleanup(cleanup)
 
 		conn, err := grpc.NewClient(addr,
-			grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(&tls.Config{InsecureSkipVerify: true})),
+			grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(testTLSConfig())),
 		)
 		Expect(err).NotTo(HaveOccurred())
 		defer conn.Close()
@@ -114,7 +113,7 @@ var _ = Describe("Auto-reconnect", func() {
 		DeferCleanup(cleanup)
 
 		conn, err := grpc.NewClient(addr,
-			grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(&tls.Config{InsecureSkipVerify: true})),
+			grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(testTLSConfig())),
 		)
 		Expect(err).NotTo(HaveOccurred())
 		defer conn.Close()
@@ -136,7 +135,7 @@ var _ = Describe("Auto-reconnect", func() {
 		DeferCleanup(cleanup)
 
 		conn, err := grpc.NewClient(addr,
-			grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(&tls.Config{InsecureSkipVerify: true})),
+			grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(testTLSConfig())),
 		)
 		Expect(err).NotTo(HaveOccurred())
 		defer conn.Close()
@@ -162,7 +161,7 @@ var _ = Describe("connectOnce edge cases", func() {
 		DeferCleanup(cleanup)
 
 		conn, err := grpc.NewClient(addr,
-			grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(&tls.Config{InsecureSkipVerify: true})),
+			grpc.WithTransportCredentials(experiementalcredentials.NewTLSWithALPNDisabled(testTLSConfig())),
 		)
 		Expect(err).NotTo(HaveOccurred())
 		defer conn.Close()

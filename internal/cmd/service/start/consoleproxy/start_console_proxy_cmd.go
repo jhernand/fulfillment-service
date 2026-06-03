@@ -263,12 +263,14 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	c.logger.InfoContext(ctx, "Starting gRPC server",
 		slog.String("address", grpcListener.Addr().String()),
 	)
+	serveErrors := make(chan error, 3)
 	go func() {
 		err := grpcServer.Serve(grpcListener)
 		if err != nil {
 			c.logger.ErrorContext(ctx, "gRPC server failed",
 				slog.Any("error", err),
 			)
+			serveErrors <- err
 		}
 	}()
 
@@ -321,6 +323,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 			c.logger.ErrorContext(ctx, "Console server failed",
 				slog.Any("error", err),
 			)
+			serveErrors <- err
 		}
 	}()
 	shutdown.AddHttpServer(consoleListenerName, 0, consoleHTTPServer)
@@ -354,12 +357,27 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 			c.logger.ErrorContext(ctx, "Metrics server failed",
 				slog.Any("error", err),
 			)
+			serveErrors <- err
 		}
 	}()
 
-	// Keep running till the shutdown sequence finishes:
+	// Keep running till the shutdown sequence finishes or a server fails:
 	c.logger.InfoContext(ctx, "Waiting for shutdown sequence to complete")
-	return shutdown.Wait()
+	shutdownDone := make(chan struct{})
+	go func() {
+		shutdown.Wait()
+		close(shutdownDone)
+	}()
+	select {
+	case err := <-serveErrors:
+		c.logger.ErrorContext(ctx, "Server failed, triggering shutdown",
+			slog.Any("error", err),
+		)
+		shutdown.Start(1)
+		return err
+	case <-shutdownDone:
+		return nil
+	}
 }
 
 const shortHelp = `Starts the console proxy`

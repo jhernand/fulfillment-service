@@ -205,11 +205,16 @@ func (m *consoleMetricsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		consoleType = "unknown"
 	}
 
-	m.connDuration.WithLabelValues(consoleType).Observe(time.Since(start).Seconds())
-
-	resultStatus := "success"
-	if sw.status >= 400 {
-		resultStatus = "error"
+	// x/net/websocket hijacks the connection before writing status codes, so
+	// statusWriter never sees 101. A hijacked connection (sw.status still at
+	// default 200 and wroteHeader == false) indicates a successful WebSocket
+	// upgrade. Pre-upgrade failures (401/403/502) call http.Error which sets
+	// wroteHeader = true with the actual error code before hijack happens.
+	upgraded := !sw.wroteHeader
+	if upgraded {
+		m.connDuration.WithLabelValues(consoleType).Observe(time.Since(start).Seconds())
+		m.connectTotal.WithLabelValues(consoleType, "success").Inc()
+	} else {
+		m.connectTotal.WithLabelValues(consoleType, "error").Inc()
 	}
-	m.connectTotal.WithLabelValues(consoleType, resultStatus).Inc()
 }

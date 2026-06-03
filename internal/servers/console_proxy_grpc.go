@@ -14,7 +14,9 @@ language governing permissions and limitations under the License.
 package servers
 
 import (
+	"errors"
 	"io"
+	"log/slog"
 	"sync"
 
 	"google.golang.org/grpc/codes"
@@ -22,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
+	"github.com/osac-project/fulfillment-service/internal/console"
 )
 
 // consoleProxyServer is the gRPC service implementation for ConsoleProxy.Connect.
@@ -72,8 +75,16 @@ func (s *consoleProxyServer) Connect(stream publicv1.ConsoleProxy_ConnectServer)
 	// Connect backend.
 	backend, sessionCtx, err := s.core.ConnectBackend(ctx, ticket)
 	if err != nil {
-		sendProxyStatus(stream, publicv1.ConsoleConnectionState_CONSOLE_CONNECTION_STATE_ERROR, err.Error())
-		return err
+		if sendErr := sendProxyStatus(stream, publicv1.ConsoleConnectionState_CONSOLE_CONNECTION_STATE_ERROR,
+			"failed to connect to console backend"); sendErr != nil {
+			s.core.logger.ErrorContext(ctx, "Failed to send error status", slog.Any("error", sendErr))
+		}
+		s.core.logger.ErrorContext(ctx, "Failed to connect backend", slog.Any("error", err))
+		var sessionErr *console.ErrSessionExists
+		if errors.As(err, &sessionErr) {
+			return status.Errorf(codes.FailedPrecondition, "console session already active")
+		}
+		return status.Errorf(codes.Unavailable, "failed to connect to console backend")
 	}
 
 	// Send CONNECTED status. If this fails, close the backend to avoid
