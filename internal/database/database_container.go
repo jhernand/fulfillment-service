@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -57,6 +58,7 @@ type Container struct {
 	port           string
 	adminPassword  string
 	sharedPassword string
+	configFile     string
 	adminConn      *pgx.Conn
 	outWriter      *logging.Writer
 	errWriter      *logging.Writer
@@ -172,24 +174,27 @@ func (b *ContainerBuilder) selectTool() (result string, err error) {
 // Start starts the database server inside a container and waits until it is ready to accept connections. Cleaning when
 // something fails, or when the container is no longer needed, is the responsibility of the caller.
 func (s *Container) Start(ctx context.Context) error {
+	// Create the configuration file:
+	err := s.createConfigFile(ctx)
+	if err != nil {
+		return err
+	}
+
 	// Start the database server:
 	runCmd := exec.Command(
 		s.tool,
 		"run",
-		"--env", "POSTGRES_PASSWORD="+s.adminPassword,
+		"--env", fmt.Sprintf("POSTGRESQL_ADMIN_PASSWORD=%s", s.adminPassword),
 		"--publish", "5432",
 		"--detach",
 		"--rm",
-		"docker.io/postgres:15",
-		"-c", "log_destination=stderr",
-		"-c", "log_statement=all",
-		"-c", "logging_collector=off",
-		"-c", "fsync=off",
+		"--volume", fmt.Sprintf("%s:%s:Z", s.configFile, containerConfigPath),
+		containerImage,
 	)
 	runOut := &bytes.Buffer{}
 	runCmd.Stdout = io.MultiWriter(runOut, s.outWriter)
 	runCmd.Stderr = s.errWriter
-	err := runCmd.Run()
+	err = runCmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to start database container: %w", err)
 	}
@@ -301,8 +306,80 @@ func (s *Container) Start(ctx context.Context) error {
 	return nil
 }
 
+// createConfigFile creates a temporary configuration file with performance and logging settings. The file name is
+// stored in the object so it can be removed when the container is stopped.
+func (c *Container) createConfigFile(ctx context.Context) (err error) {
+	// Remember to remove the temporary file if somethng fails:
+	var tmpFile *os.File
+	defer func() {
+		if err == nil || tmpFile == nil {
+			return
+		}
+		removeErr := os.Remove(tmpFile.Name())
+		if removeErr == nil {
+			return
+		}
+		c.logger.ErrorContext(
+			ctx,
+			"Failed to remove configuration file",
+			slog.String("file", tmpFile.Name()),
+			slog.Any("error", removeErr),
+		)
+	}()
+
+	// Write a temporary configuration file with performance and logging settings. The image picks up '*.conf'
+	// files from '/opt/app-root/src/postgresql-cfg' and appends them to the generated 'postgresql.conf', so these
+	// settings override the defaults.
+	tmpFile, err = os.CreateTemp("", "*.conf")
+	if err != nil {
+		err = fmt.Errorf("failed to create configuration file: %w", err)
+		return
+	}
+	_, err = tmpFile.WriteString(containerConfigText)
+	if err != nil {
+		err = fmt.Errorf("failed to write configuration file: %w", err)
+		return
+	}
+	err = tmpFile.Close()
+	if err != nil {
+		err = fmt.Errorf("failed to close configuration file: %w", err)
+		return
+	}
+
+	// The sclorg image runs PostgreSQL as UID 26, which in rootless podman maps to a different host UID. Since
+	// os.CreateTemp creates files with mode 0600, the container process can't read them. Widen to 0644 so the
+	// mapped UID can read the configuration.
+	err = os.Chmod(tmpFile.Name(), 0644)
+	if err != nil {
+		err = fmt.Errorf("failed to set permissions on configuration file: %w", err)
+		return
+	}
+
+	// Store the file name so that it can be removed when the container is stopped.
+	c.configFile = tmpFile.Name()
+
+	return nil
+}
+
 // Stop stops the database server and removes all databases that were created.
 func (s *Container) Stop(ctx context.Context) error {
+	// Remember to remove the configuration file:
+	defer func() {
+		if s.configFile == "" {
+			return
+		}
+		removeErr := os.Remove(s.configFile)
+		if removeErr == nil {
+			s.logger.ErrorContext(
+				ctx,
+				"Failed to remove configuration file",
+				slog.String("file", s.configFile),
+				slog.Any("error", removeErr),
+			)
+			return
+		}
+	}()
+
 	// Delete all instance databases:
 	for _, instance := range s.instances {
 		err := instance.Close(ctx)
@@ -390,7 +467,11 @@ func (s *Container) Stop(ctx context.Context) error {
 	killCmd.Stderr = s.errWriter
 	err = killCmd.Run()
 	if err != nil {
-		return fmt.Errorf("failed to kill database container: %w", err)
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to kill database container",
+			slog.Any("error", err),
+		)
 	}
 
 	return nil
@@ -574,6 +655,25 @@ var containerTools = []string{
 	"podman",
 	"docker",
 }
+
+// containerImage is the PostgreSQL container image. This is the same sclorg image used by the integration test Helm
+// chart.
+const containerImage = "quay.io/sclorg/postgresql-15-c9s" +
+	"@sha256:c51a29654b63e2683f83efde5c751833fc79d360918c30269801608dff3c533a"
+
+// containerConfigPath is the path inside the container where the custom configuration file is mounted. The sclorg image
+// includes all *.conf files from this directory at the end of the generated postgresql.conf.
+const containerConfigPath = "/opt/app-root/src/postgresql-cfg/custom.conf"
+
+// containerConfigText is the PostgreSQL configuration written to a temporary file on the host and bind-mounted into the
+// container. It disables durability features to speed up tests and configures logging so that all statements are
+// visible in the container output.
+const containerConfigText = `
+fsync = off
+log_destination = 'stderr'
+log_statement = 'all'
+logging_collector = off
+`
 
 // containerTemplateDatabase is the name of the template database that is created when the container is started.
 const containerTemplateDatabase = "d"
