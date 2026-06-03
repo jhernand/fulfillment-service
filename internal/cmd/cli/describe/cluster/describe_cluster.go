@@ -20,7 +20,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/proto"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/config"
@@ -69,7 +68,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	filter := buildFilter(ref)
 	listResponse, err := client.List(ctx, publicv1.ClustersListRequest_builder{
 		Filter: &filter,
-		Limit:  proto.Int32(2),
+		Limit:  new(int32(2)),
 	}.Build())
 	if err != nil {
 		return fmt.Errorf("failed to describe cluster: %w", err)

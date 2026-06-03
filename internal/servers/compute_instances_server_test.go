@@ -19,7 +19,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -192,8 +191,8 @@ var _ = Describe("Compute instances server", func() {
 					},
 				},
 				SpecDefaults: privatev1.ComputeInstanceTemplateSpecDefaults_builder{
-					Cores:     proto.Int32(2),
-					MemoryGib: proto.Int32(2),
+					Cores:     new(int32(2)),
+					MemoryGib: new(int32(2)),
 					Image: privatev1.ComputeInstanceImage_builder{
 						SourceType: "registry",
 						SourceRef:  "quay.io/containerdisks/fedora:latest",
@@ -308,7 +307,7 @@ var _ = Describe("Compute instances server", func() {
 
 			// List the objects with limit:
 			response, err := server.List(ctx, publicv1.ComputeInstancesListRequest_builder{
-				Limit: proto.Int32(5),
+				Limit: new(int32(5)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
@@ -343,7 +342,7 @@ var _ = Describe("Compute instances server", func() {
 
 			// List the objects with offset:
 			response, err := server.List(ctx, publicv1.ComputeInstancesListRequest_builder{
-				Offset: proto.Int32(5),
+				Offset: new(int32(5)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
@@ -400,8 +399,8 @@ var _ = Describe("Compute instances server", func() {
 				Object: publicv1.ComputeInstance_builder{
 					Spec: publicv1.ComputeInstanceSpec_builder{
 						Template:    "general.small",
-						Cores:       proto.Int32(4),
-						MemoryGib:   proto.Int32(8),
+						Cores:       new(int32(4)),
+						MemoryGib:   new(int32(8)),
 						RunStrategy: new("Always"),
 						Image: publicv1.ComputeInstanceImage_builder{
 							SourceType: "registry",
@@ -555,8 +554,8 @@ var _ = Describe("Compute instances server", func() {
 				Object: publicv1.ComputeInstance_builder{
 					Spec: publicv1.ComputeInstanceSpec_builder{
 						Template:    "mapping-template",
-						Cores:       proto.Int32(8),
-						MemoryGib:   proto.Int32(16),
+						Cores:       new(int32(8)),
+						MemoryGib:   new(int32(16)),
 						RunStrategy: new("Halted"),
 						NetworkAttachments: []*publicv1.NetworkAttachment{
 							publicv1.NetworkAttachment_builder{

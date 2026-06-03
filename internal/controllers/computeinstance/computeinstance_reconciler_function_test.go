@@ -133,8 +133,8 @@ var _ = Describe("buildSpec", func() {
 					Id: "test-explicit-fields",
 					Spec: privatev1.ComputeInstanceSpec_builder{
 						Template:    template,
-						Cores:       proto.Int32(4),
-						MemoryGib:   proto.Int32(8),
+						Cores:       new(int32(4)),
+						MemoryGib:   new(int32(8)),
 						RunStrategy: new("Always"),
 						SshKey:      new("ssh-rsa AAAA..."),
 						Image: privatev1.ComputeInstanceImage_builder{

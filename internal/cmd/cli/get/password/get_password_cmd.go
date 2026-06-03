@@ -23,7 +23,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/config"
@@ -118,7 +117,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	)
 	listResponse, err := client.List(ctx, publicv1.ClustersListRequest_builder{
 		Filter: new(listFilter),
-		Limit:  proto.Int32(10),
+		Limit:  new(int32(10)),
 	}.Build())
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %w", err)

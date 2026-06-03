@@ -186,7 +186,7 @@ var _ = Describe("Private public IP pools server", func() {
 			}
 
 			response, err := poolsServer.List(ctx, privatev1.PublicIPPoolsListRequest_builder{
-				Limit: proto.Int32(2),
+				Limit: new(int32(2)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 2))

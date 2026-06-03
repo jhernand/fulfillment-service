@@ -18,7 +18,6 @@ import (
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 )
@@ -37,7 +36,7 @@ var _ = Describe("ApplySpecDefaults", func() {
 
 	It("Does nothing when spec is nil", func() {
 		defaults := privatev1.ComputeInstanceTemplateSpecDefaults_builder{
-			Cores: proto.Int32(4),
+			Cores: new(int32(4)),
 		}.Build()
 
 		ApplySpecDefaults(nil, defaults)
@@ -49,8 +48,8 @@ var _ = Describe("ApplySpecDefaults", func() {
 		}.Build()
 
 		defaults := privatev1.ComputeInstanceTemplateSpecDefaults_builder{
-			Cores:     proto.Int32(2),
-			MemoryGib: proto.Int32(4),
+			Cores:     new(int32(2)),
+			MemoryGib: new(int32(4)),
 			Image: privatev1.ComputeInstanceImage_builder{
 				SourceType: "registry",
 				SourceRef:  "quay.io/containerdisks/fedora:latest",
@@ -74,14 +73,14 @@ var _ = Describe("ApplySpecDefaults", func() {
 	It("Does not override user-provided values", func() {
 		spec := privatev1.ComputeInstanceSpec_builder{
 			Template:    "test.template",
-			Cores:       proto.Int32(8),
-			MemoryGib:   proto.Int32(16),
+			Cores:       new(int32(8)),
+			MemoryGib:   new(int32(16)),
 			RunStrategy: new("Halted"),
 		}.Build()
 
 		defaults := privatev1.ComputeInstanceTemplateSpecDefaults_builder{
-			Cores:     proto.Int32(2),
-			MemoryGib: proto.Int32(4),
+			Cores:     new(int32(2)),
+			MemoryGib: new(int32(4)),
 			Image: privatev1.ComputeInstanceImage_builder{
 				SourceType: "registry",
 				SourceRef:  "quay.io/containerdisks/fedora:latest",
@@ -109,7 +108,7 @@ var _ = Describe("ApplySpecDefaults", func() {
 		}.Build()
 
 		defaults := privatev1.ComputeInstanceTemplateSpecDefaults_builder{
-			Cores:       proto.Int32(2),
+			Cores:       new(int32(2)),
 			RunStrategy: new("Always"),
 		}.Build()
 
@@ -250,8 +249,8 @@ var _ = Describe("ValidateRequiredSpecFields", func() {
 	It("Returns error for partially missing fields", func() {
 		spec := privatev1.ComputeInstanceSpec_builder{
 			Template:    "test.template",
-			Cores:       proto.Int32(4),
-			MemoryGib:   proto.Int32(8),
+			Cores:       new(int32(4)),
+			MemoryGib:   new(int32(8)),
 			RunStrategy: new("Always"),
 		}.Build()
 
@@ -268,8 +267,8 @@ var _ = Describe("ValidateRequiredSpecFields", func() {
 	It("Passes when all required fields are set", func() {
 		spec := privatev1.ComputeInstanceSpec_builder{
 			Template:  "test.template",
-			Cores:     proto.Int32(4),
-			MemoryGib: proto.Int32(8),
+			Cores:     new(int32(4)),
+			MemoryGib: new(int32(8)),
 			Image: privatev1.ComputeInstanceImage_builder{
 				SourceType: "registry",
 				SourceRef:  "quay.io/containerdisks/fedora:latest",
@@ -287,8 +286,8 @@ var _ = Describe("ValidateRequiredSpecFields", func() {
 	It("Rejects invalid run_strategy value", func() {
 		spec := privatev1.ComputeInstanceSpec_builder{
 			Template:  "test.template",
-			Cores:     proto.Int32(4),
-			MemoryGib: proto.Int32(8),
+			Cores:     new(int32(4)),
+			MemoryGib: new(int32(8)),
 			Image: privatev1.ComputeInstanceImage_builder{
 				SourceType: "registry",
 				SourceRef:  "quay.io/containerdisks/fedora:latest",
@@ -310,8 +309,8 @@ var _ = Describe("ValidateRequiredSpecFields", func() {
 	It("Rejects empty image fields", func() {
 		spec := privatev1.ComputeInstanceSpec_builder{
 			Template:  "test.template",
-			Cores:     proto.Int32(4),
-			MemoryGib: proto.Int32(8),
+			Cores:     new(int32(4)),
+			MemoryGib: new(int32(8)),
 			Image:     privatev1.ComputeInstanceImage_builder{}.Build(),
 			BootDisk: privatev1.ComputeInstanceDisk_builder{
 				SizeGib: 20,
@@ -329,8 +328,8 @@ var _ = Describe("ValidateRequiredSpecFields", func() {
 	It("Rejects image with partial fields", func() {
 		spec := privatev1.ComputeInstanceSpec_builder{
 			Template:  "test.template",
-			Cores:     proto.Int32(4),
-			MemoryGib: proto.Int32(8),
+			Cores:     new(int32(4)),
+			MemoryGib: new(int32(8)),
 			Image: privatev1.ComputeInstanceImage_builder{
 				SourceType: "registry",
 			}.Build(),
@@ -350,8 +349,8 @@ var _ = Describe("ValidateRequiredSpecFields", func() {
 	It("Rejects boot_disk with zero size", func() {
 		spec := privatev1.ComputeInstanceSpec_builder{
 			Template:  "test.template",
-			Cores:     proto.Int32(4),
-			MemoryGib: proto.Int32(8),
+			Cores:     new(int32(4)),
+			MemoryGib: new(int32(8)),
 			Image: privatev1.ComputeInstanceImage_builder{
 				SourceType: "registry",
 				SourceRef:  "quay.io/containerdisks/fedora:latest",

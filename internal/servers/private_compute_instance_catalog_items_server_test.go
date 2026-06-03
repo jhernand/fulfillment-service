@@ -171,7 +171,7 @@ var _ = Describe("Private compute instance catalog items server", func() {
 			}
 
 			response, err := server.List(ctx, privatev1.ComputeInstanceCatalogItemsListRequest_builder{
-				Limit: proto.Int32(1),
+				Limit: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))

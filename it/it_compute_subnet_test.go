@@ -19,7 +19,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
@@ -178,8 +177,8 @@ var _ = Describe("ComputeInstance with Subnet attachment", func() {
 				Id: computeInstanceId,
 				Spec: publicv1.ComputeInstanceSpec_builder{
 					Template:    computeInstanceTemplateId,
-					Cores:       proto.Int32(2),
-					MemoryGib:   proto.Int32(4),
+					Cores:       new(int32(2)),
+					MemoryGib:   new(int32(4)),
 					RunStrategy: new("Always"),
 					BootDisk: publicv1.ComputeInstanceDisk_builder{
 						SizeGib: 20,
@@ -216,8 +215,8 @@ var _ = Describe("ComputeInstance with Subnet attachment", func() {
 				Id: computeInstanceId,
 				Spec: publicv1.ComputeInstanceSpec_builder{
 					Template:    computeInstanceTemplateId,
-					Cores:       proto.Int32(2),
-					MemoryGib:   proto.Int32(4),
+					Cores:       new(int32(2)),
+					MemoryGib:   new(int32(4)),
 					RunStrategy: new("Always"),
 					BootDisk: publicv1.ComputeInstanceDisk_builder{
 						SizeGib: 20,

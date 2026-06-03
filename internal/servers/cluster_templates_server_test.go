@@ -172,7 +172,7 @@ var _ = Describe("Cluster templates server", func() {
 
 			// List the objects:
 			response, err := server.List(ctx, publicv1.ClusterTemplatesListRequest_builder{
-				Limit: proto.Int32(1),
+				Limit: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))
@@ -195,7 +195,7 @@ var _ = Describe("Cluster templates server", func() {
 			// List the objects:
 			response, err := server.List(ctx, publicv1.ClusterTemplatesListRequest_builder{
 				Filter: new("this.id.startsWith('my_template_')"),
-				Offset: proto.Int32(1),
+				Offset: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", count-1))

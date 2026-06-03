@@ -21,7 +21,6 @@ import (
 	. "github.com/onsi/gomega"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -295,8 +294,8 @@ var _ = Describe("Private compute instances server", func() {
 					},
 				},
 				SpecDefaults: privatev1.ComputeInstanceTemplateSpecDefaults_builder{
-					Cores:     proto.Int32(2),
-					MemoryGib: proto.Int32(2),
+					Cores:     new(int32(2)),
+					MemoryGib: new(int32(2)),
 					Image: privatev1.ComputeInstanceImage_builder{
 						SourceType: "registry",
 						SourceRef:  "quay.io/containerdisks/fedora:latest",
@@ -411,7 +410,7 @@ var _ = Describe("Private compute instances server", func() {
 
 			// List the objects with limit:
 			response, err := server.List(ctx, privatev1.ComputeInstancesListRequest_builder{
-				Limit: proto.Int32(5),
+				Limit: new(int32(5)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
@@ -446,7 +445,7 @@ var _ = Describe("Private compute instances server", func() {
 
 			// List the objects with offset:
 			response, err := server.List(ctx, privatev1.ComputeInstancesListRequest_builder{
-				Offset: proto.Int32(5),
+				Offset: new(int32(5)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
@@ -829,8 +828,8 @@ var _ = Describe("Private compute instances server", func() {
 				Object: privatev1.ComputeInstance_builder{
 					Spec: privatev1.ComputeInstanceSpec_builder{
 						Template:    "override-template",
-						Cores:       proto.Int32(8),
-						MemoryGib:   proto.Int32(16),
+						Cores:       new(int32(8)),
+						MemoryGib:   new(int32(16)),
 						RunStrategy: new("Halted"),
 						NetworkAttachments: []*privatev1.NetworkAttachment{
 							privatev1.NetworkAttachment_builder{
@@ -923,8 +922,8 @@ var _ = Describe("Private compute instances server", func() {
 				Object: privatev1.ComputeInstance_builder{
 					Spec: privatev1.ComputeInstanceSpec_builder{
 						Template:  "bare-template",
-						Cores:     proto.Int32(4),
-						MemoryGib: proto.Int32(8),
+						Cores:     new(int32(4)),
+						MemoryGib: new(int32(8)),
 						Image: privatev1.ComputeInstanceImage_builder{
 							SourceType: "registry",
 							SourceRef:  "quay.io/containerdisks/fedora:latest",
@@ -962,8 +961,8 @@ var _ = Describe("Private compute instances server", func() {
 					Tenant: auth.SharedTenant,
 				}.Build(),
 				SpecDefaults: privatev1.ComputeInstanceTemplateSpecDefaults_builder{
-					Cores:       proto.Int32(2),
-					MemoryGib:   proto.Int32(4),
+					Cores:       new(int32(2)),
+					MemoryGib:   new(int32(4)),
 					RunStrategy: new("Always"),
 				}.Build(),
 			}.Build()
@@ -1329,8 +1328,8 @@ var _ = Describe("Private compute instances server", func() {
 					},
 				},
 				SpecDefaults: privatev1.ComputeInstanceTemplateSpecDefaults_builder{
-					Cores:     proto.Int32(2),
-					MemoryGib: proto.Int32(2),
+					Cores:     new(int32(2)),
+					MemoryGib: new(int32(2)),
 					Image: privatev1.ComputeInstanceImage_builder{
 						SourceType: "registry",
 						SourceRef:  "quay.io/containerdisks/fedora:latest",

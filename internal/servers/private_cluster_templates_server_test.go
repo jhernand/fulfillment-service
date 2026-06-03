@@ -177,7 +177,7 @@ var _ = Describe("Private cluster templates server", func() {
 			// List the objects:
 			response, err := server.List(ctx, privatev1.ClusterTemplatesListRequest_builder{
 				Filter: new("this.metadata.name.startsWith('my-template-')"),
-				Limit:  proto.Int32(1),
+				Limit:  new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", 1))
@@ -212,7 +212,7 @@ var _ = Describe("Private cluster templates server", func() {
 			// List the objects:
 			response, err := server.List(ctx, privatev1.ClusterTemplatesListRequest_builder{
 				Filter: new("this.metadata.name.startsWith('my-template-')"),
-				Offset: proto.Int32(1),
+				Offset: new(int32(1)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response.GetSize()).To(BeNumerically("==", count-1))

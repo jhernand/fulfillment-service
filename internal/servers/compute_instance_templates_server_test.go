@@ -19,7 +19,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
@@ -210,7 +209,7 @@ var _ = Describe("Compute instance templates server", func() {
 
 			// List the objects with limit:
 			response, err := server.List(ctx, publicv1.ComputeInstanceTemplatesListRequest_builder{
-				Limit: proto.Int32(5),
+				Limit: new(int32(5)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
@@ -233,7 +232,7 @@ var _ = Describe("Compute instance templates server", func() {
 
 			// List the objects with offset:
 			response, err := server.List(ctx, publicv1.ComputeInstanceTemplatesListRequest_builder{
-				Offset: proto.Int32(5),
+				Offset: new(int32(5)),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
