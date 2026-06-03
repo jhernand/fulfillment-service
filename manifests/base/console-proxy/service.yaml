@@ -11,16 +11,21 @@
 # specific language governing permissions and limitations under the License.
 #
 
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-labels:
-- includeSelectors: true
-  pairs:
-    component: grpc-server
-
-resources:
-- authconfig.yaml
-- certificate.yaml
-- deployment.yaml
-- service.yaml
-- token-signer-certificate.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: fulfillment-console-proxy
+spec:
+  selector:
+    app: fulfillment-console-proxy
+  clusterIP: None
+  ports:
+  - name: grpc
+    port: 8000
+    targetPort: grpc
+  - name: console
+    port: 8090
+    targetPort: console
+  - name: metrics
+    port: 8002
+    targetPort: metrics

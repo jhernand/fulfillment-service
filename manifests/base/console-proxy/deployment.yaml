@@ -14,43 +14,38 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fulfillment-grpc-server
+  name: fulfillment-console-proxy
 spec:
   selector:
     matchLabels:
-      app: fulfillment-grpc-server
+      app: fulfillment-console-proxy
   replicas: 1
   template:
     metadata:
       labels:
-        app: fulfillment-grpc-server
+        app: fulfillment-console-proxy
     spec:
-      volumes:
-      - name: cas
-        configMap:
-          name: ca-bundle
-      - name: cert
-        secret:
-          secretName: fulfillment-database-client-cert
-      - name: tls
-        secret:
-          secretName: fulfillment-grpc-server-tls
-      - name: token-signer
-        secret:
-          secretName: fulfillment-token-signer-tls
-      - name: token-encryption-cert
-        secret:
-          secretName: fulfillment-token-encryption-tls
-          items:
-          - key: tls.crt
-            path: tls.crt
+      serviceAccountName: console-proxy
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+      - name: cas
+        configMap:
+          name: ca-bundle
+      - name: tls
+        secret:
+          secretName: fulfillment-console-proxy-tls
+      - name: token-encryption-key
+        secret:
+          secretName: fulfillment-token-encryption-tls
+          items:
+          - key: tls.key
+            path: tls.key
       containers:
-      - name: grpc-server
+      - name: console-proxy
         image: fulfillment-service
         imagePullPolicy: IfNotPresent
         securityContext:
@@ -61,45 +56,34 @@ spec:
             - ALL
         volumeMounts:
         - name: cas
-          mountPath: /etc/fulfillment-grpc-server/tls/cas
-        - name: cert
-          mountPath: /secrets/cert
+          mountPath: /etc/fulfillment-console-proxy/tls/cas
         - name: tls
-          mountPath: /etc/fulfillment-grpc-server/tls
-        - name: token-signer
-          mountPath: /etc/fulfillment-token-signer/tls
-          readOnly: true
-        - name: token-encryption-cert
+          mountPath: /etc/fulfillment-console-proxy/tls
+        - name: token-encryption-key
           mountPath: /etc/fulfillment-token-encryption/tls
           readOnly: true
         command:
         - /usr/local/bin/fulfillment-service
         - start
-        - grpc-server
+        - console-proxy
         - --log-level=info
-        - --log-headers=false
-        - --log-bodies=false
-        - --ca-file=/etc/fulfillment-grpc-server/tls/cas
-        - "--db-url=postgres://client@fulfillment-database:5432/service?\
-          sslmode=verify-full&\
-          sslcert=/secrets/cert/tls.crt&\
-          sslkey=/secrets/cert/tls.key&\
-          sslrootcert=/secrets/cert/ca.crt"
-        - --grpc-listener-address=0.0.0.0:8000
-        - --grpc-listener-tls-crt=/etc/fulfillment-grpc-server/tls/tls.crt
-        - --grpc-listener-tls-key=/etc/fulfillment-grpc-server/tls/tls.key
-        - --grpc-authn-trusted-token-issuers=https://keycloak.keycloak.svc.cluster.local:8000/realms/osac
-        - --grpc-authn-type=external
-        - --grpc-authn-external-address=authorino-authorino-authorization:50051
-        - --tenancy-logic=default
-        - --metrics-listener-address=0.0.0.0:8002
-        - --token-signer-crt=/etc/fulfillment-token-signer/tls/tls.crt
-        - --token-signer-key=/etc/fulfillment-token-signer/tls/tls.key
-        - --token-encryption-crt=/etc/fulfillment-token-encryption/tls/tls.crt
+        - --ca-file=/etc/fulfillment-console-proxy/tls/cas
         - --token-issuer=https://fulfillment-rest-gateway:8000
+        - --token-decryption-key=/etc/fulfillment-token-encryption/tls/tls.key
+        - --grpc-listener-address=0.0.0.0:8000
+        - --grpc-listener-tls-crt=/etc/fulfillment-console-proxy/tls/tls.crt
+        - --grpc-listener-tls-key=/etc/fulfillment-console-proxy/tls/tls.key
+        - --console-listener-address=0.0.0.0:8090
+        - --console-listener-tls-crt=/etc/fulfillment-console-proxy/tls/tls.crt
+        - --console-listener-tls-key=/etc/fulfillment-console-proxy/tls/tls.key
+        - --console-cors-allowed-origins=https://fulfillment-api.osac.svc.cluster.local
+        - --metrics-listener-address=0.0.0.0:8002
         ports:
         - name: grpc
           containerPort: 8000
+          protocol: TCP
+        - name: console
+          containerPort: 8090
           protocol: TCP
         - name: metrics
           containerPort: 8002
@@ -110,7 +94,7 @@ spec:
             - /usr/local/bin/fulfillment-service
             - probe
             - grpc-server
-            - --ca-file=/etc/fulfillment-grpc-server/tls/ca.crt
+            - --ca-file=/etc/fulfillment-console-proxy/tls/cas
             - --grpc-server-address=localhost:8000
             - --grpc-server-timeout=1s
           initialDelaySeconds: 5
@@ -121,7 +105,7 @@ spec:
             - /usr/local/bin/fulfillment-service
             - probe
             - grpc-server
-            - --ca-file=/etc/fulfillment-grpc-server/tls/ca.crt
+            - --ca-file=/etc/fulfillment-console-proxy/tls/cas
             - --grpc-server-address=localhost:8000
             - --grpc-server-timeout=1s
           initialDelaySeconds: 5

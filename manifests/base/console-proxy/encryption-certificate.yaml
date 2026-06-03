@@ -11,16 +11,20 @@
 # specific language governing permissions and limitations under the License.
 #
 
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-labels:
-- includeSelectors: true
-  pairs:
-    component: grpc-server
-
-resources:
-- authconfig.yaml
-- certificate.yaml
-- deployment.yaml
-- service.yaml
-- token-signer-certificate.yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fulfillment-token-encryption
+spec:
+  issuerRef:
+    kind: ClusterIssuer
+    name: default-ca
+  dnsNames:
+  - fulfillment-token-encryption
+  secretName: fulfillment-token-encryption-tls
+  privateKey:
+    algorithm: RSA
+    size: 3072
+    rotationPolicy: Always
+  usages:
+  - key encipherment

@@ -16,11 +16,11 @@ kind: Kustomization
 labels:
 - includeSelectors: true
   pairs:
-    component: grpc-server
+    component: console-proxy
 
 resources:
-- authconfig.yaml
 - certificate.yaml
+- encryption-certificate.yaml
 - deployment.yaml
+- sa.yaml
 - service.yaml
-- token-signer-certificate.yaml
