@@ -273,14 +273,14 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	}()
 
 	// Read and validate the allowed origins for WebSocket Origin validation:
-	allowedOrigins, err := c.flags.GetStringSlice("console-cors-allowed-origins")
-	if err != nil {
-		return fmt.Errorf("failed to get console CORS allowed origins: %w", err)
-	}
-	if len(allowedOrigins) == 0 {
+	if !c.flags.Changed("console-cors-allowed-origins") {
 		return fmt.Errorf(
 			"flag '--console-cors-allowed-origins' is required for WebSocket Origin validation",
 		)
+	}
+	allowedOrigins, err := c.flags.GetStringSlice("console-cors-allowed-origins")
+	if err != nil {
+		return fmt.Errorf("failed to get console CORS allowed origins: %w", err)
 	}
 	c.logger.InfoContext(ctx, "Console WebSocket Origin validation",
 		slog.Any("allowed_origins", allowedOrigins),
