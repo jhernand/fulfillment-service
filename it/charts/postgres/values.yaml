@@ -28,7 +28,7 @@ certs:
 
 # Image configuration:
 images:
-  postgres: quay.io/sclorg/postgresql-15-c9s:latest
+  postgres: quay.io/sclorg/postgresql-18-c10s@sha256:6be2c9d855f06fb665257a6b0911676a38d740be7022cc61acee1c99a832b1b2
 
 # List of databases and users to create. The default is an empty list, which means only the PostgreSQL server itself
 # is deployed without any application databases.

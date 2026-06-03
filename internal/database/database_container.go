@@ -675,8 +675,8 @@ var containerTools = []string{
 
 // containerImage is the PostgreSQL container image. This is the same sclorg image used by the integration test Helm
 // chart.
-const containerImage = "quay.io/sclorg/postgresql-15-c9s" +
-	"@sha256:c51a29654b63e2683f83efde5c751833fc79d360918c30269801608dff3c533a"
+const containerImage = "quay.io/sclorg/postgresql-18-c10s" +
+	"@sha256:6be2c9d855f06fb665257a6b0911676a38d740be7022cc61acee1c99a832b1b2"
 
 // containerConfigPath is the path inside the container where the custom configuration file is mounted. The sclorg image
 // includes all *.conf files from this directory at the end of the generated postgresql.conf.
