@@ -841,6 +841,8 @@ func (s *GenericServer[O]) setPayload(event *privatev1.Event, object proto.Messa
 			spec.SetKubeconfig(nil)
 		}
 		event.SetHub(object)
+	case *privatev1.InstanceType:
+		event.SetInstanceType(object)
 	case *privatev1.ComputeInstanceTemplate:
 		event.SetComputeInstanceTemplate(object)
 	case *privatev1.ComputeInstance:
