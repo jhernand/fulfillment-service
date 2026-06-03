@@ -44,3 +44,6 @@ var SecurityGroupUuid = fmt.Sprintf("%s/%s", group, "securitygroup-uuid")
 
 // PublicIPUuid is the label where the fulfillment API will write the identifier of the public IP.
 var PublicIPUuid = fmt.Sprintf("%s/%s", group, "publicip-uuid")
+
+// PublicIPAttachmentUuid is the label where the fulfillment API will write the identifier of the public IP attachment.
+var PublicIPAttachmentUuid = fmt.Sprintf("%s/%s", group, "publicipattachment-uuid")

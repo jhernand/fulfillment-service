@@ -29,5 +29,5 @@ columns:
 - header: ADDRESS
   value: "this.status.address != ''? this.status.address: '-'"
 
-- header: COMPUTE-INSTANCE
-  value: "has(this.spec.compute_instance)? this.spec.compute_instance: '-'"
+- header: ATTACHED
+  value: this.status.attached
