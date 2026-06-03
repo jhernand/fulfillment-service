@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
@@ -280,6 +281,52 @@ var _ = Describe("Public IPs server", func() {
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(proto.Equal(createResponse.GetObject(), getResponse.GetObject())).To(BeTrue())
+		})
+
+		It("Updates labels on a public IP", func() {
+			createResponse, err := publicIPsServer.Create(ctx, publicv1.PublicIPsCreateRequest_builder{
+				Object: publicv1.PublicIP_builder{
+					Spec: publicv1.PublicIPSpec_builder{
+						Pool: poolID,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			created := createResponse.GetObject()
+
+			updateResponse, err := publicIPsServer.Update(ctx,
+				publicv1.PublicIPsUpdateRequest_builder{
+					Object: publicv1.PublicIP_builder{
+						Id: created.GetId(),
+						Metadata: publicv1.Metadata_builder{
+							Labels: map[string]string{
+								"env": "test",
+							},
+						}.Build(),
+					}.Build(),
+					UpdateMask: &fieldmaskpb.FieldMask{
+						Paths: []string{"metadata.labels"},
+					},
+				}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updateResponse.GetObject().GetMetadata().GetLabels()).To(
+				HaveKeyWithValue("env", "test"),
+			)
+
+			getResponse, err := publicIPsServer.Get(ctx, publicv1.PublicIPsGetRequest_builder{
+				Id: created.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject().GetMetadata().GetLabels()).To(
+				HaveKeyWithValue("env", "test"),
+			)
+		})
+
+		It("Rejects update with nil object", func() {
+			_, err := publicIPsServer.Update(ctx,
+				publicv1.PublicIPsUpdateRequest_builder{}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("object is mandatory"))
 		})
 
 		It("Delete object", func() {

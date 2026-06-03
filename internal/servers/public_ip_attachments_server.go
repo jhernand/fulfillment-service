@@ -214,6 +214,37 @@ func (s *PublicIPAttachmentsServer) Create(ctx context.Context,
 	return response, nil
 }
 
+func (s *PublicIPAttachmentsServer) Update(ctx context.Context,
+	request *publicv1.PublicIPAttachmentsUpdateRequest) (*publicv1.PublicIPAttachmentsUpdateResponse, error) {
+	publicObject := request.GetObject()
+	if publicObject == nil {
+		return nil, grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
+	}
+	privateObject, err := s.attachmentToPrivate(ctx, publicObject)
+	if err != nil {
+		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process public IP attachment")
+	}
+
+	privateRequest := &privatev1.PublicIPAttachmentsUpdateRequest{}
+	privateRequest.SetObject(privateObject)
+	privateRequest.SetUpdateMask(request.GetUpdateMask())
+	privateRequest.SetLock(request.GetLock())
+	privateResponse, err := s.delegate.Update(ctx, privateRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	updatedPrivateObject := privateResponse.GetObject()
+	updatedPublicObject, err := s.attachmentFromPrivate(ctx, updatedPrivateObject)
+	if err != nil {
+		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process public IP attachment")
+	}
+
+	response := &publicv1.PublicIPAttachmentsUpdateResponse{}
+	response.SetObject(updatedPublicObject)
+	return response, nil
+}
+
 func (s *PublicIPAttachmentsServer) Delete(ctx context.Context,
 	request *publicv1.PublicIPAttachmentsDeleteRequest) (*publicv1.PublicIPAttachmentsDeleteResponse, error) {
 	// Create private request:
