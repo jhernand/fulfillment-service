@@ -45,3 +45,5 @@ create index instance_types_by_name on instance_types (name);
 create index instance_types_by_creator on instance_types (creator);
 create index instance_types_by_tenant on instance_types (tenant);
 create index instance_types_by_label on instance_types using gin (labels);
+
+alter table instance_types add constraint instance_types_tenant_fk foreign key (tenant) references organizations (id);
