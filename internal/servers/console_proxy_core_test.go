@@ -196,7 +196,7 @@ var _ = Describe("ConsoleProxyCore", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			ticket := &console.Ticket{
-				Subject:     "test-user",
+				User:        "test-user",
 				ClientID:    "client-1",
 				TargetURI:   "wss://hub:6443/apis/console.osac.openshift.io/v1alpha1/namespaces/ns-1/computeinstances/ci-test/vnc",
 				TargetToken: "test-token",
@@ -232,7 +232,7 @@ var _ = Describe("ConsoleProxyCore", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			ticket := &console.Ticket{
-				Subject:     "test-user",
+				User:        "test-user",
 				ClientID:    "client-1",
 				TargetURI:   "wss://hub:6443/test/vnc",
 				TargetToken: "test-token",

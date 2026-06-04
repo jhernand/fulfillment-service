@@ -143,7 +143,6 @@ var _ = Describe("Manager", func() {
 			ctx := context.Background()
 			target := Target{
 				ResourceType: "compute_instance",
-				ConsoleType:  ConsoleTypeSerial,
 				BackendURI:   "wss://hub/ns/vm-1/console",
 			}
 
@@ -160,7 +159,7 @@ var _ = Describe("Manager", func() {
 
 		It("should reject missing backend URI", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial}
+			target := Target{ResourceType: "compute_instance"}
 			_, err := mgr.Connect(ctx, target, "testuser", "")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("backend URI is required"))
@@ -178,7 +177,6 @@ var _ = Describe("Manager", func() {
 			ctx := context.Background()
 			target := Target{
 				ResourceType: "compute_instance",
-				ConsoleType:  ConsoleTypeSerial,
 				BackendURI:   "wss://hub/ns/test-123/console",
 			}
 
@@ -201,12 +199,10 @@ var _ = Describe("Manager", func() {
 			ctx := context.Background()
 			serialTarget := Target{
 				ResourceType: "compute_instance",
-				ConsoleType:  ConsoleTypeSerial,
 				BackendURI:   "wss://hub/ns/test-123/console",
 			}
 			vncTarget := Target{
 				ResourceType: "compute_instance",
-				ConsoleType:  ConsoleTypeVNC,
 				BackendURI:   "wss://hub/ns/test-123/vnc",
 			}
 
@@ -227,7 +223,6 @@ var _ = Describe("Manager", func() {
 			ctx := context.Background()
 			target := Target{
 				ResourceType: "compute_instance",
-				ConsoleType:  ConsoleTypeVNC,
 				BackendURI:   "wss://hub/ns/test-123/vnc",
 			}
 
@@ -243,8 +238,8 @@ var _ = Describe("Manager", func() {
 
 		It("should allow sessions to different resources", func() {
 			ctx := context.Background()
-			target1 := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/vm-1/console"}
-			target2 := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/vm-2/console"}
+			target1 := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/vm-1/console"}
+			target2 := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/vm-2/console"}
 
 			result1, err := mgr.Connect(ctx, target1, "user1", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -261,7 +256,7 @@ var _ = Describe("Manager", func() {
 
 		It("should handle double close gracefully", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/vm-1/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/vm-1/console"}
 			result, err := mgr.Connect(ctx, target, "user1", "")
 			Expect(err).NotTo(HaveOccurred())
 
@@ -285,7 +280,6 @@ var _ = Describe("Manager", func() {
 			ctx := context.Background()
 			target := Target{
 				ResourceType: "compute_instance",
-				ConsoleType:  ConsoleTypeSerial,
 				BackendURI:   "wss://hub/ns/timeout-test/console",
 			}
 
@@ -314,7 +308,6 @@ var _ = Describe("Manager", func() {
 			ctx := context.Background()
 			target := Target{
 				ResourceType: "compute_instance",
-				ConsoleType:  ConsoleTypeSerial,
 				BackendURI:   "wss://hub/ns/timeout-reuse/console",
 			}
 
@@ -335,8 +328,8 @@ var _ = Describe("Manager", func() {
 	Describe("CancelSessions", func() {
 		It("should cancel all active sessions", func() {
 			ctx := context.Background()
-			target1 := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/vm-1/console"}
-			target2 := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/vm-2/console"}
+			target1 := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/vm-1/console"}
+			target2 := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/vm-2/console"}
 
 			result1, err := mgr.Connect(ctx, target1, "user1", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -355,7 +348,7 @@ var _ = Describe("Manager", func() {
 	Describe("Session Eviction", func() {
 		It("should evict stale session with same client_id and user", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/test-123/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/test-123/console"}
 
 			result1, err := mgr.Connect(ctx, target, "user1", "client-abc")
 			Expect(err).NotTo(HaveOccurred())
@@ -375,7 +368,7 @@ var _ = Describe("Manager", func() {
 
 		It("should cancel evicted session context", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/test-123/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/test-123/console"}
 
 			result1, err := mgr.Connect(ctx, target, "user1", "client-abc")
 			Expect(err).NotTo(HaveOccurred())
@@ -395,7 +388,7 @@ var _ = Describe("Manager", func() {
 
 		It("should reject when same user has different client_id", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/test-123/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/test-123/console"}
 
 			result1, err := mgr.Connect(ctx, target, "user1", "client-abc")
 			Expect(err).NotTo(HaveOccurred())
@@ -409,7 +402,7 @@ var _ = Describe("Manager", func() {
 
 		It("should reject when different user has same client_id", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/test-123/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/test-123/console"}
 
 			result1, err := mgr.Connect(ctx, target, "user1", "client-abc")
 			Expect(err).NotTo(HaveOccurred())
@@ -423,7 +416,7 @@ var _ = Describe("Manager", func() {
 
 		It("should not evict when client_id is empty", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/test-123/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/test-123/console"}
 
 			result1, err := mgr.Connect(ctx, target, "user1", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -437,7 +430,7 @@ var _ = Describe("Manager", func() {
 
 		It("should not evict when existing session has no client_id", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/test-123/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/test-123/console"}
 
 			result1, err := mgr.Connect(ctx, target, "user1", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -458,7 +451,7 @@ var _ = Describe("Manager", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/test-123/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/test-123/console"}
 
 			result1, err := mgr.Connect(ctx, target, "user1", "client-abc")
 			Expect(err).NotTo(HaveOccurred())
@@ -476,7 +469,7 @@ var _ = Describe("Manager", func() {
 
 		It("should allow new session after eviction and close", func() {
 			ctx := context.Background()
-			target := Target{ResourceType: "compute_instance", ConsoleType: ConsoleTypeSerial, BackendURI: "wss://hub/ns/test-123/console"}
+			target := Target{ResourceType: "compute_instance", BackendURI: "wss://hub/ns/test-123/console"}
 
 			result1, err := mgr.Connect(ctx, target, "user1", "client-abc")
 			Expect(err).NotTo(HaveOccurred())

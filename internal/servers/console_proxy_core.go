@@ -99,7 +99,7 @@ func (c *ConsoleProxyCore) OpenTicket(ctx context.Context, rawTicket string) (*c
 	}
 	c.logger.InfoContext(ctx, "Console ticket opened",
 		slog.String("jti", ticket.JTI),
-		slog.String("user", ticket.Subject),
+		slog.String("user", ticket.User),
 		slog.String("console_type", ticket.ConsoleType),
 	)
 	return ticket, nil
@@ -112,12 +112,12 @@ func (c *ConsoleProxyCore) OpenTicket(ctx context.Context, rawTicket string) (*c
 // terminate the proxy — the backend websocket ignores context after dial.
 func (c *ConsoleProxyCore) ConnectBackend(ctx context.Context, ticket *console.Ticket) (io.ReadWriteCloser, context.Context, error) {
 	target := console.Target{
-		ResourceType: "compute_instance",
+		ResourceType: console.ResourceTypeComputeInstance,
 		BackendURI:   ticket.TargetURI,
 		BackendToken: ticket.TargetToken,
 	}
 
-	result, err := c.manager.Connect(ctx, target, ticket.Subject, ticket.ClientID)
+	result, err := c.manager.Connect(ctx, target, ticket.User, ticket.ClientID)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -172,7 +172,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	// Create the console manager:
 	consoleManager, err := console.NewManager().
 		SetLogger(c.logger).
-		AddBackend("compute_instance", kvBackend).
+		AddBackend(console.ResourceTypeComputeInstance, kvBackend).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create console manager: %w", err)

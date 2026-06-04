@@ -51,7 +51,6 @@ var _ = Describe("KubeVirt Backend Integration", func() {
 
 		target := Target{
 			ResourceType: "compute_instance",
-			ConsoleType:  ConsoleTypeSerial,
 			BackendURI:   "ws://" + wsServer.Addr() + "/apis/console.osac.openshift.io/v1alpha1/namespaces/test-ns/computeinstances/test-vm/console",
 		}
 		result, err := mgr.Connect(ctx, target, "testuser", "")
@@ -129,7 +128,6 @@ var _ = Describe("KubeVirt Backend Integration", func() {
 		ctx := context.Background()
 		target := Target{
 			ResourceType: "compute_instance",
-			ConsoleType:  ConsoleTypeSerial,
 			BackendURI:   "ws://" + wsServer.Addr() + "/apis/console.osac.openshift.io/v1alpha1/namespaces/test-ns/computeinstances/test-vm/console",
 		}
 

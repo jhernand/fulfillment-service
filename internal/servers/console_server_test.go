@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -164,10 +165,10 @@ func (m *mockTx) Exec(ctx context.Context, query string, args ...any) (pgconn.Co
 
 func (m *mockTx) ReportError(err *error) {}
 
-// newFakeHubClientFactory returns a HubClientFactory that ignores the kubeconfig
+// newFakeHubClientFactory returns a HubClientFactory that ignores the config
 // and always returns the provided fake client.
 func newFakeHubClientFactory(client clnt.Client) HubClientFactory {
-	return func(kubeconfig []byte) (clnt.Client, error) {
+	return func(config *rest.Config) (clnt.Client, error) {
 		return client, nil
 	}
 }
@@ -310,43 +311,42 @@ var _ = Describe("Console Server", func() {
 			sealer, tmpDir := createTestSealer()
 			defer os.RemoveAll(tmpDir)
 
-			_, err := NewConsoleServer().
-				SetSealer(sealer).
+			sessionService, err := console.NewSessionService().
+				SetLogger(logger).
 				SetResolver(&ConsoleTargetResolver{}).
+				SetSealer(sealer).
+				Build()
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = NewConsoleServer().
+				SetSessionService(sessionService).
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("logger"))
 		})
 
-		It("should fail without sealer", func() {
+		It("should fail without session service", func() {
 			_, err := NewConsoleServer().
 				SetLogger(logger).
-				SetResolver(&ConsoleTargetResolver{}).
 				Build()
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("sealer"))
-		})
-
-		It("should fail without resolver", func() {
-			sealer, tmpDir := createTestSealer()
-			defer os.RemoveAll(tmpDir)
-
-			_, err := NewConsoleServer().
-				SetLogger(logger).
-				SetSealer(sealer).
-				Build()
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("resolver"))
+			Expect(err.Error()).To(ContainSubstring("session service"))
 		})
 
 		It("should build successfully with all dependencies", func() {
 			sealer, tmpDir := createTestSealer()
 			defer os.RemoveAll(tmpDir)
 
+			sessionService, err := console.NewSessionService().
+				SetLogger(logger).
+				SetResolver(&ConsoleTargetResolver{}).
+				SetSealer(sealer).
+				Build()
+			Expect(err).NotTo(HaveOccurred())
+
 			server, err := NewConsoleServer().
 				SetLogger(logger).
-				SetSealer(sealer).
-				SetResolver(&ConsoleTargetResolver{}).
+				SetSessionService(sessionService).
 				Build()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(server).NotTo(BeNil())
@@ -376,10 +376,16 @@ var _ = Describe("Console Server", func() {
 				Build()
 			Expect(err).NotTo(HaveOccurred())
 
+			sessionService, err := console.NewSessionService().
+				SetLogger(logger).
+				SetResolver(resolver).
+				SetSealer(sealer).
+				Build()
+			Expect(err).NotTo(HaveOccurred())
+
 			server, err = NewConsoleServer().
 				SetLogger(logger).
-				SetSealer(sealer).
-				SetResolver(resolver).
+				SetSessionService(sessionService).
 				Build()
 			Expect(err).NotTo(HaveOccurred())
 		}

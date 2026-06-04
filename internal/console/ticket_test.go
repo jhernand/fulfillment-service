@@ -73,11 +73,14 @@ var _ = Describe("Ticket", func() {
 	Describe("Seal and Open roundtrip", func() {
 		It("Roundtrips all ticket fields through seal and open", func() {
 			ticket := &Ticket{
+				User:        "jane",
+				ClientID:    "cli-456",
+				ConsoleType: ConsoleTypeVNC,
 				TargetURI:   "wss://my-hub:6443/apis/console.osac.openshift.io/v1alpha1/namespaces/ns/computeinstances/vm1/vnc",
 				TargetToken: "test-bearer-token",
 			}
 
-			tokenString, expiresAt, err := sealer.Seal(ticket, "jane", "cli-456", ConsoleTypeVNC, 30*time.Second)
+			tokenString, expiresAt, err := sealer.Seal(ticket, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(tokenString).ToNot(BeEmpty())
 			Expect(expiresAt).To(BeTemporally("~", time.Now().Add(30*time.Second), 2*time.Second))
@@ -100,7 +103,7 @@ var _ = Describe("Ticket", func() {
 
 			parsed, err := opener.Open(context.Background(), tokenString)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsed.Subject).To(Equal("jane"))
+			Expect(parsed.User).To(Equal("jane"))
 			Expect(parsed.ClientID).To(Equal("cli-456"))
 			Expect(parsed.ConsoleType).To(Equal(ConsoleTypeVNC))
 			Expect(parsed.JTI).ToNot(BeEmpty())
@@ -110,10 +113,12 @@ var _ = Describe("Ticket", func() {
 
 		It("Roundtrips a ticket with empty client_id and empty target token", func() {
 			ticket := &Ticket{
-				TargetURI: "wss://hub:6443/apis/console.osac.openshift.io/v1alpha1/namespaces/ns/computeinstances/vm2/console",
+				User:        "admin",
+				ConsoleType: ConsoleTypeSerial,
+				TargetURI:   "wss://hub:6443/apis/console.osac.openshift.io/v1alpha1/namespaces/ns/computeinstances/vm2/console",
 			}
 
-			tokenString, _, err := sealer.Seal(ticket, "admin", "", ConsoleTypeSerial, 30*time.Second)
+			tokenString, _, err := sealer.Seal(ticket, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			jwksServer, jwksCAPool := serveTicketJWKS(tokenSealer)
@@ -125,7 +130,7 @@ var _ = Describe("Ticket", func() {
 
 			parsed, err := opener.Open(context.Background(), tokenString)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsed.Subject).To(Equal("admin"))
+			Expect(parsed.User).To(Equal("admin"))
 			Expect(parsed.ClientID).To(BeEmpty())
 			Expect(parsed.ConsoleType).To(Equal(ConsoleTypeSerial))
 			Expect(parsed.TargetToken).To(BeEmpty())

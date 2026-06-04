@@ -1005,7 +1005,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	}
 	publicv1.RegisterSigningKeysServer(grpcServer, signingKeysServer)
 
-	// Build the shared lookups and console target resolver:
+	// Build the console target resolver (lookup/policy only):
 	hubLookup := servers.NewPrivateServerHubLookup(privateHubsServer)
 	consoleResolver, err := servers.NewConsoleTargetResolver().
 		SetLogger(c.logger).
@@ -1018,12 +1018,21 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create console target resolver: %w", err)
 	}
 
-	// Create the console sessions server:
+	// Build the console session service (orchestration):
+	sessionService, err := console.NewSessionService().
+		SetLogger(c.logger).
+		SetResolver(consoleResolver).
+		SetSealer(ticketSealer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create console session service: %w", err)
+	}
+
+	// Create the console sessions server (thin adapter):
 	c.logger.InfoContext(ctx, "Creating console server")
 	consoleServer, err := servers.NewConsoleServer().
 		SetLogger(c.logger).
-		SetSealer(ticketSealer).
-		SetResolver(consoleResolver).
+		SetSessionService(sessionService).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create console server: %w", err)

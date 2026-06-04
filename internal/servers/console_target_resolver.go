@@ -21,6 +21,9 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
 	osacv1alpha1 "github.com/osac-project/osac-operator/api/v1alpha1"
@@ -30,6 +33,17 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/kubernetes/labels"
 )
+
+// HubClientFactory creates a Kubernetes client from a parsed REST config.
+type HubClientFactory func(config *rest.Config) (clnt.Client, error)
+
+// NewDefaultHubClientFactory creates a HubClientFactory that uses the given scheme
+// to create Kubernetes clients from a parsed REST config.
+func NewDefaultHubClientFactory(scheme *runtime.Scheme) HubClientFactory {
+	return func(config *rest.Config) (clnt.Client, error) {
+		return clnt.New(config, clnt.Options{Scheme: scheme})
+	}
+}
 
 // ComputeInstanceLookup provides compute instance data for console resolution.
 // Implementations are pure readers that consume a tx-bound context.
@@ -59,9 +73,9 @@ type ConsoleTargetResolverBuilder struct {
 	txManager        database.TxManager
 }
 
-// ConsoleTargetResolver resolves a resource type and ID to a console.Target. The gRPC console
-// server uses it during session creation to resolve the target before sealing it into the
-// encrypted ticket.
+// ConsoleTargetResolver resolves a compute instance ID to hub cluster data needed for
+// backend target construction. It handles DB lookups and K8s CR validation; the caller
+// (SessionService) uses the result to build the KubeVirt target and seal the ticket.
 type ConsoleTargetResolver struct {
 	logger           *slog.Logger
 	ciLookup         ComputeInstanceLookup
@@ -125,90 +139,109 @@ func (b *ConsoleTargetResolverBuilder) Build() (*ConsoleTargetResolver, error) {
 	}, nil
 }
 
-// ResolveComputeInstance resolves a compute instance ID and console type to a fully populated
-// console.Target including the pre-computed backend URI and token. It manages its own transaction
-// if no transaction is present in the context (e.g. streaming RPCs without the tx interceptor),
-// or reuses an existing one (unary RPCs like Create).
-func (r *ConsoleTargetResolver) ResolveComputeInstance(ctx context.Context, resourceID, consoleType string) (result *console.Target, err error) {
-	// Check if there is already a transaction in the context (e.g. from the unary tx interceptor).
-	// Only create a new one if needed.
-	_, txErr := database.TxFromContext(ctx)
-	if txErr != nil {
-		tx, beginErr := r.txManager.Begin(ctx)
-		if beginErr != nil {
-			return nil, status.Errorf(codes.Internal, "failed to begin transaction: %v", beginErr)
-		}
-		defer func() {
-			if endErr := r.txManager.End(ctx, tx); endErr != nil && err == nil {
-				err = status.Errorf(codes.Internal, "transaction cleanup failed: %v", endErr)
-			}
-		}()
-		ctx = database.TxIntoContext(ctx, tx)
-	}
-
-	// Look up the compute instance to check its state and get the hub assignment.
-	ciInfo, err := r.ciLookup.GetForConsole(ctx, resourceID)
-	if err != nil {
-		// Preserve the original gRPC status code if available (e.g., Internal for DB
-		// errors, Unavailable for transient failures) so clients can retry appropriately.
-		if st, ok := status.FromError(err); ok {
-			return nil, status.Errorf(st.Code(), "failed to get compute instance %q: %v", resourceID, st.Message())
-		}
-		return nil, status.Errorf(codes.Internal, "failed to get compute instance %q: %v", resourceID, err)
-	}
-
-	// Verify running state.
-	if ciInfo.State != privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_RUNNING {
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"compute instance %q is not running (state: %s)", resourceID, ciInfo.State.String())
-	}
-
-	// Verify hub assignment.
-	if ciInfo.HubID == "" {
-		return nil, status.Errorf(codes.FailedPrecondition,
-			"compute instance %q has no hub assigned", resourceID)
-	}
-
-	// Query the hub cluster for the ComputeInstance CR and get the kubeconfig.
-	namespace, crName, kubeconfig, err := r.getComputeInstanceFromHub(ctx, ciInfo.HubID, resourceID)
+// ResolveComputeInstance resolves a compute instance ID to the hub cluster data needed for
+// backend target construction. It verifies the instance is running and has a CR on the hub.
+//
+// Resolution is split into two phases so that the DB connection is released before making
+// external Kubernetes API calls:
+//
+//  1. lookupDBState — reads compute instance state and hub kubeconfig inside a short-lived
+//     transaction, then releases the DB connection.
+//  2. findCROnHub — queries the hub Kubernetes API for the ComputeInstance CR.
+//     No DB connection is held during this phase.
+func (r *ConsoleTargetResolver) ResolveComputeInstance(ctx context.Context, resourceID string) (*console.ResolveResult, error) {
+	// Phase 1: DB reads inside a short-lived transaction.
+	ciInfo, kubeconfig, hubNamespace, err := r.lookupDBState(ctx, resourceID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build the pre-computed backend target from the kubeconfig.
-	backendURI, backendToken, err := console.BuildBackendTarget(kubeconfig, namespace, crName, consoleType)
+	// Phase 2: Kubernetes API call — no DB connection held.
+	// Parse the kubeconfig once; the config is returned in the result for target building.
+	config, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to build backend target: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to parse hub kubeconfig: %v", err)
 	}
 
-	return &console.Target{
-		ResourceType: "compute_instance",
-		ConsoleType:  consoleType,
-		BackendURI:   backendURI,
-		BackendToken: backendToken,
+	namespace, crName, err := r.findCROnHub(ctx, config, hubNamespace, ciInfo.HubID, resourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &console.ResolveResult{
+		HubConfig: config,
+		Namespace: namespace,
+		CRName:    crName,
 	}, nil
 }
 
-// getComputeInstanceFromHub queries the hub cluster for the ComputeInstance CR matching the given
-// instance ID, and returns its namespace, name, and the raw kubeconfig bytes.
-func (r *ConsoleTargetResolver) getComputeInstanceFromHub(ctx context.Context, hubID, instanceID string) (namespace, crName string, kubeconfig []byte, err error) {
-	// Get the hub's kubeconfig and namespace.
-	kubeconfig, hubNamespace, err := r.hubLookup.GetKubeconfig(ctx, hubID)
+// lookupDBState reads the compute instance state and hub kubeconfig inside a short-lived
+// transaction, validates the instance is running and has a hub assigned, then returns all the
+// data needed for the subsequent Kubernetes API phase.
+func (r *ConsoleTargetResolver) lookupDBState(ctx context.Context, resourceID string) (ciInfo *ConsoleComputeInstanceInfo, kubeconfig []byte, hubNamespace string, err error) {
+	tx, beginErr := r.txManager.Begin(ctx)
+	if beginErr != nil {
+		err = status.Errorf(codes.Internal, "failed to begin transaction: %v", beginErr)
+		return
+	}
+	defer func() {
+		if endErr := r.txManager.End(ctx, tx); endErr != nil && err == nil {
+			err = status.Errorf(codes.Internal, "transaction cleanup failed: %v", endErr)
+		}
+	}()
+	txCtx := database.TxIntoContext(ctx, tx)
+
+	// Look up the compute instance to check its state and get the hub assignment.
+	ciInfo, err = r.ciLookup.GetForConsole(txCtx, resourceID)
+	if err != nil {
+		// Preserve the original gRPC status code if available (e.g., Internal for DB
+		// errors, Unavailable for transient failures) so clients can retry appropriately.
+		if st, ok := status.FromError(err); ok {
+			err = status.Errorf(st.Code(), "failed to get compute instance %q: %v", resourceID, st.Message())
+		} else {
+			err = status.Errorf(codes.Internal, "failed to get compute instance %q: %v", resourceID, err)
+		}
+		return
+	}
+
+	// Verify running state.
+	if ciInfo.State != privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_RUNNING {
+		err = status.Errorf(codes.FailedPrecondition,
+			"compute instance %q is not running (state: %s)", resourceID, ciInfo.State.String())
+		return
+	}
+
+	// Verify hub assignment.
+	if ciInfo.HubID == "" {
+		err = status.Errorf(codes.FailedPrecondition,
+			"compute instance %q has no hub assigned", resourceID)
+		return
+	}
+
+	// Read the hub kubeconfig and namespace.
+	kubeconfig, hubNamespace, err = r.hubLookup.GetKubeconfig(txCtx, ciInfo.HubID)
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
-			err = status.Errorf(st.Code(), "failed to get hub %q: %v", hubID, st.Message())
+			err = status.Errorf(st.Code(), "failed to get hub %q: %v", ciInfo.HubID, st.Message())
 		} else {
-			err = status.Errorf(codes.Internal, "failed to get hub %q: %v", hubID, err)
+			err = status.Errorf(codes.Internal, "failed to get hub %q: %v", ciInfo.HubID, err)
 		}
 		return
 	}
 	if hubNamespace == "" {
-		err = status.Errorf(codes.Internal, "hub %q returned empty namespace", hubID)
+		err = status.Errorf(codes.Internal, "hub %q returned empty namespace", ciInfo.HubID)
 		return
 	}
 
+	return
+}
+
+// findCROnHub queries the hub Kubernetes API for the ComputeInstance CR matching the given
+// instance ID, and returns its namespace and name. The rest.Config must already be parsed
+// from the hub kubeconfig.
+func (r *ConsoleTargetResolver) findCROnHub(ctx context.Context, config *rest.Config, hubNamespace, hubID, instanceID string) (namespace, crName string, err error) {
 	// Create a Kubernetes client for the hub cluster.
-	hubClient, err := r.hubClientFactory(kubeconfig)
+	hubClient, err := r.hubClientFactory(config)
 	if err != nil {
 		err = status.Errorf(codes.Internal, "failed to create client for hub %q: %v", hubID, err)
 		return
@@ -262,7 +295,7 @@ func (r *ConsoleTargetResolver) getComputeInstanceFromHub(ctx context.Context, h
 		err = status.Errorf(codes.FailedPrecondition, "%s", msg)
 		return
 	}
-	return obj.GetNamespace(), obj.GetName(), kubeconfig, nil
+	return obj.GetNamespace(), obj.GetName(), nil
 }
 
 // privateServerCILookup wraps the private ComputeInstancesServer to implement ComputeInstanceLookup.

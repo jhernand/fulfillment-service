@@ -34,10 +34,15 @@ func (e *ErrSessionExists) Error() string {
 	)
 }
 
-// Console type constants used in Target.ConsoleType.
+// Console type constants.
 const (
 	ConsoleTypeSerial = "serial"
 	ConsoleTypeVNC    = "vnc"
+)
+
+// Resource type constants used by the Manager backend dispatch and Target.ResourceType.
+const (
+	ResourceTypeComputeInstance = "compute_instance"
 )
 
 // Backend provides console connections to a specific type of resource.
@@ -53,7 +58,6 @@ var _ slog.LogValuer = Target{}
 // Target identifies a resource to connect a console to.
 type Target struct {
 	ResourceType string
-	ConsoleType  string // ConsoleTypeSerial or ConsoleTypeVNC
 	BackendURI   string // pre-computed wss:// URL from encrypted ticket
 	BackendToken string // bearer token from encrypted ticket
 }
@@ -63,7 +67,6 @@ type Target struct {
 func (t Target) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String("resource_type", t.ResourceType),
-		slog.String("console_type", t.ConsoleType),
 		slog.String("backend_uri", t.BackendURI),
 	)
 }

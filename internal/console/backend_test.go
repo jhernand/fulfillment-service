@@ -31,7 +31,6 @@ var _ = Describe("Target", func() {
 		token = "super-secret-bearer-token-value"
 		target = Target{
 			ResourceType: "compute_instance",
-			ConsoleType:  ConsoleTypeVNC,
 			BackendURI:   "wss://hub-1.example.com/api/v1/vnc",
 			BackendToken: token,
 		}
@@ -69,7 +68,6 @@ var _ = Describe("Target", func() {
 			output := buf.String()
 
 			Expect(output).To(ContainSubstring("compute_instance"))
-			Expect(output).To(ContainSubstring(ConsoleTypeVNC))
 			Expect(output).To(ContainSubstring("wss://hub-1.example.com/api/v1/vnc"))
 		})
 

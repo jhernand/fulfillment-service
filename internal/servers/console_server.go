@@ -16,51 +16,31 @@ package servers
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/clientcmd"
-	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/console"
 )
 
-// HubClientFactory creates a Kubernetes client from raw kubeconfig bytes.
-type HubClientFactory func(kubeconfig []byte) (clnt.Client, error)
-
-// NewDefaultHubClientFactory creates a HubClientFactory that uses the given scheme
-// to create real Kubernetes clients from kubeconfig bytes.
-func NewDefaultHubClientFactory(scheme *runtime.Scheme) HubClientFactory {
-	return func(kubeconfig []byte) (clnt.Client, error) {
-		config, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse kubeconfig: %w", err)
-		}
-		return clnt.New(config, clnt.Options{Scheme: scheme})
-	}
-}
-
 // ConsoleServerBuilder builds a ConsoleSessionsServer.
 type ConsoleServerBuilder struct {
-	logger   *slog.Logger
-	sealer   *console.TicketSealer
-	resolver *ConsoleTargetResolver
+	logger         *slog.Logger
+	sessionService *console.SessionService
 }
 
-// consoleSessionsServer implements the ConsoleSessions gRPC service.
+// consoleSessionsServer implements the ConsoleSessions gRPC service. It is a thin
+// adapter: validates and maps protobuf requests, delegates to the SessionService
+// for domain orchestration, and maps results back to protobuf responses.
 type consoleSessionsServer struct {
 	publicv1.UnimplementedConsoleSessionsServer
-	logger   *slog.Logger
-	sealer   *console.TicketSealer
-	resolver *ConsoleTargetResolver
+	logger         *slog.Logger
+	sessionService *console.SessionService
 }
 
 // NewConsoleServer creates a new builder for the console sessions server.
@@ -73,13 +53,8 @@ func (b *ConsoleServerBuilder) SetLogger(value *slog.Logger) *ConsoleServerBuild
 	return b
 }
 
-func (b *ConsoleServerBuilder) SetSealer(value *console.TicketSealer) *ConsoleServerBuilder {
-	b.sealer = value
-	return b
-}
-
-func (b *ConsoleServerBuilder) SetResolver(value *ConsoleTargetResolver) *ConsoleServerBuilder {
-	b.resolver = value
+func (b *ConsoleServerBuilder) SetSessionService(value *console.SessionService) *ConsoleServerBuilder {
+	b.sessionService = value
 	return b
 }
 
@@ -87,27 +62,18 @@ func (b *ConsoleServerBuilder) Build() (publicv1.ConsoleSessionsServer, error) {
 	if b.logger == nil {
 		return nil, errors.New("logger is mandatory")
 	}
-	if b.sealer == nil {
-		return nil, errors.New("sealer is mandatory")
-	}
-
-	if b.resolver == nil {
-		return nil, errors.New("resolver is mandatory")
+	if b.sessionService == nil {
+		return nil, errors.New("session service is mandatory")
 	}
 
 	return &consoleSessionsServer{
-		logger:   b.logger,
-		sealer:   b.sealer,
-		resolver: b.resolver,
+		logger:         b.logger,
+		sessionService: b.sessionService,
 	}, nil
 }
 
-// defaultTicketTTL is the TTL for console session tickets.
-const defaultTicketTTL = 30 * time.Second
-
-// Create creates a signed JWT ticket for console access. Resolves the
-// compute instance, fetches the hub kubeconfig, and embeds the pre-computed
-// backend WebSocket URL and token in the encrypted ticket.
+// Create validates the protobuf request, delegates to the SessionService for
+// domain orchestration, and maps the result back to a protobuf response.
 func (s *consoleSessionsServer) Create(ctx context.Context,
 	req *publicv1.ConsoleSessionsCreateRequest) (response *publicv1.ConsoleSessionsCreateResponse, err error) {
 	obj := req.GetObject()
@@ -138,31 +104,17 @@ func (s *consoleSessionsServer) Create(ctx context.Context,
 		}
 	}
 
-	// Full resolution: CI exists, running, hub assigned, CR found on hub,
-	// backend URI and token pre-computed.
-	target, resolveErr := s.resolver.ResolveComputeInstance(ctx, resourceID, consoleType)
-	if resolveErr != nil {
-		err = resolveErr
-		return
-	}
-
 	subject := auth.SubjectFromContext(ctx)
 
-	ticket := &console.Ticket{
-		TargetURI:   target.BackendURI,
-		TargetToken: target.BackendToken,
-	}
-	tokenString, expiresAt, signErr := s.sealer.Seal(ticket, subject.User, clientID, consoleType, defaultTicketTTL)
-	if signErr != nil {
-		err = status.Errorf(codes.Internal, "failed to seal ticket: %v", signErr)
+	result, err := s.sessionService.CreateSession(ctx, &console.CreateSessionRequest{
+		User:        subject.User,
+		ResourceID:  resourceID,
+		ConsoleType: consoleType,
+		ClientID:    clientID,
+	})
+	if err != nil {
 		return
 	}
-
-	s.logger.InfoContext(ctx, "Console session ticket created",
-		slog.String("resource_id", resourceID),
-		slog.String("user", subject.User),
-		slog.String("console_type", consoleType),
-	)
 
 	response = publicv1.ConsoleSessionsCreateResponse_builder{
 		Object: publicv1.ConsoleSession_builder{
@@ -170,8 +122,8 @@ func (s *consoleSessionsServer) Create(ctx context.Context,
 			ResourceId:   resourceID,
 			Type:         obj.GetType(),
 			ClientId:     clientID,
-			Ticket:       tokenString,
-			ExpiresAt:    timestamppb.New(expiresAt),
+			Ticket:       result.Ticket,
+			ExpiresAt:    timestamppb.New(result.ExpiresAt),
 		}.Build(),
 	}.Build()
 	return
