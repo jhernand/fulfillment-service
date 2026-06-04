@@ -38,11 +38,11 @@ jobs:
     environment:
       name: github-pages
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       with:
         persist-credentials: false
     - uses: ./.github/actions/setup-go
-    - uses: bufbuild/buf-action@91da6f6a1a2c877c182debad24ca0a8a9d848be7  # v1
+    - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff  # v1
       with:
         setup_only: true
     - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5
@@ -52,7 +52,7 @@ jobs:
     - run: |
         go build ./cmd/osac-dev
         ./osac-dev generate openapi --project-dir . --output-dir pages/openapi
-    - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b  # v4
+    - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
       with:
         path: pages
-    - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4
+    - uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128  # v5.0.0
