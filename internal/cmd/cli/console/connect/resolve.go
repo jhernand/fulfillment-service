@@ -17,32 +17,28 @@ import (
 	"context"
 	"fmt"
 
-	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+
+	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
+	"github.com/osac-project/fulfillment-service/internal/cmd/cli/lookup"
 )
 
 // ResolveInstance resolves a name or ID to a compute instance ID.
 func ResolveInstance(ctx context.Context, conn *grpc.ClientConn, key string) (string, error) {
 	client := publicv1.NewComputeInstancesClient(conn)
-	listFilter := fmt.Sprintf(
-		"this.id == %[1]q || this.metadata.name == %[1]q",
-		key,
-	)
-	resp, err := client.List(ctx, publicv1.ComputeInstancesListRequest_builder{
-		Filter: new(listFilter),
-		Limit:  new(int32(2)),
-	}.Build())
+	ci, err := lookup.Find(key, "compute instance", lookup.FindOptions{}, func(filter string, limit int32) ([]*publicv1.ComputeInstance, error) {
+		resp, err := client.List(ctx, publicv1.ComputeInstancesListRequest_builder{
+			Filter: proto.String(filter),
+			Limit:  proto.Int32(limit),
+		}.Build())
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up compute instance: %w", err)
+		}
+		return resp.GetItems(), nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to look up compute instance: %w", err)
+		return "", err
 	}
-
-	items := resp.GetItems()
-	switch len(items) {
-	case 0:
-		return "", fmt.Errorf("compute instance %q not found", key)
-	case 1:
-		return items[0].GetId(), nil
-	default:
-		return "", fmt.Errorf("multiple compute instances match %q; use the ID instead", key)
-	}
+	return ci.GetId(), nil
 }

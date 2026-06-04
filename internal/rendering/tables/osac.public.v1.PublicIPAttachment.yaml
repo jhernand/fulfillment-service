@@ -19,20 +19,12 @@ columns:
 - header: NAME
   value: "has(this.metadata.name)? this.metadata.name: '-'"
 
-- header: POOL
-  value: this.spec.pool
+- header: PUBLIC-IP
+  value: this.spec.public_ip
+
+- header: COMPUTE-INSTANCE
+  value: "has(this.spec.compute_instance)? this.spec.compute_instance: '-'"
 
 - header: STATE
   value: this.status.state
-  type: osac.private.v1.PublicIPState
-
-- header: ADDRESS
-  value: "this.status.address != ''? this.status.address: '-'"
-
-- header: HUB
-  value: this.status.hub
-  type: osac.private.v1.Hub
-  lookup: true
-
-- header: ATTACHED
-  value: "has(this.status) && this.status.attached? 'true': 'false'"
+  type: osac.public.v1.PublicIPAttachmentState
