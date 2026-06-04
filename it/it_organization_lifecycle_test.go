@@ -15,17 +15,22 @@ package it
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
+	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
+	"github.com/osac-project/fulfillment-service/internal/auth"
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/controllers/finalizers"
 	"github.com/osac-project/fulfillment-service/internal/uuid"
 )
@@ -91,6 +96,75 @@ func verifyOrgRemovedFromKeycloak(ctx context.Context, name string) {
 	).Should(Succeed())
 }
 
+// loginAsBreakGlass creates a gRPC connection authenticated as the break-glass user
+// for the given organization. It waits for the org to reach SYNCED, retrieves or sets
+// the break-glass password, clears the UPDATE_PASSWORD required action, and returns
+// a gRPC connection and the token source. The connection is registered for cleanup.
+func loginAsBreakGlass(
+	ctx context.Context,
+	client privatev1.OrganizationsClient,
+	name, id string,
+) (*grpc.ClientConn, auth.TokenSource) {
+	var breakGlassUserId string
+	var breakGlassUsername string
+	var breakGlassPassword string
+	Eventually(
+		func(g Gomega) {
+			getResponse, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+				Id: id,
+			}.Build())
+			g.Expect(err).ToNot(HaveOccurred())
+			status := getResponse.GetObject().GetStatus()
+			g.Expect(status.GetState()).To(
+				Equal(privatev1.OrganizationState_ORGANIZATION_STATE_SYNCED),
+			)
+			g.Expect(status.GetBreakGlassUserId()).ToNot(BeEmpty())
+			breakGlassUserId = status.GetBreakGlassUserId()
+			creds := status.GetBreakGlassCredentials()
+			if creds != nil {
+				breakGlassUsername = creds.GetUsername()
+				breakGlassPassword = creds.GetPassword()
+			}
+		},
+		time.Minute,
+		time.Second,
+	).Should(Succeed())
+
+	if breakGlassPassword == "" {
+		breakGlassPassword = "test-break-glass-pass-123!"
+		breakGlassUsername = fmt.Sprintf("%s-osac-break-glass", name)
+	}
+
+	code, _, err := tool.KeycloakAdminRequest(ctx, http.MethodPut,
+		fmt.Sprintf("/users/%s/reset-password", breakGlassUserId),
+		map[string]any{
+			"type":      "password",
+			"value":     breakGlassPassword,
+			"temporary": false,
+		})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(code).To(Equal(http.StatusNoContent))
+
+	code, _, err = tool.KeycloakAdminRequest(ctx, http.MethodPut,
+		fmt.Sprintf("/users/%s", breakGlassUserId),
+		map[string]any{
+			"requiredActions": []string{},
+		})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(code).To(Equal(http.StatusNoContent))
+
+	tokenSource, err := tool.makeKeycloakTokenSource(ctx, breakGlassUsername, breakGlassPassword)
+	Expect(err).ToNot(HaveOccurred())
+
+	conn, err := tool.makeGrpcConn(internalServiceAddr, tokenSource)
+	Expect(err).ToNot(HaveOccurred())
+	DeferCleanup(func() {
+		_ = conn.Close()
+	})
+
+	return conn, tokenSource
+}
+
 var _ = Describe("Organization lifecycle", func() {
 	var (
 		ctx    context.Context
@@ -104,9 +178,14 @@ var _ = Describe("Organization lifecycle", func() {
 
 	It("CRUD happy flow", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Creating organization %q", name))
 		id := createOrg(ctx, client, name)
+
+		By("Waiting for organization to reach SYNCED state")
 		waitForOrgSynced(ctx, client, id)
 
+		By("Verifying organization fields via Get")
 		getResponse, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
 			Id: id,
 		}.Build())
@@ -116,6 +195,7 @@ var _ = Describe("Organization lifecycle", func() {
 		Expect(object.GetStatus().GetBreakGlassUserId()).ToNot(BeEmpty())
 		Expect(object.GetStatus().GetIdpOrganizationName()).To(Equal(name))
 
+		By("Verifying organization appears in List")
 		listResponse, err := client.List(ctx, privatev1.OrganizationsListRequest_builder{}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		ids := make([]string, len(listResponse.GetItems()))
@@ -124,13 +204,16 @@ var _ = Describe("Organization lifecycle", func() {
 		}
 		Expect(ids).To(ContainElement(id))
 
+		By("Verifying organization exists in Keycloak")
 		verifyOrgInKeycloak(ctx, name)
 
+		By("Deleting organization")
 		_, err = client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 
+		By("Waiting for organization to return NotFound")
 		Eventually(
 			func(g Gomega) {
 				_, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
@@ -145,74 +228,22 @@ var _ = Describe("Organization lifecycle", func() {
 			time.Second,
 		).Should(Succeed())
 
+		By("Verifying organization removed from Keycloak")
 		verifyOrgRemovedFromKeycloak(ctx, name)
 	})
 
 	It("Break-glass auth and RBAC", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Creating organization %q", name))
 		id := createOrg(ctx, client, name)
 
-		var breakGlassUserId string
-		var breakGlassUsername string
-		var breakGlassPassword string
-		Eventually(
-			func(g Gomega) {
-				getResponse, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
-					Id: id,
-				}.Build())
-				g.Expect(err).ToNot(HaveOccurred())
-				status := getResponse.GetObject().GetStatus()
-				g.Expect(status.GetState()).To(
-					Equal(privatev1.OrganizationState_ORGANIZATION_STATE_SYNCED),
-				)
-				g.Expect(status.GetBreakGlassUserId()).ToNot(BeEmpty())
-				breakGlassUserId = status.GetBreakGlassUserId()
-				creds := status.GetBreakGlassCredentials()
-				if creds != nil {
-					breakGlassUsername = creds.GetUsername()
-					breakGlassPassword = creds.GetPassword()
-				}
-			},
-			time.Minute,
-			time.Second,
-		).Should(Succeed())
+		By("Logging in as break-glass user")
+		bgConn, _ := loginAsBreakGlass(ctx, client, name, id)
 
-		if breakGlassPassword == "" {
-			breakGlassPassword = "test-break-glass-pass-123!"
-			breakGlassUsername = fmt.Sprintf("%s-osac-break-glass", name)
-		}
-
-		// Set a known password and clear the UPDATE_PASSWORD required action so
-		// the password grant flow works without interactive consent:
-		code, _, err := tool.KeycloakAdminRequest(ctx, http.MethodPut,
-			fmt.Sprintf("/users/%s/reset-password", breakGlassUserId),
-			map[string]any{
-				"type":      "password",
-				"value":     breakGlassPassword,
-				"temporary": false,
-			})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(code).To(Equal(http.StatusNoContent))
-
-		code, _, err = tool.KeycloakAdminRequest(ctx, http.MethodPut,
-			fmt.Sprintf("/users/%s", breakGlassUserId),
-			map[string]any{
-				"requiredActions": []string{},
-			})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(code).To(Equal(http.StatusNoContent))
-
-		tokenSource, err := tool.makeKeycloakTokenSource(ctx, breakGlassUsername, breakGlassPassword)
-		Expect(err).ToNot(HaveOccurred())
-
-		bgInternalConn, err := tool.makeGrpcConn(internalServiceAddr, tokenSource)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			_ = bgInternalConn.Close()
-		})
-
-		bgPrivateClient := privatev1.NewOrganizationsClient(bgInternalConn)
-		_, err = bgPrivateClient.List(ctx, privatev1.OrganizationsListRequest_builder{}.Build())
+		By("Verifying break-glass user cannot list orgs on private API")
+		bgPrivateClient := privatev1.NewOrganizationsClient(bgConn)
+		_, err := bgPrivateClient.List(ctx, privatev1.OrganizationsListRequest_builder{}.Build())
 		Expect(err).To(HaveOccurred())
 		status, ok := grpcstatus.FromError(err)
 		Expect(ok).To(BeTrue())
@@ -221,9 +252,12 @@ var _ = Describe("Organization lifecycle", func() {
 
 	It("Duplicate org name fails", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Creating organization %q", name))
 		id := createOrg(ctx, client, name)
 		waitForOrgSynced(ctx, client, id)
 
+		By("Attempting to create another org with the same name")
 		_, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
 			Object: privatev1.Organization_builder{
 				Metadata: privatev1.Metadata_builder{
@@ -239,8 +273,11 @@ var _ = Describe("Organization lifecycle", func() {
 
 	It("Rename org is rejected", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Creating organization %q", name))
 		id := createOrg(ctx, client, name)
 
+		By("Waiting for organization to reach SYNCED with finalizer")
 		Eventually(
 			func(g Gomega) {
 				getResponse, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
@@ -258,6 +295,7 @@ var _ = Describe("Organization lifecycle", func() {
 			time.Second,
 		).Should(Succeed())
 
+		By("Attempting to rename the organization")
 		newName := fmt.Sprintf("renamed-%s", uuid.New())
 		_, err := client.Update(ctx, privatev1.OrganizationsUpdateRequest_builder{
 			Object: privatev1.Organization_builder{
@@ -271,5 +309,170 @@ var _ = Describe("Organization lifecycle", func() {
 		status, ok := grpcstatus.FromError(err)
 		Expect(ok).To(BeTrue())
 		Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+	})
+})
+
+var _ = Describe("Organization authorization boundaries", func() {
+	var (
+		ctx    context.Context
+		client privatev1.OrganizationsClient
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		client = privatev1.NewOrganizationsClient(tool.InternalView().AdminConn())
+	})
+
+	It("Regular user cannot create org", func() {
+		By("Connecting as regular user to private API")
+		userClient := privatev1.NewOrganizationsClient(tool.InternalView().UserConn())
+		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Attempting to create organization %q as regular user", name))
+		_, err := userClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
+			Object: privatev1.Organization_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name: name,
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
+	})
+
+	It("Anonymous request cannot create org", func() {
+		By("Connecting anonymously (no token) to private API")
+		anonClient := privatev1.NewOrganizationsClient(tool.InternalView().AnonymousConn())
+		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Attempting to create organization %q without authentication", name))
+		_, err := anonClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
+			Object: privatev1.Organization_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name: name,
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(SatisfyAny(
+			Equal(grpccodes.Unauthenticated),
+			Equal(grpccodes.PermissionDenied),
+		))
+	})
+
+	It("Break-glass from org-A cannot access org-B", func() {
+		By("Creating org-A")
+		nameA := fmt.Sprintf("test-%s", uuid.New())
+		idA := createOrg(ctx, client, nameA)
+
+		By("Creating org-B")
+		nameB := fmt.Sprintf("test-%s", uuid.New())
+		idB := createOrg(ctx, client, nameB)
+		waitForOrgSynced(ctx, client, idB)
+
+		By("Logging in as break-glass user for org-A")
+		bgConnA, _ := loginAsBreakGlass(ctx, client, nameA, idA)
+
+		By("Attempting to access org-B using org-A's break-glass credentials")
+		bgPublicClientA := publicv1.NewOrganizationsClient(bgConnA)
+		_, err := bgPublicClientA.Get(ctx, publicv1.OrganizationsGetRequest_builder{
+			Id: idB,
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(SatisfyAny(
+			Equal(grpccodes.PermissionDenied),
+			Equal(grpccodes.NotFound),
+		))
+	})
+
+	It("Break-glass cannot call admin-only APIs", func() {
+		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Creating organization %q", name))
+		id := createOrg(ctx, client, name)
+
+		By("Logging in as break-glass user")
+		bgConn, _ := loginAsBreakGlass(ctx, client, name, id)
+
+		bgPrivateClient := privatev1.NewOrganizationsClient(bgConn)
+
+		By("Attempting to create a new org as break-glass user")
+		_, err := bgPrivateClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
+			Object: privatev1.Organization_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name: fmt.Sprintf("test-%s", uuid.New()),
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
+
+		By("Attempting to delete an org as break-glass user")
+		_, err = bgPrivateClient.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+			Id: id,
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok = grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
+	})
+
+	It("Break-glass JWT contains correct org membership", func() {
+		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Creating organization %q", name))
+		id := createOrg(ctx, client, name)
+
+		By("Logging in as break-glass user")
+		_, tokenSource := loginAsBreakGlass(ctx, client, name, id)
+
+		By("Obtaining JWT access token")
+		token, err := tokenSource.Token(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(token.Access).ToNot(BeEmpty())
+
+		By("Decoding JWT payload")
+		parts := strings.Split(token.Access, ".")
+		Expect(parts).To(HaveLen(3))
+
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		Expect(err).ToNot(HaveOccurred())
+
+		var claims map[string]any
+		Expect(json.Unmarshal(payload, &claims)).To(Succeed())
+
+		By("Verifying 'organization' claim contains the org name")
+		orgClaim, ok := claims["organization"]
+		Expect(ok).To(BeTrue(), "JWT should contain 'organization' claim")
+		orgList, ok := orgClaim.([]any)
+		Expect(ok).To(BeTrue(), "'organization' claim should be an array")
+		orgStrings := make([]string, len(orgList))
+		for i, o := range orgList {
+			orgStrings[i], _ = o.(string)
+		}
+		Expect(orgStrings).To(ContainElement(name))
+
+		By("Verifying 'tenant-idp-manager' role in realm_access")
+		realmAccess, ok := claims["realm_access"]
+		Expect(ok).To(BeTrue(), "JWT should contain 'realm_access' claim")
+		ra, ok := realmAccess.(map[string]any)
+		Expect(ok).To(BeTrue())
+		roles, ok := ra["roles"]
+		Expect(ok).To(BeTrue(), "realm_access should contain 'roles'")
+		roleList, ok := roles.([]any)
+		Expect(ok).To(BeTrue())
+		roleStrings := make([]string, len(roleList))
+		for i, r := range roleList {
+			roleStrings[i], _ = r.(string)
+		}
+		Expect(roleStrings).To(ContainElement("tenant-idp-manager"))
 	})
 })
