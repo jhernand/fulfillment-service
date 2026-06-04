@@ -69,8 +69,10 @@ type mockCreateSessionServer struct {
 
 func (s *mockCreateSessionServer) Create(ctx context.Context, req *publicv1.ConsoleSessionsCreateRequest) (*publicv1.ConsoleSessionsCreateResponse, error) {
 	return publicv1.ConsoleSessionsCreateResponse_builder{
-		Ticket:    testTicket,
-		ExpiresAt: timestamppb.New(time.Now().Add(30 * time.Second)),
+		Object: publicv1.ConsoleSession_builder{
+			Ticket:    testTicket,
+			ExpiresAt: timestamppb.New(time.Now().Add(30 * time.Second)),
+		}.Build(),
 	}.Build(), nil
 }
 
@@ -106,16 +108,18 @@ func openTestStream(proxySrv publicv1.ConsoleProxyServer) (
 	consoleClient := publicv1.NewConsoleSessionsClient(conn)
 	sessionResp, err := consoleClient.Create(ctx,
 		publicv1.ConsoleSessionsCreateRequest_builder{
-			ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
-			ResourceId:   "019dd9f6-0000-7000-8000-000000000001",
-			Type:         publicv1.ConsoleType_CONSOLE_TYPE_VNC,
-			ClientId:     "test-client",
+			Object: publicv1.ConsoleSession_builder{
+				ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
+				ResourceId:   "019dd9f6-0000-7000-8000-000000000001",
+				Type:         publicv1.ConsoleType_CONSOLE_TYPE_VNC,
+				ClientId:     "test-client",
+			}.Build(),
 		}.Build())
 	Expect(err).NotTo(HaveOccurred())
 
 	// Open proxy stream with ticket as per-call credential.
 	proxyClient := publicv1.NewConsoleProxyClient(conn)
-	stream, err = proxyClient.Connect(ctx, grpc.PerRPCCredentials(auth.NewTicketCredentials(sessionResp.GetTicket())))
+	stream, err = proxyClient.Connect(ctx, grpc.PerRPCCredentials(auth.NewTicketCredentials(sessionResp.GetObject().GetTicket())))
 	Expect(err).NotTo(HaveOccurred())
 
 	// Wait for CONNECTED status.

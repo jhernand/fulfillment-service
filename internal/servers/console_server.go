@@ -110,8 +110,9 @@ const defaultTicketTTL = 30 * time.Second
 // backend WebSocket URL and token in the encrypted ticket.
 func (s *consoleSessionsServer) Create(ctx context.Context,
 	req *publicv1.ConsoleSessionsCreateRequest) (response *publicv1.ConsoleSessionsCreateResponse, err error) {
-	resourceType := req.GetResourceType()
-	resourceID := req.GetResourceId()
+	obj := req.GetObject()
+	resourceType := obj.GetResourceType()
+	resourceID := obj.GetResourceId()
 
 	if resourceID == "" {
 		err = status.Errorf(codes.InvalidArgument, "field 'resource_id' is mandatory")
@@ -123,13 +124,13 @@ func (s *consoleSessionsServer) Create(ctx context.Context,
 		return
 	}
 
-	consoleType := mapConsoleType(req.GetType())
+	consoleType := mapConsoleType(obj.GetType())
 	if consoleType == "" {
-		err = status.Errorf(codes.InvalidArgument, "unsupported console type: %s", req.GetType().String())
+		err = status.Errorf(codes.InvalidArgument, "unsupported console type: %s", obj.GetType().String())
 		return
 	}
 
-	clientID := req.GetClientId()
+	clientID := obj.GetClientId()
 	if clientID != "" {
 		if _, err = uuid.Parse(clientID); err != nil {
 			err = status.Errorf(codes.InvalidArgument, "client_id must be a valid UUID or empty")
@@ -164,8 +165,14 @@ func (s *consoleSessionsServer) Create(ctx context.Context,
 	)
 
 	response = publicv1.ConsoleSessionsCreateResponse_builder{
-		Ticket:    tokenString,
-		ExpiresAt: timestamppb.New(expiresAt),
+		Object: publicv1.ConsoleSession_builder{
+			ResourceType: resourceType,
+			ResourceId:   resourceID,
+			Type:         obj.GetType(),
+			ClientId:     clientID,
+			Ticket:       tokenString,
+			ExpiresAt:    timestamppb.New(expiresAt),
+		}.Build(),
 	}.Build()
 	return
 }

@@ -123,18 +123,18 @@ data:
                   # travels in the Authorization header or console-ticket cookie, not the URL.
                   - name: console-ws
                     match:
-                      path: /api/osac/public/v1/console/connect
+                      path: /api/fulfillment/v1/console_sessions/connect
                     route:
                       cluster: console-proxy-ws
                       timeout: 0s
                       idle_timeout: 1800s
 
                   # This route is for the REST gateway. The public API endpoints use path prefixes
-                  # like /api/fulfillment/, /api/events/, and /api/osac/.
+                  # like /api/fulfillment/ and /api/events/.
                   - name: rest-gateway
                     match:
                       safe_regex:
-                        regex: /api/(fulfillment|events|osac)(/.*)?
+                        regex: /api/(fulfillment|events)(/.*)?
                     route:
                       cluster: rest-gateway
                       timeout: 300s

@@ -39,28 +39,9 @@ func request_ConsoleSessions_Create_0(ctx context.Context, marshaler runtime.Mar
 	var (
 		protoReq ConsoleSessionsCreateRequest
 		metadata runtime.ServerMetadata
-		e        int32
-		err      error
 	)
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq.Object); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
-	}
-	val, ok := pathParams["resource_type"]
-	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "resource_type")
-	}
-	e, err = runtime.Enum(val, ConsoleResourceType_value)
-	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "resource_type", err)
-	}
-	protoReq.ResourceType = ConsoleResourceType(e)
-	val, ok = pathParams["resource_id"]
-	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "resource_id")
-	}
-	protoReq.ResourceId, err = runtime.String(val)
-	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "resource_id", err)
 	}
 	msg, err := client.Create(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
@@ -70,28 +51,9 @@ func local_request_ConsoleSessions_Create_0(ctx context.Context, marshaler runti
 	var (
 		protoReq ConsoleSessionsCreateRequest
 		metadata runtime.ServerMetadata
-		e        int32
-		err      error
 	)
-	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq.Object); err != nil && !errors.Is(err, io.EOF) {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
-	}
-	val, ok := pathParams["resource_type"]
-	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "resource_type")
-	}
-	e, err = runtime.Enum(val, ConsoleResourceType_value)
-	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "resource_type", err)
-	}
-	protoReq.ResourceType = ConsoleResourceType(e)
-	val, ok = pathParams["resource_id"]
-	if !ok {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "resource_id")
-	}
-	protoReq.ResourceId, err = runtime.String(val)
-	if err != nil {
-		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "resource_id", err)
 	}
 	msg, err := server.Create(ctx, &protoReq)
 	return msg, metadata, err
@@ -109,7 +71,7 @@ func RegisterConsoleSessionsHandlerServer(ctx context.Context, mux *runtime.Serv
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/osac.public.v1.ConsoleSessions/Create", runtime.WithHTTPPathPattern("/api/osac/public/v1/console/{resource_type}/{resource_id}/session"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/osac.public.v1.ConsoleSessions/Create", runtime.WithHTTPPathPattern("/api/fulfillment/v1/console_sessions"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -121,7 +83,7 @@ func RegisterConsoleSessionsHandlerServer(ctx context.Context, mux *runtime.Serv
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ConsoleSessions_Create_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ConsoleSessions_Create_0(annotatedContext, mux, outboundMarshaler, w, req, response_ConsoleSessions_Create_0{resp.(*ConsoleSessionsCreateResponse)}, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -167,7 +129,7 @@ func RegisterConsoleSessionsHandlerClient(ctx context.Context, mux *runtime.Serv
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/osac.public.v1.ConsoleSessions/Create", runtime.WithHTTPPathPattern("/api/osac/public/v1/console/{resource_type}/{resource_id}/session"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/osac.public.v1.ConsoleSessions/Create", runtime.WithHTTPPathPattern("/api/fulfillment/v1/console_sessions"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -178,13 +140,21 @@ func RegisterConsoleSessionsHandlerClient(ctx context.Context, mux *runtime.Serv
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_ConsoleSessions_Create_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_ConsoleSessions_Create_0(annotatedContext, mux, outboundMarshaler, w, req, response_ConsoleSessions_Create_0{resp.(*ConsoleSessionsCreateResponse)}, mux.GetForwardResponseOptions()...)
 	})
 	return nil
 }
 
+type response_ConsoleSessions_Create_0 struct {
+	*ConsoleSessionsCreateResponse
+}
+
+func (m response_ConsoleSessions_Create_0) XXX_ResponseBody() interface{} {
+	return m.Object
+}
+
 var (
-	pattern_ConsoleSessions_Create_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 2, 4, 1, 0, 4, 1, 5, 5, 1, 0, 4, 1, 5, 6, 2, 7}, []string{"api", "osac", "public", "v1", "console", "resource_type", "resource_id", "session"}, ""))
+	pattern_ConsoleSessions_Create_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"api", "fulfillment", "v1", "console_sessions"}, ""))
 )
 
 var (

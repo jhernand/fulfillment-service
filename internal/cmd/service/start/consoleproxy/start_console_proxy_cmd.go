@@ -295,7 +295,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	// Create the console HTTP mux and middleware chain:
 	consoleMux := http.NewServeMux()
 	consoleMux.Handle(
-		"GET /api/osac/public/v1/console/connect",
+		"GET /api/fulfillment/v1/console_sessions/connect",
 		servers.ConsoleMetrics(metricsRegisterer,
 			servers.ConsoleLogging(c.logger, wsHandler)),
 	)

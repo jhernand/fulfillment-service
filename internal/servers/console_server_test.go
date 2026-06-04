@@ -402,14 +402,16 @@ var _ = Describe("Console Server", func() {
 				User: "testuser",
 			})
 			resp, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
-				ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
-				ResourceId:   "ci-123",
-				Type:         publicv1.ConsoleType_CONSOLE_TYPE_VNC,
-				ClientId:     "550e8400-e29b-41d4-a716-446655440000",
+				Object: publicv1.ConsoleSession_builder{
+					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
+					ResourceId:   "ci-123",
+					Type:         publicv1.ConsoleType_CONSOLE_TYPE_VNC,
+					ClientId:     "550e8400-e29b-41d4-a716-446655440000",
+				}.Build(),
 			}.Build())
 			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.GetTicket()).NotTo(BeEmpty())
-			Expect(resp.GetExpiresAt()).NotTo(BeNil())
+			Expect(resp.GetObject().GetTicket()).NotTo(BeEmpty())
+			Expect(resp.GetObject().GetExpiresAt()).NotTo(BeNil())
 		})
 
 		It("should reject empty resource_id", func() {
@@ -417,9 +419,11 @@ var _ = Describe("Console Server", func() {
 
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{User: "testuser"})
 			_, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
-				ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
-				ResourceId:   "",
-				Type:         publicv1.ConsoleType_CONSOLE_TYPE_SERIAL,
+				Object: publicv1.ConsoleSession_builder{
+					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
+					ResourceId:   "",
+					Type:         publicv1.ConsoleType_CONSOLE_TYPE_SERIAL,
+				}.Build(),
 			}.Build())
 			Expect(err).To(HaveOccurred())
 			Expect(status.Code(err)).To(Equal(codes.InvalidArgument))
@@ -438,9 +442,11 @@ var _ = Describe("Console Server", func() {
 
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{User: "testuser"})
 			_, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
-				ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
-				ResourceId:   "ci-123",
-				Type:         publicv1.ConsoleType_CONSOLE_TYPE_SERIAL,
+				Object: publicv1.ConsoleSession_builder{
+					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
+					ResourceId:   "ci-123",
+					Type:         publicv1.ConsoleType_CONSOLE_TYPE_SERIAL,
+				}.Build(),
 			}.Build())
 			Expect(err).To(HaveOccurred())
 			Expect(status.Code(err)).To(Equal(codes.FailedPrecondition))
@@ -451,9 +457,11 @@ var _ = Describe("Console Server", func() {
 
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{User: "testuser"})
 			_, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
-				ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_HOST,
-				ResourceId:   "host-1",
-				Type:         publicv1.ConsoleType_CONSOLE_TYPE_SERIAL,
+				Object: publicv1.ConsoleSession_builder{
+					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_HOST,
+					ResourceId:   "host-1",
+					Type:         publicv1.ConsoleType_CONSOLE_TYPE_SERIAL,
+				}.Build(),
 			}.Build())
 			Expect(err).To(HaveOccurred())
 			Expect(status.Code(err)).To(Equal(codes.Unimplemented))
@@ -473,9 +481,11 @@ var _ = Describe("Console Server", func() {
 
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{User: "testuser"})
 			_, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
-				ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
-				ResourceId:   "ci-123",
-				Type:         publicv1.ConsoleType(99),
+				Object: publicv1.ConsoleSession_builder{
+					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
+					ResourceId:   "ci-123",
+					Type:         publicv1.ConsoleType(99),
+				}.Build(),
 			}.Build())
 			Expect(err).To(HaveOccurred())
 			Expect(status.Code(err)).To(Equal(codes.InvalidArgument))

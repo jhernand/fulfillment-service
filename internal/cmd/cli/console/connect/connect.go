@@ -136,15 +136,17 @@ func getTicket(ctx context.Context, conn *grpc.ClientConn, opts Options) (string
 	consoleClient := publicv1.NewConsoleSessionsClient(conn)
 	sessionResp, err := consoleClient.Create(ctx,
 		publicv1.ConsoleSessionsCreateRequest_builder{
-			ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
-			ResourceId:   opts.InstanceID,
-			Type:         opts.ConsoleType,
-			ClientId:     opts.ClientID,
+			Object: publicv1.ConsoleSession_builder{
+				ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
+				ResourceId:   opts.InstanceID,
+				Type:         opts.ConsoleType,
+				ClientId:     opts.ClientID,
+			}.Build(),
 		}.Build())
 	if err != nil {
 		return "", fmt.Errorf("failed to create console session: %w", err)
 	}
-	ticket := sessionResp.GetTicket()
+	ticket := sessionResp.GetObject().GetTicket()
 	if ticket == "" {
 		return "", fmt.Errorf("server returned empty console session ticket")
 	}
