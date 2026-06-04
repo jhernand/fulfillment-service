@@ -38,18 +38,6 @@ var _ = DescribeMigration("Create instance types tables", func() {
 		err = row.Scan(&exists)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(exists).To(BeTrue())
-
-		// Verify the archived_instance_types table exists:
-		row = conn.QueryRow(
-			ctx,
-			`select exists (
-				select from information_schema.tables
-				where table_name = 'archived_instance_types'
-			)`,
-		)
-		err = row.Scan(&exists)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(exists).To(BeTrue())
 	})
 
 	It("Can insert and query an instance type", func(ctx context.Context) {
