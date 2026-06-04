@@ -100,7 +100,7 @@ func (b *kubeVirtBackend) Connect(ctx context.Context, target Target) (io.ReadWr
 		wsConfig.TlsConfig = tlsConfig
 	}
 
-	conn, err := websocket.DialConfig(wsConfig)
+	conn, err := wsConfig.DialContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to console: %w", err)
 	}
