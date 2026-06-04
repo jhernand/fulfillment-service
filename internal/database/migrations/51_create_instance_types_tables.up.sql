@@ -47,3 +47,9 @@ create index instance_types_by_tenant on instance_types (tenant);
 create index instance_types_by_label on instance_types using gin (labels);
 
 alter table instance_types add constraint instance_types_tenant_fk foreign key (tenant) references organizations (id);
+
+-- Attach the trigger to the table to enforce immutability of the id, name and tenant columns:
+create trigger check_immutable_columns
+  before update on instance_types
+  for each row
+  execute function check_immutable_columns('id', 'name', 'tenant');
