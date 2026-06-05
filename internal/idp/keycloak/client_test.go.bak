@@ -70,10 +70,7 @@ var _ = Describe("Keycloak Client", func() {
 					}}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -148,10 +145,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode(testOrgs); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode(testOrgs)
 			}))
 
 			client = createTestClient(server.URL)
@@ -210,10 +204,7 @@ var _ = Describe("Keycloak Client", func() {
 					}}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -375,10 +366,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode(users); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode(users)
 			}))
 
 			client = createTestClient(server.URL)
@@ -438,10 +426,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode(users); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode(users)
 			}))
 
 			client = createTestClient(server.URL)
@@ -477,10 +462,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode(testUser); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode(testUser)
 			}))
 			client = createTestClient(server.URL)
 			user, err := client.GetUser(ctx, "test-org", "user-123-abc")
@@ -583,10 +565,7 @@ var _ = Describe("Keycloak Client", func() {
 					}}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -607,10 +586,7 @@ var _ = Describe("Keycloak Client", func() {
 					}}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -676,10 +652,7 @@ var _ = Describe("Keycloak Client", func() {
 				if r.URL.Path == "/admin/realms/osac/clients" {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(clients); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(clients)
 					return
 				}
 
@@ -687,10 +660,7 @@ var _ = Describe("Keycloak Client", func() {
 				Expect(r.URL.Path).To(Equal("/admin/realms/osac/clients/internal-uuid-123/roles"))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode(roles); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode(roles)
 			}))
 
 			client = createTestClient(server.URL)
@@ -722,10 +692,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				// First call returns valid clients, second call returns invalid JSON
 				if r.URL.Path == "/admin/realms/osac/clients" {
-					if err := json.NewEncoder(w).Encode(clients); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(clients)
 				} else {
 					w.Write([]byte("invalid json"))
 				}
@@ -760,10 +727,7 @@ var _ = Describe("Keycloak Client", func() {
 				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(clients); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(clients)
 					return
 				}
 
@@ -815,10 +779,7 @@ var _ = Describe("Keycloak Client", func() {
 				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(clients); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(clients)
 					return
 				}
 
@@ -874,10 +835,7 @@ var _ = Describe("Keycloak Client", func() {
 				if r.URL.Path == "/admin/realms/osac/clients" {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(clients); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(clients)
 					return
 				}
 
@@ -885,10 +843,7 @@ var _ = Describe("Keycloak Client", func() {
 				Expect(r.URL.Path).To(Equal("/admin/realms/osac/users/user-123/role-mappings/clients/internal-uuid-123"))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode(roles); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode(roles)
 			}))
 
 			client = createTestClient(server.URL)
@@ -919,10 +874,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				// First call returns valid clients, second call returns invalid JSON
 				if r.URL.Path == "/admin/realms/osac/clients" {
-					if err := json.NewEncoder(w).Encode(clients); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(clients)
 				} else {
 					w.Write([]byte("invalid json"))
 				}
@@ -958,10 +910,7 @@ var _ = Describe("Keycloak Client", func() {
 				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/roles/tenant-idp-manager" {
 					// Return the tenant-idp-manager role
 					w.WriteHeader(http.StatusOK)
-					if err := json.NewEncoder(w).Encode(role); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(role)
 				} else if r.Method == http.MethodPost && r.URL.Path == "/admin/realms/osac/users/user-123/role-mappings/realm" {
 					// Assignment endpoint
 					w.WriteHeader(http.StatusNoContent)
@@ -989,10 +938,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode(clients); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode(clients)
 			}))
 
 			client = createTestClient(server.URL)
@@ -1023,10 +969,7 @@ var _ = Describe("Keycloak Client", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode([]keycloakClient{}); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode([]keycloakClient{})
 			}))
 
 			client = createTestClient(server.URL)
@@ -1071,10 +1014,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				if err := json.NewEncoder(w).Encode(clients); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
+				json.NewEncoder(w).Encode(clients)
 			}))
 
 			client = createTestClient(server.URL)
@@ -1133,10 +1073,7 @@ var _ = Describe("Keycloak Client", func() {
 						ClientID: "osac-authorization",
 					}}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1154,10 +1091,7 @@ var _ = Describe("Keycloak Client", func() {
 						Attributes: receivedResource.Attributes,
 					}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1199,10 +1133,7 @@ var _ = Describe("Keycloak Client", func() {
 						ClientID: "osac-authorization",
 					}}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1213,10 +1144,7 @@ var _ = Describe("Keycloak Client", func() {
 						Name: "PROJECT-test",
 					}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1243,10 +1171,7 @@ var _ = Describe("Keycloak Client", func() {
 				if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/clients" {
 					// Return empty list
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode([]keycloakClient{}); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode([]keycloakClient{})
 					return
 				}
 				w.WriteHeader(http.StatusNotFound)
@@ -1272,10 +1197,7 @@ var _ = Describe("Keycloak Client", func() {
 						ClientID: "osac-authorization",
 					}}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1290,10 +1212,7 @@ var _ = Describe("Keycloak Client", func() {
 						},
 					}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1320,10 +1239,7 @@ var _ = Describe("Keycloak Client", func() {
 						ClientID: "osac-authorization",
 					}}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1351,10 +1267,7 @@ var _ = Describe("Keycloak Client", func() {
 						ClientID: "osac-authorization",
 					}}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1385,10 +1298,7 @@ var _ = Describe("Keycloak Client", func() {
 						ClientID: "osac-authorization",
 					}}
 					w.Header().Set("Content-Type", "application/json")
-					if err := json.NewEncoder(w).Encode(response); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return
-					}
+					json.NewEncoder(w).Encode(response)
 					return
 				}
 
@@ -1423,10 +1333,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -1482,10 +1389,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -1510,10 +1414,7 @@ var _ = Describe("Keycloak Client", func() {
 						response := []keycloakIdentityProvider{}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -1538,10 +1439,7 @@ var _ = Describe("Keycloak Client", func() {
 						}}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 
@@ -1558,10 +1456,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 
@@ -1588,10 +1483,7 @@ var _ = Describe("Keycloak Client", func() {
 						}}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 
@@ -1618,10 +1510,7 @@ var _ = Describe("Keycloak Client", func() {
 						response := []keycloakOrganization{}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -1646,10 +1535,7 @@ var _ = Describe("Keycloak Client", func() {
 						}}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 
@@ -1671,10 +1557,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 
@@ -1702,10 +1585,7 @@ var _ = Describe("Keycloak Client", func() {
 						}}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 
@@ -1714,10 +1594,7 @@ var _ = Describe("Keycloak Client", func() {
 						response := []keycloakIdentityProvider{}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 
@@ -1738,10 +1615,7 @@ var _ = Describe("Keycloak Client", func() {
 						response := []keycloakOrganization{}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(response); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(response)
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -1799,10 +1673,7 @@ var _ = Describe("Keycloak Client", func() {
 					if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/organizations" {
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode([]keycloakOrganization{}); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode([]keycloakOrganization{})
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -1824,10 +1695,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(orgs); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(orgs)
 						return
 					}
 					// Second request: create group fails
@@ -1857,10 +1725,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(orgs); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(orgs)
 						return
 					}
 					// Second request: delete organization group
@@ -1884,10 +1749,7 @@ var _ = Describe("Keycloak Client", func() {
 					if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/organizations" {
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode([]keycloakOrganization{}); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode([]keycloakOrganization{})
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -1909,10 +1771,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(orgs); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(orgs)
 						return
 					}
 					// Second request: delete fails
@@ -1941,10 +1800,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(orgs); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(orgs)
 						return
 					}
 					// Second request: search organization groups
@@ -1964,10 +1820,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(groups); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(groups)
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -1985,10 +1838,7 @@ var _ = Describe("Keycloak Client", func() {
 					if r.Method == http.MethodGet && r.URL.Path == "/admin/realms/osac/organizations" {
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode([]keycloakOrganization{}); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode([]keycloakOrganization{})
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -2010,10 +1860,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(orgs); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(orgs)
 						return
 					}
 					// Second request: search returns empty
@@ -2024,10 +1871,7 @@ var _ = Describe("Keycloak Client", func() {
 						}{}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(groups); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(groups)
 						return
 					}
 					w.WriteHeader(http.StatusNotFound)
@@ -2049,10 +1893,7 @@ var _ = Describe("Keycloak Client", func() {
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
-						if err := json.NewEncoder(w).Encode(orgs); err != nil {
-							http.Error(w, err.Error(), http.StatusInternalServerError)
-							return
-						}
+						json.NewEncoder(w).Encode(orgs)
 						return
 					}
 					// Second request: search fails
