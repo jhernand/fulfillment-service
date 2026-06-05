@@ -106,7 +106,7 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 // renderPoolTable writes a compact table of pools — used when listing all pools.
 func renderPoolTable(w *terminal.Console, pools []*publicv1.PublicIPPool) {
 	writer := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(writer, "ID\tNAME\tCIDRS\tIP-FAMILY")
+	fmt.Fprintln(writer, "ID\tNAME\tCIDRS\tIP-FAMILY\tAVAILABLE")
 	for _, p := range pools {
 		name := p.GetMetadata().GetName()
 		if name == "" {
@@ -117,7 +117,8 @@ func renderPoolTable(w *terminal.Console, pools []*publicv1.PublicIPPool) {
 			cidrs = "-"
 		}
 		ipFamily := strings.TrimPrefix(p.GetSpec().GetIpFamily().String(), "IP_FAMILY_")
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", p.GetId(), name, cidrs, ipFamily)
+		available := fmt.Sprintf("%d", p.GetStatus().GetAvailable())
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", p.GetId(), name, cidrs, ipFamily, available)
 	}
 	writer.Flush()
 }
@@ -142,5 +143,6 @@ func renderPoolDetail(w *terminal.Console, p *publicv1.PublicIPPool) {
 	fmt.Fprintf(writer, "Name:\t%s\n", name)
 	fmt.Fprintf(writer, "CIDRs:\t%s\n", cidrs)
 	fmt.Fprintf(writer, "IP Family:\t%s\n", ipFamily)
+	fmt.Fprintf(writer, "Available:\t%d\n", p.GetStatus().GetAvailable())
 	writer.Flush()
 }

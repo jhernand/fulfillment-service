@@ -21,7 +21,7 @@ import "osac/public/v1/metadata_type.proto";
 // Represents a pool of public IP addresses available for allocation.
 //
 // PublicIPPools are administrator-managed resources. The public API only surfaces pools that are
-// ready and have available capacity; state and capacity fields are intentionally not exposed.
+// ready and have available capacity.
 // Tenants use this resource to discover available pools and select one when allocating a PublicIP.
 message PublicIPPool {
   // Unique identifier of the public IP pool.
@@ -32,6 +32,9 @@ message PublicIPPool {
 
   // Configuration of the public IP pool.
   PublicIPPoolSpec spec = 3;
+
+  // Current capacity information for this pool (system-provided, read-only).
+  PublicIPPoolStatus status = 4;
 }
 
 // Defines the configuration of a PublicIPPool.
@@ -43,6 +46,12 @@ message PublicIPPoolSpec {
 
   // IP address family for this pool. Immutable after creation.
   IPFamily ip_family = 3 [(google.api.field_behavior) = IMMUTABLE];
+}
+
+// Capacity information for a PublicIPPool exposed to tenants.
+message PublicIPPoolStatus {
+  // Number of IP addresses available for new allocations from this pool.
+  int64 available = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // IP address family for a PublicIPPool.
