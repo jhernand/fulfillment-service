@@ -357,6 +357,7 @@ func (s *PrivatePublicIPsServer) validatePoolReference(ctx context.Context, pool
 func (s *PrivatePublicIPsServer) updatePoolCapacity(ctx context.Context, poolID string, delta int64) error {
 	poolResponse, err := s.publicIPPoolDao.Get().
 		SetId(poolID).
+		SetLock(true).
 		Do(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to get pool for capacity update",
