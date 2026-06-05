@@ -14,70 +14,21 @@ language governing permissions and limitations under the License.
 package dao
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/mock/gomock"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
-	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Immutable fields", func() {
-	var (
-		ctx     context.Context
-		ctrl    *gomock.Controller
-		tenancy *auth.MockTenancyLogic
-		tx      database.Tx
-		generic *GenericDAO[*privatev1.Organization]
-	)
+	var generic *GenericDAO[*privatev1.Organization]
 
 	BeforeEach(func() {
 		var err error
 
-		// Create a context:
-		ctx = context.Background()
-
-		// Create the mock controller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
-
-		// Prepare the database pool:
-		db, err := server.NewInstance().Build()
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(db.Close)
-		pool, err := db.Pool(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(pool.Close)
-
-		// Create the transaction manager:
-		tm, err := database.NewTxManager().
-			SetLogger(logger).
-			SetPool(pool).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-
-		// Start a transaction and add it to the context:
-		tx, err = tm.Begin(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			err := tx.End(ctx)
-			Expect(err).ToNot(HaveOccurred())
-		})
-		ctx = database.TxIntoContext(ctx, tx)
-
-		// Create a tenancy logic without restrictions:
-		tenancy = auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(auth.AllTenants, nil).
-			AnyTimes()
-
 		// Create the DAO:
 		generic, err = NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 

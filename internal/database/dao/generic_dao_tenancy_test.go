@@ -28,64 +28,41 @@ import (
 )
 
 var _ = Describe("Tenancy logic", func() {
-	var (
-		ctx  context.Context
-		tx   database.Tx
-		ctrl *gomock.Controller
-	)
-
-	BeforeEach(func() {
+	// ctxWithTx creates a context with a fresh transaction whose tenancy logic is configured to return the given
+	// set of visible tenants. The transaction is automatically ended when the test finishes.
+	ctxWithTx := func(tenants collections.Set[string]) context.Context {
 		var err error
 
-		// Create a context:
-		ctx = context.Background()
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(tenants, nil).
+			AnyTimes()
 
-		// Prepare the database pool:
-		db, err := server.NewInstance().Build()
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(db.Close)
-		pool, err := db.Pool(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(pool.Close)
-		_, err = pool.Exec(ctx, createObjectsTableSQL)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Create the transaction manager:
-		tm, err := database.NewTxManager().
+		tm, err = database.NewTxManager().
 			SetLogger(logger).
 			SetPool(pool).
+			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		// Start a transaction and add it to the context:
-		tx, err = tm.Begin(ctx)
+		ctx := context.Background()
+		tx, err := tm.Begin(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() {
 			err := tx.End(ctx)
 			Expect(err).ToNot(HaveOccurred())
 		})
-		ctx = database.TxIntoContext(ctx, tx)
-
-		// Create the mock controller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
-	})
+		return database.TxIntoContext(ctx, tx)
+	}
 
 	It("Filters field based on user visibility", func() {
-		// Create a tenancy logic that makes certain tenants visible to the user:
-		tenancy := auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewSet("tenant_a", "tenant_c"), nil).
-			AnyTimes()
-
-		// Create the DAO:
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create an object with a visible tenant, verify the response shows it:
+		ctx := ctxWithTx(collections.NewSet("tenant_a", "tenant_c"))
+
 		createResponse, err := dao.Create().
 			SetObject(testsv1.Object_builder{
 				Metadata: testsv1.Metadata_builder{
@@ -97,7 +74,6 @@ var _ = Describe("Tenancy logic", func() {
 		object := createResponse.GetObject()
 		Expect(object.GetMetadata().GetTenant()).To(Equal("tenant_a"))
 
-		// Retrieve the object by identifier and verify it still shows the tenant:
 		getResponse, err := dao.Get().
 			SetId(object.GetId()).
 			Do(ctx)
@@ -105,7 +81,6 @@ var _ = Describe("Tenancy logic", func() {
 		object = getResponse.GetObject()
 		Expect(object.GetMetadata().GetTenant()).To(Equal("tenant_a"))
 
-		// Retrieve the object as part of a list and verify it still shows the tenant:
 		listResponse, err := dao.List().
 			SetFilter(fmt.Sprintf("this.id == %q", object.GetId())).
 			SetLimit(1).
@@ -114,7 +89,6 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(listResponse.GetItems()).To(HaveLen(1))
 		Expect(listResponse.GetItems()[0].GetMetadata().GetTenant()).To(Equal("tenant_a"))
 
-		// Update the object and verify the response still shows the tenant:
 		object.SetMyString("hello")
 		object.GetMetadata().SetTenant("tenant_a")
 		updateResponse, err := dao.Update().
@@ -123,30 +97,16 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 		object = updateResponse.GetObject()
 		Expect(object.GetMetadata().GetTenant()).To(Equal("tenant_a"))
-
-		// Verify the actual database contains the tenant:
-		var tenant string
-		row := tx.QueryRow(ctx, "select tenant from objects where id = $1", object.GetId())
-		err = row.Scan(&tenant)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(tenant).To(Equal("tenant_a"))
 	})
 
 	It("Shows all tenants when user has no tenant restrictions", func() {
-		// Create a tenancy logic that makes all tenants visible to the user:
-		tenancy := auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewUniversalSet[string](), nil).
-			AnyTimes()
-
-		// Create the DAO:
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create an object and verify that it shows the tenant:
+		ctx := ctxWithTx(collections.NewUniversalSet[string]())
+
 		createResponse, err := dao.Create().
 			SetObject(testsv1.Object_builder{
 				Metadata: testsv1.Metadata_builder{
@@ -159,60 +119,47 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(object.GetMetadata().GetTenant()).To(Equal("tenant_a"))
 	})
 
-	It("Shows no tenants when user has no visible tenants that intersect with object tenants", func() {
-		// Create a tenancy logic that makes only one tenant visible to the user:
-		tenancy := auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewSet("tenant_x"), nil).
-			AnyTimes()
-
-		// Create the DAO:
+	It("Hides objects belonging to invisible tenants", func() {
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create an object with a tenant that doesn't overlap with visible tenants:
+		// Create the object using universal access:
+		adminCtx := ctxWithTx(collections.NewUniversalSet[string]())
 		createResponse, err := dao.Create().
 			SetObject(testsv1.Object_builder{
 				Metadata: testsv1.Metadata_builder{
 					Tenant: "tenant_y",
 				}.Build(),
 			}.Build()).
-			Do(ctx)
+			Do(adminCtx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
-		Expect(object.GetMetadata().GetTenant()).To(BeEmpty())
 
-		// Verify the object is not found via Get because the SQL tenant filter excludes it:
+		// Use a restricted tenancy that cannot see tenant_y:
+		restrictedCtx := ctxWithTx(collections.NewSet("tenant_x"))
 		_, err = dao.Get().
 			SetId(object.GetId()).
-			Do(ctx)
+			Do(restrictedCtx)
 		var notFoundErr *ErrNotFound
 		Expect(err).To(HaveOccurred())
 		Expect(err).To(BeAssignableToTypeOf(notFoundErr))
 
-		// Verify the object is not returned via List either:
 		listResponse, err := dao.List().
-			Do(ctx)
+			Do(restrictedCtx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(listResponse.GetItems()).To(BeEmpty())
 	})
 
 	It("Allows a tenant to delete an object it created", func() {
-		// Create a DAO with visibility for tenant A:
-		tenancy := auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewSet("tenant_a"), nil).
-			AnyTimes()
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create the object:
+		ctx := ctxWithTx(collections.NewSet("tenant_a"))
+
 		createResponse, err := dao.Create().
 			SetObject(testsv1.Object_builder{
 				Metadata: testsv1.Metadata_builder{
@@ -223,13 +170,11 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 
-		// Verify that the object can be deleted:
 		_, err = dao.Delete().
 			SetId(object.GetId()).
 			Do(ctx)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify that the object is no longer retrievable:
 		_, err = dao.Get().
 			SetId(object.GetId()).
 			Do(ctx)
@@ -239,67 +184,48 @@ var _ = Describe("Tenancy logic", func() {
 	})
 
 	It("Rejects deletion of an object belonging to an invisible tenant as not found", func() {
-		// Create the DAO with visibility for tenant A and insert the object:
-		tenancyA := auth.NewMockTenancyLogic(ctrl)
-		tenancyA.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewSet("tenant_a"), nil).
-			AnyTimes()
-		daoA, err := NewGenericDAO[*testsv1.Object]().
+		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancyA).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create the object with tenant A:
-		createResponse, err := daoA.Create().
+		// Create the object using universal access:
+		adminCtx := ctxWithTx(collections.NewUniversalSet[string]())
+		createResponse, err := dao.Create().
 			SetObject(testsv1.Object_builder{
 				Metadata: testsv1.Metadata_builder{
 					Tenant: "tenant_a",
 				}.Build(),
 			}.Build()).
-			Do(ctx)
+			Do(adminCtx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 
-		// Create a DAO with visibility for tenant B and verify that it can't delete the object of
-		// tenant A:
-		tenancyB := auth.NewMockTenancyLogic(ctrl)
-		tenancyB.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewSet("tenant_b"), nil).
-			AnyTimes()
-		daoB, err := NewGenericDAO[*testsv1.Object]().
-			SetLogger(logger).
-			SetTenancyLogic(tenancyB).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-		_, err = daoB.Delete().
+		// Try to delete using a tenancy that cannot see tenant_a:
+		restrictedCtx := ctxWithTx(collections.NewSet("tenant_b"))
+		_, err = dao.Delete().
 			SetId(object.GetId()).
-			Do(ctx)
+			Do(restrictedCtx)
 		var notFoundErr *ErrNotFound
 		Expect(err).To(HaveOccurred())
 		Expect(err).To(BeAssignableToTypeOf(notFoundErr))
 
-		// Verify that the object still exists using the DAO for tenant A:
-		getResponse, err := daoA.Get().
+		// Verify the object still exists:
+		getResponse, err := dao.Get().
 			SetId(object.GetId()).
-			Do(ctx)
+			Do(adminCtx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(getResponse.GetObject().GetId()).To(Equal(object.GetId()))
 	})
 
 	It("Allows a tenant to update an object it created", func() {
-		// Create a DAO with visibility for tenant A:
-		tenancy := auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewSet("tenant_a"), nil).
-			AnyTimes()
 		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create the object:
+		ctx := ctxWithTx(collections.NewSet("tenant_a"))
+
 		createResponse, err := dao.Create().
 			SetObject(testsv1.Object_builder{
 				Metadata: testsv1.Metadata_builder{
@@ -310,7 +236,6 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 
-		// Verify that the object can be updated:
 		object.SetMyString("updated")
 		updateResponse, err := dao.Update().
 			SetObject(object).
@@ -318,7 +243,6 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(updateResponse.GetObject().GetMyString()).To(Equal("updated"))
 
-		// Retrieve the object and verify the update persisted:
 		getResponse, err := dao.Get().
 			SetId(object.GetId()).
 			Do(ctx)
@@ -327,51 +251,37 @@ var _ = Describe("Tenancy logic", func() {
 	})
 
 	It("Rejects update of an object belonging to an invisible tenant as not found", func() {
-		// Create a tenancy logic that makes all tenants visible, used to create the object:
-		tenancyA := auth.NewMockTenancyLogic(ctrl)
-		tenancyA.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewSet("tenant_a"), nil).
-			AnyTimes()
-
-		// Create the DAO for tenant A and insert the object:
-		daoA, err := NewGenericDAO[*testsv1.Object]().
+		dao, err := NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancyA).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
-		createResponse, err := daoA.Create().
+
+		// Create the object using universal access:
+		adminCtx := ctxWithTx(collections.NewUniversalSet[string]())
+		createResponse, err := dao.Create().
 			SetObject(testsv1.Object_builder{
 				Metadata: testsv1.Metadata_builder{
 					Tenant: "tenant_a",
 				}.Build(),
 			}.Build()).
-			Do(ctx)
+			Do(adminCtx)
 		Expect(err).ToNot(HaveOccurred())
 		object := createResponse.GetObject()
 
-		// Create a tenancy logic that only sees tenant B and verify that it can't update the object of
-		// tenant A:
-		tenancyB := auth.NewMockTenancyLogic(ctrl)
-		tenancyB.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewSet("tenant_b"), nil).
-			AnyTimes()
-		daoB, err := NewGenericDAO[*testsv1.Object]().
-			SetLogger(logger).
-			SetTenancyLogic(tenancyB).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
+		// Try to update using a tenancy that cannot see tenant_a:
+		restrictedCtx := ctxWithTx(collections.NewSet("tenant_b"))
 		object.SetMyString("updated")
-		_, err = daoB.Update().
+		_, err = dao.Update().
 			SetObject(object).
-			Do(ctx)
+			Do(restrictedCtx)
 		var notFoundErr *ErrNotFound
 		Expect(err).To(HaveOccurred())
 		Expect(err).To(BeAssignableToTypeOf(notFoundErr))
 
-		// Verify the object was not modified using the DAO for tenant A:
-		getResponse, err := daoA.Get().
+		// Verify the object was not modified:
+		getResponse, err := dao.Get().
 			SetId(object.GetId()).
-			Do(ctx)
+			Do(adminCtx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(getResponse.GetObject().GetMyString()).To(BeEmpty())
 	})

@@ -105,7 +105,6 @@ func (b *ClusterCatalogItemsServerBuilder) Build() (result *ClusterCatalogItemsS
 
 	clustersDao, err := dao.NewGenericDAO[*privatev1.Cluster]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

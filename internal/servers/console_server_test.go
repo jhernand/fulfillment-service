@@ -139,6 +139,8 @@ func (m *mockTxManager) End(ctx context.Context, tx database.Tx) error {
 	return nil
 }
 
+func (m *mockTxManager) SetTenancyLogic(authpkg.TenancyLogic) {}
+
 // mockTx is a no-op transaction for testing.
 type mockTx struct{}
 

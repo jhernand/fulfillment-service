@@ -38,7 +38,6 @@ var _ = Describe("Public IPs server", func() {
 		// Create the PublicIPPool DAO:
 		publicIPPoolDao, err = dao.NewGenericDAO[*privatev1.PublicIPPool]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 	})

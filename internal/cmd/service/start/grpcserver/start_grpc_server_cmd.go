@@ -275,11 +275,50 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("failed to create metrics interceptor: %w", err)
 	}
 
+	// Create the public attribution logic:
+	c.logger.InfoContext(ctx, "Creating public attribution logic")
+	publicAttributionLogic, err := auth.NewDefaultAttributionLogic().
+		SetLogger(c.logger).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create public attribution logic: %w", err)
+	}
+
+	// Create the tenancy logic:
+	c.logger.InfoContext(
+		ctx,
+		"Creating tenancy logic",
+		slog.String("type", c.args.tenancyLogic),
+	)
+	var tenancyLogic auth.TenancyLogic
+	switch strings.ToLower(c.args.tenancyLogic) {
+	case "default":
+		tenancyLogic, err = auth.NewDefaultTenancyLogic().
+			SetLogger(c.logger).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create default tenancy logic: %w", err)
+		}
+	case "guest":
+		tenancyLogic, err = auth.NewGuestTenancyLogic().
+			SetLogger(c.logger).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create guest tenancy logic: %w", err)
+		}
+	default:
+		return fmt.Errorf(
+			"unknown tenancy logic '%s', valid values are 'default' and 'guest'",
+			c.args.tenancyLogic,
+		)
+	}
+
 	// Prepare the transactions interceptor:
 	c.logger.InfoContext(ctx, "Creating transactions interceptor")
 	txManager, err := database.NewTxManager().
 		SetLogger(c.logger).
 		SetPool(dbPool).
+		SetTenancyLogic(tenancyLogic).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create transactions manager: %w", err)
@@ -341,44 +380,6 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	err = notifier.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to start notifier: %w", err)
-	}
-
-	// Create the public attribution logic:
-	c.logger.InfoContext(ctx, "Creating public attribution logic")
-	publicAttributionLogic, err := auth.NewDefaultAttributionLogic().
-		SetLogger(c.logger).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create public attribution logic: %w", err)
-	}
-
-	// Create the tenancy logic:
-	c.logger.InfoContext(
-		ctx,
-		"Creating tenancy logic",
-		slog.String("type", c.args.tenancyLogic),
-	)
-	var tenancyLogic auth.TenancyLogic
-	switch strings.ToLower(c.args.tenancyLogic) {
-	case "default":
-		tenancyLogic, err = auth.NewDefaultTenancyLogic().
-			SetLogger(c.logger).
-			Build()
-		if err != nil {
-			return fmt.Errorf("failed to create default tenancy logic: %w", err)
-		}
-	case "guest":
-		tenancyLogic, err = auth.NewGuestTenancyLogic().
-			SetLogger(c.logger).
-			Build()
-		if err != nil {
-			return fmt.Errorf("failed to create guest tenancy logic: %w", err)
-		}
-	default:
-		return fmt.Errorf(
-			"unknown tenancy logic '%s', valid values are 'default' and 'guest'",
-			c.args.tenancyLogic,
-		)
 	}
 
 	// Create the private attribution logic:

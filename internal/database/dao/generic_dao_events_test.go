@@ -17,26 +17,14 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/mock/gomock"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
-	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/collections"
 	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Generic DAO events", func() {
-	var (
-		ctx     context.Context
-		ctrl    *gomock.Controller
-		pool    *pgxpool.Pool
-		tm      database.TxManager
-		tenancy *auth.MockTenancyLogic
-	)
-
 	// runWithTx starts a transaction, runs the given function using it, and ends the transaction when it finishes.
 	runWithTx := func(task func(ctx context.Context)) {
 		tx, err := tm.Begin(ctx)
@@ -52,39 +40,9 @@ var _ = Describe("Generic DAO events", func() {
 	BeforeEach(func() {
 		var err error
 
-		// Create a context:
-		ctx = context.Background()
-
-		// Create the mock controller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
-
-		// Prepare the database connection pool:
-		db, err := server.NewInstance().Build()
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(db.Close)
-		pool, err = db.Pool(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(pool.Close)
-		_, err = pool.Exec(ctx, createObjectsTableSQL)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Prepare the transaction manager:
-		tm, err = database.NewTxManager().
-			SetLogger(logger).
-			SetPool(pool).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-
-		// Create a tenancy logic without restrictions:
-		tenancy = auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewUniversalSet[string](), nil).
-			AnyTimes()
 		// Create the tenant used in the tests:
 		tenantsDao, err := NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		runWithTx(func(ctx context.Context) {
@@ -105,7 +63,6 @@ var _ = Describe("Generic DAO events", func() {
 		var event *Event
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, e Event) error {
 				event = &e
 				return nil
@@ -133,7 +90,6 @@ var _ = Describe("Generic DAO events", func() {
 		var event *Event
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, e Event) error {
 				event = &e
 				return nil
@@ -180,7 +136,6 @@ var _ = Describe("Generic DAO events", func() {
 		var event *Event
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, e Event) error {
 				event = &e
 				return nil
@@ -217,7 +172,6 @@ var _ = Describe("Generic DAO events", func() {
 	It("Fails to create object if callback returns an error", func() {
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(context.Context, Event) error {
 				return errors.New("my error")
 			}).
@@ -250,7 +204,6 @@ var _ = Describe("Generic DAO events", func() {
 		// Create the DAO, without callbacks, just to do the insert:
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		var object *privatev1.Cluster
@@ -272,7 +225,6 @@ var _ = Describe("Generic DAO events", func() {
 		// Create the DAO again, this time with the callback, to do the delete:
 		generic, err = NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(context.Context, Event) error {
 				return errors.New("my error")
 			}).
@@ -304,7 +256,6 @@ var _ = Describe("Generic DAO events", func() {
 		// Create the DAO, without callbacks, just to do the insert:
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		var object *privatev1.Cluster
@@ -329,7 +280,6 @@ var _ = Describe("Generic DAO events", func() {
 		// Create the DAO again, this time with the callback, to do the update:
 		generic, err = NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, _ Event) error {
 				return errors.New("my error")
 			}).
@@ -372,7 +322,6 @@ var _ = Describe("Generic DAO events", func() {
 		called2 := false
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(context.Context, Event) error {
 				called1 = true
 				return nil
@@ -403,7 +352,6 @@ var _ = Describe("Generic DAO events", func() {
 		called2 := false
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(context.Context, Event) error {
 				called1 = true
 				return errors.New("my error 1")
@@ -434,7 +382,6 @@ var _ = Describe("Generic DAO events", func() {
 		events := []Event{}
 		generic, err := NewGenericDAO[*privatev1.Cluster]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			AddEventCallback(func(_ context.Context, event Event) error {
 				events = append(events, event)
 				return nil

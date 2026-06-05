@@ -50,10 +50,6 @@ func (r *ListRequest[O]) SetOffset(value int32) *ListRequest[O] {
 
 // Do executes the list operation and returns the response.
 func (r *ListRequest[O]) Do(ctx context.Context) (response *ListResponse[O], err error) {
-	err = r.init(ctx)
-	if err != nil {
-		return
-	}
 	r.tx, err = database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -64,12 +60,6 @@ func (r *ListRequest[O]) Do(ctx context.Context) (response *ListResponse[O], err
 }
 
 func (r *ListRequest[O]) do(ctx context.Context) (response *ListResponse[O], err error) {
-	// Add tenant visibility filter:
-	err = r.addTenancyFilter(ctx)
-	if err != nil {
-		return
-	}
-
 	// Calculate the requested filter:
 	if r.filter != "" {
 		var filter string

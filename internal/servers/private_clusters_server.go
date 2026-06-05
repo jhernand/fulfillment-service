@@ -104,7 +104,6 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 	// Create the templates DAO:
 	templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {
@@ -114,7 +113,6 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 	// Create the catalog items DAO:
 	catalogItemsDao, err := dao.NewGenericDAO[*privatev1.ClusterCatalogItem]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {
@@ -124,7 +122,6 @@ func (b *PrivateClustersServerBuilder) Build() (result *PrivateClustersServer, e
 	// Create the host types DAO:
 	hostTypesDao, err := dao.NewGenericDAO[*privatev1.HostType]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

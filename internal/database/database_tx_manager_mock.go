@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	auth "github.com/osac-project/fulfillment-service/internal/auth"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -53,4 +54,16 @@ func (m *MockTxManager) Begin(ctx context.Context) (Tx, error) {
 func (mr *MockTxManagerMockRecorder) Begin(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Begin", reflect.TypeOf((*MockTxManager)(nil).Begin), ctx)
+}
+
+// SetTenancyLogic mocks base method.
+func (m *MockTxManager) SetTenancyLogic(value auth.TenancyLogic) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetTenancyLogic", value)
+}
+
+// SetTenancyLogic indicates an expected call of SetTenancyLogic.
+func (mr *MockTxManagerMockRecorder) SetTenancyLogic(value any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTenancyLogic", reflect.TypeOf((*MockTxManager)(nil).SetTenancyLogic), value)
 }

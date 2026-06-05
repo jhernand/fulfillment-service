@@ -14,24 +14,15 @@ language governing permissions and limitations under the License.
 package dao
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/mock/gomock"
 
 	testsv1 "github.com/osac-project/fulfillment-service/internal/api/osac/tests/v1"
-	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/collections"
-	"github.com/osac-project/fulfillment-service/internal/database"
 	. "github.com/osac-project/fulfillment-service/internal/testing"
 )
 
 var _ = Describe("Metrics", func() {
 	var (
-		ctx           context.Context
-		ctrl          *gomock.Controller
-		tenancy       *auth.MockTenancyLogic
 		metricsServer *MetricsServer
 		dao           *GenericDAO[*testsv1.Object]
 	)
@@ -39,53 +30,13 @@ var _ = Describe("Metrics", func() {
 	BeforeEach(func() {
 		var err error
 
-		// Create a context:
-		ctx = context.Background()
-
-		// Create the mock controller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
-
-		// Prepare the database:
-		db, err := server.NewInstance().Build()
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(db.Close)
-		pool, err := db.Pool(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(pool.Close)
-		_, err = pool.Exec(ctx, createObjectsTableSQL)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Create the transaction manager:
-		tm, err := database.NewTxManager().
-			SetLogger(logger).
-			SetPool(pool).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-
-		// Start a transaction and add it to the context:
-		tx, err := tm.Begin(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			err := tx.End(ctx)
-			Expect(err).ToNot(HaveOccurred())
-		})
-		ctx = database.TxIntoContext(ctx, tx)
-
 		// Create the metrics server:
 		metricsServer = NewMetricsServer()
 		DeferCleanup(metricsServer.Close)
 
-		// Create a tenancy logic without restrictions:
-		tenancy = auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewUniversalSet[string](), nil).
-			AnyTimes()
-
 		// Create the DAO with metrics enabled:
 		dao, err = NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			SetMetricsRegisterer(metricsServer.Registry()).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
@@ -359,7 +310,6 @@ var _ = Describe("Metrics", func() {
 		It("Does not record metrics when subsystem is not set", func() {
 			noMetricsDao, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -383,7 +333,6 @@ var _ = Describe("Metrics", func() {
 
 			dao1, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				SetMetricsRegisterer(registry).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
@@ -391,7 +340,6 @@ var _ = Describe("Metrics", func() {
 
 			dao2, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				SetMetricsRegisterer(registry).
 				Build()
 			Expect(err).ToNot(HaveOccurred())

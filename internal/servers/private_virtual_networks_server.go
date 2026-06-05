@@ -93,7 +93,6 @@ func (b *PrivateVirtualNetworksServerBuilder) Build() (result *PrivateVirtualNet
 	// Create the NetworkClass DAO:
 	networkClassDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

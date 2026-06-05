@@ -36,7 +36,6 @@ var _ = Describe("Private virtual networks server", func() {
 		// Create the tenants used in the tests:
 		tenantsDao, err := dao.NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		createTenant := func(name string) {
@@ -60,7 +59,6 @@ var _ = Describe("Private virtual networks server", func() {
 		// Create NetworkClass DAO
 		ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -91,7 +89,6 @@ var _ = Describe("Private virtual networks server", func() {
 	createDefaultNetworkClassViaDAO := func(ctx context.Context, state privatev1.NetworkClassState) *privatev1.NetworkClass {
 		ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -458,7 +455,6 @@ var _ = Describe("Private virtual networks server", func() {
 				// Create NetworkClass without IPv4 support
 				ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 
@@ -912,7 +908,6 @@ var _ = Describe("Private virtual networks server", func() {
 			// Create DAO
 			generic, err = dao.NewGenericDAO[*privatev1.VirtualNetwork]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -1232,7 +1227,6 @@ var _ = Describe("Private virtual networks server", func() {
 			// Create a default NC that supports only IPv4 (not IPv6):
 			ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -1278,7 +1272,6 @@ var _ = Describe("Private virtual networks server", func() {
 			defaultNC := createDefaultNetworkClassViaDAO(ctx, privatev1.NetworkClassState_NETWORK_CLASS_STATE_READY)
 			ncDao, ncErr := dao.NewGenericDAO[*privatev1.NetworkClass]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(ncErr).ToNot(HaveOccurred())
 			_, ncErr = ncDao.Delete().SetId(defaultNC.GetId()).Do(ctx)

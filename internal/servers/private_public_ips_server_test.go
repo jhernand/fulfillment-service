@@ -40,14 +40,12 @@ var _ = Describe("Private public IPs server", func() {
 		// Create the PublicIPPool DAO for test data setup:
 		publicIPPoolDao, err = dao.NewGenericDAO[*privatev1.PublicIPPool]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create the PublicIP DAO for setting initial state in state machine tests:
 		publicIPDao, err = dao.NewGenericDAO[*privatev1.PublicIP]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 	})

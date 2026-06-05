@@ -37,7 +37,6 @@ var _ = Describe("Private subnets server", func() {
 		// Create the tenants used in the tests:
 		tenantsDao, err := dao.NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		createTenant := func(name string) {
@@ -58,7 +57,6 @@ var _ = Describe("Private subnets server", func() {
 		// Create the subnet DAO:
 		subnetDao, err = dao.NewGenericDAO[*privatev1.Subnet]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -68,7 +66,6 @@ var _ = Describe("Private subnets server", func() {
 		// Create NetworkClass DAO
 		ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -103,7 +100,6 @@ var _ = Describe("Private subnets server", func() {
 		// Create VirtualNetwork DAO
 		vnDao, err := dao.NewGenericDAO[*privatev1.VirtualNetwork]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -414,7 +410,6 @@ var _ = Describe("Private subnets server", func() {
 				// Create VirtualNetwork DAO
 				vnDao, err := dao.NewGenericDAO[*privatev1.VirtualNetwork]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 
@@ -459,7 +454,6 @@ var _ = Describe("Private subnets server", func() {
 				// Create VirtualNetwork DAO
 				vnDao, err := dao.NewGenericDAO[*privatev1.VirtualNetwork]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 
@@ -628,7 +622,6 @@ var _ = Describe("Private subnets server", func() {
 				// Create VirtualNetwork DAO
 				vnDao, err := dao.NewGenericDAO[*privatev1.VirtualNetwork]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 
@@ -1191,7 +1184,6 @@ var _ = Describe("Private subnets server", func() {
 			// Create DAO
 			generic, err = dao.NewGenericDAO[*privatev1.Subnet]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})

@@ -41,10 +41,6 @@ func (r *DeleteRequest[O]) SetId(value string) *DeleteRequest[O] {
 
 // Do executes the delete operation and returns the response.
 func (r *DeleteRequest[O]) Do(ctx context.Context) (response *DeleteResponse, err error) {
-	err = r.init(ctx)
-	if err != nil {
-		return
-	}
 	r.tx, err = database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -55,12 +51,6 @@ func (r *DeleteRequest[O]) Do(ctx context.Context) (response *DeleteResponse, er
 }
 
 func (r *DeleteRequest[O]) do(ctx context.Context) (response *DeleteResponse, err error) {
-	// Add the tenancy filter:
-	err = r.addTenancyFilter(ctx)
-	if err != nil {
-		return
-	}
-
 	// Add the id parameter:
 	if r.args.id == "" {
 		err = errors.New("object identifier is mandatory")

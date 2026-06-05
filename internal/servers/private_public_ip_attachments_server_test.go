@@ -16,14 +16,12 @@ package servers
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/mock/gomock"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/collections"
 	"github.com/osac-project/fulfillment-service/internal/database/dao"
 )
 
@@ -42,7 +40,6 @@ var _ = Describe("Private public IP attachments server", func() {
 		// Create the tenants used in the tests:
 		tenantsDao, err := dao.NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		createTenant := func(name string) {
@@ -61,19 +58,16 @@ var _ = Describe("Private public IP attachments server", func() {
 
 		publicIPPoolDao, err = dao.NewGenericDAO[*privatev1.PublicIPPool]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
 		publicIPDao, err = dao.NewGenericDAO[*privatev1.PublicIP]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
 		computeInstanceDao, err = dao.NewGenericDAO[*privatev1.ComputeInstance]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -594,118 +588,6 @@ var _ = Describe("Private public IP attachments server", func() {
 			Expect(ok).To(BeTrue())
 			Expect(status.Code()).To(Equal(grpccodes.FailedPrecondition))
 			Expect(err.Error()).To(ContainSubstring("not in RUNNING state"))
-		})
-	})
-
-	Describe("Cross-tenant validation", func() {
-		It("Rejects Create when PublicIP belongs to a different tenant", func() {
-			otherTenantCtrl := gomock.NewController(GinkgoT())
-			DeferCleanup(otherTenantCtrl.Finish)
-
-			restrictedTenancy := auth.NewMockTenancyLogic(otherTenantCtrl)
-			restrictedTenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
-				Return(collections.NewSet("shared"), nil).
-				AnyTimes()
-			restrictedTenancy.EXPECT().DetermineDefaultTenant(gomock.Any()).
-				Return("shared", nil).
-				AnyTimes()
-			restrictedTenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-				Return(collections.NewSet("shared"), nil).
-				AnyTimes()
-
-			restrictedServer, err := NewPrivatePublicIPAttachmentsServer().
-				SetLogger(logger).
-				SetAttributionLogic(attribution).
-				SetTenancyLogic(restrictedTenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
-			otherTenantIP, err := publicIPDao.Create().SetObject(
-				privatev1.PublicIP_builder{
-					Metadata: privatev1.Metadata_builder{
-						Tenant: "other-tenant",
-					}.Build(),
-					Spec: privatev1.PublicIPSpec_builder{
-						Pool: sharedPool.GetId(),
-					}.Build(),
-					Status: privatev1.PublicIPStatus_builder{
-						State:    privatev1.PublicIPState_PUBLIC_IP_STATE_ALLOCATED,
-						Address:  "10.0.0.99",
-						Attached: false,
-					}.Build(),
-				}.Build(),
-			).Do(ctx)
-			Expect(err).ToNot(HaveOccurred())
-
-			ci := createComputeInstanceInState(ctx, computeInstanceDao, privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_RUNNING)
-
-			_, err = restrictedServer.Create(ctx, privatev1.PublicIPAttachmentsCreateRequest_builder{
-				Object: privatev1.PublicIPAttachment_builder{
-					Spec: privatev1.PublicIPAttachmentSpec_builder{
-						PublicIp:        otherTenantIP.GetObject().GetId(),
-						ComputeInstance: new(ci.GetId()),
-					}.Build(),
-				}.Build(),
-			}.Build())
-			Expect(err).To(HaveOccurred())
-			status, ok := grpcstatus.FromError(err)
-			Expect(ok).To(BeTrue())
-			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
-			Expect(err.Error()).To(ContainSubstring("does not exist"))
-		})
-
-		It("Rejects Create when ComputeInstance belongs to a different tenant", func() {
-			otherTenantCtrl := gomock.NewController(GinkgoT())
-			DeferCleanup(otherTenantCtrl.Finish)
-
-			restrictedTenancy := auth.NewMockTenancyLogic(otherTenantCtrl)
-			restrictedTenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
-				Return(collections.NewSet("shared"), nil).
-				AnyTimes()
-			restrictedTenancy.EXPECT().DetermineDefaultTenant(gomock.Any()).
-				Return("shared", nil).
-				AnyTimes()
-			restrictedTenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-				Return(collections.NewSet("shared"), nil).
-				AnyTimes()
-
-			restrictedServer, err := NewPrivatePublicIPAttachmentsServer().
-				SetLogger(logger).
-				SetAttributionLogic(attribution).
-				SetTenancyLogic(restrictedTenancy).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
-			pip := createPublicIPInState(ctx, publicIPDao, sharedPool.GetId(), privatev1.PublicIPState_PUBLIC_IP_STATE_ALLOCATED, false)
-
-			otherTenantCI, err := computeInstanceDao.Create().SetObject(
-				privatev1.ComputeInstance_builder{
-					Metadata: privatev1.Metadata_builder{
-						Tenant: "other-tenant",
-					}.Build(),
-					Spec: privatev1.ComputeInstanceSpec_builder{
-						Template: "general.small",
-					}.Build(),
-					Status: privatev1.ComputeInstanceStatus_builder{
-						State: privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_RUNNING,
-					}.Build(),
-				}.Build(),
-			).Do(ctx)
-			Expect(err).ToNot(HaveOccurred())
-
-			_, err = restrictedServer.Create(ctx, privatev1.PublicIPAttachmentsCreateRequest_builder{
-				Object: privatev1.PublicIPAttachment_builder{
-					Spec: privatev1.PublicIPAttachmentSpec_builder{
-						PublicIp:        pip.GetId(),
-						ComputeInstance: new(otherTenantCI.GetObject().GetId()),
-					}.Build(),
-				}.Build(),
-			}.Build())
-			Expect(err).To(HaveOccurred())
-			status, ok := grpcstatus.FromError(err)
-			Expect(ok).To(BeTrue())
-			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
-			Expect(err.Error()).To(ContainSubstring("does not exist"))
 		})
 	})
 

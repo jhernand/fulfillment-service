@@ -19,9 +19,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
+	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/logging"
 )
@@ -32,8 +35,12 @@ func TestDAO(t *testing.T) {
 }
 
 var (
+	ctx    context.Context
+	ctrl   *gomock.Controller
 	logger *slog.Logger
 	server *database.Container
+	tm     database.TxManager
+	pool   *pgxpool.Pool
 )
 
 // createObjectsTableSQL creates the `objects` and `archived_objects` tables used by tests that exercise the DAO with
@@ -52,6 +59,7 @@ const createObjectsTableSQL = `
 		data jsonb not null default '{}'::jsonb,
 		version integer not null default 0
 	);
+
 	create table archived_objects (
 		id text not null,
 		name text not null default '',
@@ -64,7 +72,9 @@ const createObjectsTableSQL = `
 		annotations jsonb not null default '{}'::jsonb,
 		version integer not null default 0,
 		data jsonb not null
-	)
+	);
+
+ 	call enable_row_level_security('objects');
 `
 
 var _ = BeforeSuite(func() {
@@ -92,4 +102,50 @@ var _ = BeforeSuite(func() {
 		err = server.Stop(ctx)
 		Expect(err).ToNot(HaveOccurred())
 	})
+})
+
+var _ = BeforeEach(func() {
+	var err error
+
+	// Create a context:
+	ctx = context.Background()
+
+	// Create the mock controller:
+	ctrl = gomock.NewController(GinkgoT())
+	DeferCleanup(ctrl.Finish)
+
+	// Create a tenancy logic that allows access to all tenants:
+	tenancy := auth.NewMockTenancyLogic(ctrl)
+	tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+		Return(auth.AllTenants, nil).
+		AnyTimes()
+
+	// Prepare the database pool:
+	db, err := server.NewInstance().Build()
+	Expect(err).ToNot(HaveOccurred())
+	DeferCleanup(db.Close)
+	pool, err = db.Pool(ctx)
+	Expect(err).ToNot(HaveOccurred())
+	DeferCleanup(pool.Close)
+
+	// create the objects table:
+	_, err = pool.Exec(ctx, createObjectsTableSQL)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Create the transaction manager:
+	tm, err = database.NewTxManager().
+		SetLogger(logger).
+		SetPool(pool).
+		SetTenancyLogic(tenancy).
+		Build()
+	Expect(err).ToNot(HaveOccurred())
+
+	// Start a transaction and add it to the context:
+	tx, err := tm.Begin(ctx)
+	Expect(err).ToNot(HaveOccurred())
+	DeferCleanup(func() {
+		err := tx.End(ctx)
+		Expect(err).ToNot(HaveOccurred())
+	})
+	ctx = database.TxIntoContext(ctx, tx)
 })

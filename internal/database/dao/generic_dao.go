@@ -26,7 +26,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/json"
 )
 
@@ -43,7 +42,6 @@ type GenericDAOBuilder[O Object] struct {
 	defaultLimit      int32
 	maxLimit          int32
 	eventCallbacks    []EventCallback
-	tenancyLogic      auth.TenancyLogic
 	metricsRegisterer prometheus.Registerer
 }
 
@@ -78,7 +76,6 @@ type GenericDAO[O Object] struct {
 	marshalOptions   protojson.MarshalOptions
 	unmarshalOptions protojson.UnmarshalOptions
 	filterTranslator *FilterTranslator[O]
-	tenancyLogic     auth.TenancyLogic
 
 	// Metrics:
 	opDurationMetric *prometheus.HistogramVec
@@ -143,12 +140,6 @@ func (b *GenericDAOBuilder[O]) AddEventCallback(value EventCallback) *GenericDAO
 	return b
 }
 
-// SetTenancyLogic sets the tenancy logic. This is mandatory.
-func (b *GenericDAOBuilder[O]) SetTenancyLogic(value auth.TenancyLogic) *GenericDAOBuilder[O] {
-	b.tenancyLogic = value
-	return b
-}
-
 // SetMetricsRegisterer sets the Prometheus registerer used to register the metrics.
 //
 // When enabled the following metrics will be registered:
@@ -200,11 +191,6 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		)
 		return
 	}
-	if b.tenancyLogic == nil {
-		err = errors.New("tenancy logic is mandatory")
-		return
-	}
-
 	// Get descriptors of well known types:
 	var timestamp *timestamppb.Timestamp
 	timestampDesc := timestamp.ProtoReflect().Descriptor()
@@ -292,7 +278,6 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		marshalOptions:   marshalOptions,
 		unmarshalOptions: unmarshalOptions,
 		filterTranslator: filterTranslator,
-		tenancyLogic:     b.tenancyLogic,
 		opDurationMetric: opDurationMetric,
 	}
 	return

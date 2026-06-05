@@ -18,64 +18,22 @@ import (
 	"errors"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/mock/gomock"
 
 	testsv1 "github.com/osac-project/fulfillment-service/internal/api/osac/tests/v1"
-	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/collections"
 	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Lock", func() {
-	var (
-		ctx     context.Context
-		ctrl    *gomock.Controller
-		pool    *pgxpool.Pool
-		tm      database.TxManager
-		generic *GenericDAO[*testsv1.Object]
-	)
+	var generic *GenericDAO[*testsv1.Object]
 
 	BeforeEach(func() {
 		var err error
 
-		// Create a context:
-		ctx = context.Background()
-
-		// Create the mock controller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
-
-		// Prepare the database pool:
-		db, err := server.NewInstance().Build()
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(db.Close)
-		pool, err = db.Pool(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(pool.Close)
-		_, err = pool.Exec(ctx, createObjectsTableSQL)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Create the transaction manager:
-		tm, err = database.NewTxManager().
-			SetLogger(logger).
-			SetPool(pool).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-
-		// Create a tenancy logic without restrictions:
-		tenancy := auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewUniversalSet[string](), nil).
-			AnyTimes()
-		DeferCleanup(ctrl.Finish)
-
 		// Create the DAO:
 		generic, err = NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 	})
@@ -95,6 +53,19 @@ var _ = Describe("Lock", func() {
 	// by using 'for update skip locked' to detect locked rows. If a row is locked by another
 	// transaction, 'skip locked' will skip it, so an empty result means all the rows are locked.
 	checkLocked := func(ids ...string) {
+		// This needs to run with its own transaction and context to avoid interference with the main
+		// transaction:
+		txCtx, txCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer txCancel()
+		tx, err := tm.Begin(txCtx)
+		Expect(err).ToNot(HaveOccurred())
+		defer func() {
+			err := tx.End(txCtx)
+			Expect(err).ToNot(HaveOccurred())
+		}()
+		txCtx = database.TxIntoContext(txCtx, tx)
+
+		// Run the query to check if the row is locked:
 		rows, err := pool.Query(
 			ctx,
 			"select id from objects where id = any($1) for update skip locked",
@@ -102,7 +73,6 @@ var _ = Describe("Lock", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 		defer rows.Close()
-
 		var unlocked []string
 		for rows.Next() {
 			var id string
@@ -118,14 +88,26 @@ var _ = Describe("Lock", func() {
 	// by using the same 'for update skip locked' technique. If a row is not locked it will be
 	// returned, so all the requested rows being returned means none of them are locked.
 	checkNotLocked := func(ids ...string) {
-		rows, err := pool.Query(
-			ctx,
+		// This needs to run with its own transaction and context to avoid interference with the main
+		// transaction:
+		txCtx, txCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer txCancel()
+		tx, err := tm.Begin(txCtx)
+		Expect(err).ToNot(HaveOccurred())
+		defer func() {
+			err := tx.End(txCtx)
+			Expect(err).ToNot(HaveOccurred())
+		}()
+		txCtx = database.TxIntoContext(txCtx, tx)
+
+		// Run the query to check if the row is unlocked:
+		rows, err := tx.Query(
+			txCtx,
 			"select id from objects where id = any($1) for update skip locked",
 			ids,
 		)
 		Expect(err).ToNot(HaveOccurred())
 		defer rows.Close()
-
 		var unlocked []string
 		for rows.Next() {
 			var id string
@@ -255,15 +237,14 @@ var _ = Describe("Lock", func() {
 		createObject("b", "my_tenant")
 
 		// Start a transaction and lock 'a' using direct SQL:
-		tx1, err := pool.Begin(ctx)
+		tx1, err := tm.Begin(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		defer tx1.Rollback(ctx)
 		_, err = tx1.Exec(ctx, "select id from objects where id = 'a' for update")
 		Expect(err).ToNot(HaveOccurred())
 
-		// Start a goroutine that tries to lock 'b' and 'a' (in that order) via the DAO.
-		// Because the DAO sorts identifiers, it will try to lock 'a' first, which is held
-		// by tx1, so it will block before reaching 'b':
+		// Start a goroutine that tries to lock 'b' and 'a' (in that order) via the DAO. Because the DAO sorts
+		// identifiers, it will try to lock 'a' first, which is held by tx1, so it will block before reaching
+		// 'b':
 		done := make(chan error, 1)
 		go func() {
 			defer GinkgoRecover()
@@ -272,10 +253,12 @@ var _ = Describe("Lock", func() {
 				done <- err
 				return
 			}
-			ctx := database.TxIntoContext(ctx, tx2)
+			tx2Ctx, txCancel := context.WithTimeout(context.Background(), time.Second)
+			defer txCancel()
+			tx2Ctx = database.TxIntoContext(tx2Ctx, tx2)
 			_, lockErr := generic.Lock().
 				AddIds("b", "a").
-				Do(ctx)
+				Do(tx2Ctx)
 			err = tx2.End(ctx)
 			done <- errors.Join(lockErr, err)
 		}()
@@ -289,7 +272,7 @@ var _ = Describe("Lock", func() {
 		checkNotLocked("b")
 
 		// Release 'a' by committing, allowing the goroutine to proceed:
-		err = tx1.Commit(ctx)
+		err = tx1.End(ctx)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Verify the goroutine completed without error:

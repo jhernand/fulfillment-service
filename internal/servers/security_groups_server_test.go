@@ -36,7 +36,6 @@ var _ = Describe("SecurityGroups server", func() {
 		// Create a default NetworkClass for tests:
 		ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -65,7 +64,6 @@ var _ = Describe("SecurityGroups server", func() {
 		// Create a default VirtualNetwork for tests:
 		vnDao, err := dao.NewGenericDAO[*privatev1.VirtualNetwork]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 

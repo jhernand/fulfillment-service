@@ -93,7 +93,6 @@ func (b *PrivateSubnetsServerBuilder) Build() (result *PrivateSubnetsServer, err
 	// Create the VirtualNetwork DAO for parent validation:
 	virtualNetworkDao, err := dao.NewGenericDAO[*privatev1.VirtualNetwork]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

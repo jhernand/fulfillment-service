@@ -88,7 +88,6 @@ func (b *PrivatePublicIPAttachmentsServerBuilder) Build() (*PrivatePublicIPAttac
 
 	publicIPDao, err := dao.NewGenericDAO[*privatev1.PublicIP]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {
@@ -97,7 +96,6 @@ func (b *PrivatePublicIPAttachmentsServerBuilder) Build() (*PrivatePublicIPAttac
 
 	computeInstanceDao, err := dao.NewGenericDAO[*privatev1.ComputeInstance]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {
@@ -106,7 +104,6 @@ func (b *PrivatePublicIPAttachmentsServerBuilder) Build() (*PrivatePublicIPAttac
 
 	publicIPAttachmentDao, err := dao.NewGenericDAO[*privatev1.PublicIPAttachment]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

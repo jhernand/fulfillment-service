@@ -65,6 +65,7 @@ var _ = Describe("Clusters server", func() {
 		tm, err := database.NewTxManager().
 			SetLogger(logger).
 			SetPool(pool).
+			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -155,14 +156,12 @@ var _ = Describe("Clusters server", func() {
 			// Create the host types DAO:
 			hostTypesDao, err := dao.NewGenericDAO[*privatev1.HostType]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create the templates DAO:
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -917,7 +916,6 @@ var _ = Describe("Clusters server", func() {
 			// Create the DAO:
 			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -1002,7 +1000,6 @@ var _ = Describe("Clusters server", func() {
 			// Use the DAO directly to create an object with status:
 			dao, err := dao.NewGenericDAO[*privatev1.Cluster]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			createResponse, err := dao.Create().
@@ -1613,7 +1610,6 @@ var _ = Describe("Clusters server", func() {
 			// Create host types:
 			hostTypesDao, err := dao.NewGenericDAO[*privatev1.HostType]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			_, err = hostTypesDao.Create().
@@ -1630,7 +1626,6 @@ var _ = Describe("Clusters server", func() {
 			// Create template:
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			_, err = templatesDao.Create().

@@ -114,7 +114,6 @@ func (b *PrivatePublicIPsServerBuilder) Build() (result *PrivatePublicIPsServer,
 	// Create the PublicIPPool DAO for pool validation and capacity tracking:
 	publicIPPoolDao, err := dao.NewGenericDAO[*privatev1.PublicIPPool]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

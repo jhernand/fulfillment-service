@@ -136,7 +136,6 @@ func (b *ClustersServerBuilder) Build() (result *ClustersServer, err error) {
 	// Create the DAOs:
 	hubsDao, err := dao.NewGenericDAO[*privatev1.Hub]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

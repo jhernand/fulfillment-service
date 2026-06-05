@@ -129,19 +129,16 @@ var _ = Describe("Public IP attachments server", func() {
 
 			publicIPDao, err = dao.NewGenericDAO[*privatev1.PublicIP]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			computeInstanceDao, err = dao.NewGenericDAO[*privatev1.ComputeInstance]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			publicIPPoolDao, err := dao.NewGenericDAO[*privatev1.PublicIPPool]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 

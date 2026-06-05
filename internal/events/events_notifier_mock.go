@@ -14,7 +14,7 @@ import (
 	reflect "reflect"
 
 	gomock "go.uber.org/mock/gomock"
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	proto "google.golang.org/protobuf/proto"
 )
 
 // MockNotifier is a mock of Notifier interface.
@@ -42,7 +42,7 @@ func (m *MockNotifier) EXPECT() *MockNotifierMockRecorder {
 }
 
 // Notify mocks base method.
-func (m *MockNotifier) Notify(ctx context.Context, payload protoreflect.ProtoMessage) error {
+func (m *MockNotifier) Notify(ctx context.Context, payload proto.Message) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Notify", ctx, payload)
 	ret0, _ := ret[0].(error)

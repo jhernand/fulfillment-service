@@ -49,10 +49,6 @@ func (r *LockRequest[O]) AddIds(values ...string) *LockRequest[O] {
 
 // Do executes the lock operation and returns the response.
 func (r *LockRequest[O]) Do(ctx context.Context) (response *LockResponse[O], err error) {
-	err = r.init(ctx)
-	if err != nil {
-		return
-	}
 	r.tx, err = database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -63,12 +59,6 @@ func (r *LockRequest[O]) Do(ctx context.Context) (response *LockResponse[O], err
 }
 
 func (r *LockRequest[O]) do(ctx context.Context) (response *LockResponse[O], err error) {
-	// Add tenant visibility filter:
-	err = r.addTenancyFilter(ctx)
-	if err != nil {
-		return
-	}
-
 	// Calculate the filter:
 	r.sql.params = append(r.sql.params, r.ids)
 	if r.sql.filter.Len() > 0 {

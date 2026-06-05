@@ -103,7 +103,6 @@ func (b *PrivateOrganizationsServerBuilder) Build() (result *PrivateOrganization
 	// Create the DAO:
 	dao, err := dao.NewGenericDAO[*privatev1.Organization]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

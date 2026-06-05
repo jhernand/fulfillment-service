@@ -14,10 +14,8 @@ language governing permissions and limitations under the License.
 package dao
 
 import (
-	"context"
 	"errors"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
@@ -26,28 +24,10 @@ import (
 )
 
 var _ = Describe("Immutable columns", func() {
-	var (
-		ctx  context.Context
-		db   *database.Instance
-		conn *pgx.Conn
-	)
-
 	BeforeEach(func() {
-		var err error
-
-		// Create a context:
-		ctx = context.Background()
-
-		// Prepare the database:
-		db, err = server.NewInstance().Build()
+		tx, err := database.TxFromContext(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(db.Close)
-		conn, err = db.Connection(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(conn.Close)
-
-		// Create a test object:
-		_, err = conn.Exec(ctx, `
+		_, err = tx.Exec(ctx, `
 			insert into organizations (
 				id,
 				name,
@@ -66,7 +46,11 @@ var _ = Describe("Immutable columns", func() {
 
 	Describe("Database trigger", func() {
 		It("Rejects update that changes the one immutable column", func() {
-			_, err := conn.Exec(ctx, `
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = tx.Exec(ctx, "savepoint before_update")
+			Expect(err).ToNot(HaveOccurred())
+			_, err = tx.Exec(ctx, `
 				update organizations set
 					name = 'your-tenant'
 				where
@@ -80,12 +64,18 @@ var _ = Describe("Immutable columns", func() {
 				"name"
 			]`))
 			Expect(pgErr.Message).To(Equal(
-				`column 'name' of table 'organizations' is immutable`,
+				"column 'name' of table 'organizations' is immutable",
 			))
+			_, err = tx.Exec(ctx, "rollback to savepoint before_update")
+			Expect(err).ToNot(HaveOccurred())
 		})
 
 		It("Rejects update that changes two immutable columns", func() {
-			_, err := conn.Exec(ctx, `
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = tx.Exec(ctx, "savepoint before_update")
+			Expect(err).ToNot(HaveOccurred())
+			_, err = tx.Exec(ctx, `
 				update organizations set
 					name = 'your-name',
 					tenant = 'your-tenant'
@@ -100,11 +90,17 @@ var _ = Describe("Immutable columns", func() {
 				"name",
 				"tenant"
 			]`))
-			Expect(pgErr.Message).To(Equal(`columns 'name' and 'tenant' of table 'organizations' are immutable`))
+			Expect(pgErr.Message).To(Equal(
+				"columns 'name' and 'tenant' of table 'organizations' are immutable",
+			))
+			_, err = tx.Exec(ctx, "rollback to savepoint before_update")
+			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("Allows update that includes but doesn't change an i the immutable column", func() {
-			_, err := conn.Exec(ctx, `
+		It("Allows update that includes but doesn't change an immutable column", func() {
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = tx.Exec(ctx, `
 				update organizations set
 					name = 'my-tenant'
 				where
@@ -114,7 +110,9 @@ var _ = Describe("Immutable columns", func() {
 		})
 
 		It("Allows update of other columns", func() {
-			_, err := conn.Exec(ctx, `
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = tx.Exec(ctx, `
 				update organizations set
 					labels = '{"my-label": "my-value"}'::jsonb
 				where

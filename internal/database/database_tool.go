@@ -582,6 +582,7 @@ func (t *tool) checkObjectTable(ctx context.Context, pool *pgxpool.Pool, table s
 	issues += t.checkColumns(ctx, pool, table, toolObjectColumns)
 	issues += t.checkPrimaryKey(ctx, pool, table)
 	issues += t.checkTenantForeignKey(ctx, pool, table)
+	issues += t.checkRowLevelSecurity(ctx, pool, table)
 	issues += t.checkTableExists(ctx, pool, "archived_"+table)
 	return issues
 }
@@ -591,6 +592,7 @@ func (t *tool) checkObjectTable(ctx context.Context, pool *pgxpool.Pool, table s
 func (t *tool) checkArchiveTable(ctx context.Context, pool *pgxpool.Pool, table string) int {
 	issues := 0
 	issues += t.checkColumns(ctx, pool, table, toolArchivedColumns)
+	issues += t.checkNoRowLevelSecurity(ctx, pool, table)
 	issues += t.checkTableExists(ctx, pool, strings.TrimPrefix(table, "archived_"))
 	return issues
 }
@@ -711,6 +713,135 @@ func (t *tool) checkTableExists(ctx context.Context, pool *pgxpool.Pool, table s
 		t.logger.ErrorContext(
 			ctx,
 			"Expected table doesn't exist",
+			slog.String("table", table),
+		)
+		return 1
+	}
+	return 0
+}
+
+// checkRowLevelSecurity verifies that the given table has row-level security enabled and forced, and that the expected
+// policies (view, create, update, delete) exist. Returns the number of issues found.
+func (t *tool) checkRowLevelSecurity(ctx context.Context, pool *pgxpool.Pool, table string) int {
+	issues := 0
+
+	// Check that RLS is enabled and forced:
+	var rlsEnabled, rlsForced bool
+	row := pool.QueryRow(
+		ctx,
+		`
+		select
+			c.relrowsecurity,
+			c.relforcerowsecurity
+		from
+			pg_catalog.pg_class c
+		join
+			pg_catalog.pg_namespace n on n.oid = c.relnamespace
+		where
+			n.nspname = 'public' and
+			c.relname = $1`,
+		table,
+	)
+	err := row.Scan(&rlsEnabled, &rlsForced)
+	if err != nil {
+		t.logger.ErrorContext(
+			ctx,
+			"Failed to check row-level security for table",
+			slog.String("table", table),
+			slog.Any("error", err),
+		)
+		return 1
+	}
+	if !rlsEnabled {
+		t.logger.ErrorContext(
+			ctx,
+			"Object table does not have row-level security enabled",
+			slog.String("table", table),
+		)
+		issues++
+	}
+	if !rlsForced {
+		t.logger.ErrorContext(
+			ctx,
+			"Object table does not have row-level security forced",
+			slog.String("table", table),
+		)
+		issues++
+	}
+
+	// Check that the expected policies exist:
+	for _, prefix := range []string{"view", "create", "update", "delete"} {
+		policyName := prefix + "_" + table
+		var count int
+		row := pool.QueryRow(
+			ctx,
+			`
+			select
+				count(*)
+			from
+				pg_catalog.pg_policies
+			where
+				schemaname = 'public' and
+				tablename = $1 and
+				policyname = $2`,
+			table, policyName,
+		)
+		err := row.Scan(&count)
+		if err != nil {
+			t.logger.ErrorContext(
+				ctx,
+				"Failed to check RLS policy for table",
+				slog.String("table", table),
+				slog.String("policy", policyName),
+				slog.Any("error", err),
+			)
+			issues++
+		} else if count != 1 {
+			t.logger.ErrorContext(
+				ctx,
+				"Object table is missing the expected RLS policy",
+				slog.String("table", table),
+				slog.String("policy", policyName),
+			)
+			issues++
+		}
+	}
+
+	return issues
+}
+
+// checkNoRowLevelSecurity verifies that the given table does not have row-level security enabled. Archive tables
+// should not have RLS because they are not accessed through the normal query path. Returns the number of issues found.
+func (t *tool) checkNoRowLevelSecurity(ctx context.Context, pool *pgxpool.Pool, table string) int {
+	var rlsEnabled bool
+	row := pool.QueryRow(
+		ctx,
+		`
+		select
+			c.relrowsecurity
+		from
+			pg_catalog.pg_class c
+		join
+			pg_catalog.pg_namespace n on n.oid = c.relnamespace
+		where
+			n.nspname = 'public' and
+			c.relname = $1`,
+		table,
+	)
+	err := row.Scan(&rlsEnabled)
+	if err != nil {
+		t.logger.ErrorContext(
+			ctx,
+			"Failed to check row-level security for archive table",
+			slog.String("table", table),
+			slog.Any("error", err),
+		)
+		return 1
+	}
+	if rlsEnabled {
+		t.logger.ErrorContext(
+			ctx,
+			"Archive table should not have row-level security enabled",
 			slog.String("table", table),
 		)
 		return 1

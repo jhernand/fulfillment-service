@@ -43,10 +43,6 @@ func (r *UpdateRequest[O]) SetObject(value O) *UpdateRequest[O] {
 
 // Do executes the update operation and returns the response.
 func (r *UpdateRequest[O]) Do(ctx context.Context) (response *UpdateResponse[O], err error) {
-	err = r.init(ctx)
-	if err != nil {
-		return
-	}
 	r.tx, err = database.TxFromContext(ctx)
 	if err != nil {
 		return
@@ -57,12 +53,6 @@ func (r *UpdateRequest[O]) Do(ctx context.Context) (response *UpdateResponse[O],
 }
 
 func (r *UpdateRequest[O]) do(ctx context.Context) (response *UpdateResponse[O], err error) {
-	// Add the where clause to filter by tenant:
-	err = r.addTenancyFilter(ctx)
-	if err != nil {
-		return
-	}
-
 	// Add the where clause to filter by identifier:
 	id := r.object.GetId()
 	if id == "" {

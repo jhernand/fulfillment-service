@@ -34,7 +34,6 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the tenants used in the tests:
 		tenantsDao, err := dao.NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		createTenant := func(name string) {
@@ -74,7 +73,6 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the template using the DAO directly (this is setup for the test):
 		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		_, err = templatesDao.Create().
@@ -127,7 +125,6 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the template using the DAO with setup tenancy:
 		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		_, err = templatesDao.Create().
@@ -196,7 +193,6 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the template using the DAO:
 		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		_, err = templatesDao.Create().
@@ -259,7 +255,6 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the template:
 		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		_, err = templatesDao.Create().
@@ -325,7 +320,6 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the template using the DAO:
 		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 		_, err = templatesDao.Create().

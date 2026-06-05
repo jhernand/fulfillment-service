@@ -90,7 +90,6 @@ var _ = Describe("Compute instances server", func() {
 			// Create a test subnet for all tests to use:
 			subnetsDao, err := dao.NewGenericDAO[*privatev1.Subnet]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -117,7 +116,6 @@ var _ = Describe("Compute instances server", func() {
 			// Create a template DAO to insert a template
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 

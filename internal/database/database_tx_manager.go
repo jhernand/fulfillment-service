@@ -15,12 +15,16 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/osac-project/fulfillment-service/internal/auth"
 )
 
 // TxManager is a database transaction manager. It knows how to start transactions.
@@ -34,15 +38,17 @@ type TxManager interface {
 // TxManagerBuilder is a builder responsible for constructing database transaction managers. Don't create instances of
 // this type directly, use the NewTxManager function instead.
 type TxManagerBuilder struct {
-	logger *slog.Logger
-	pool   *pgxpool.Pool
+	logger  *slog.Logger
+	pool    *pgxpool.Pool
+	tenancy auth.TenancyLogic
 }
 
 // txManager is responsible for managing database transactions. It provides functionality to interact with a PostgreSQL
 // connection pool and logs transaction-related operations using the provided logger.
 type txManager struct {
-	logger *slog.Logger
-	pool   *pgxpool.Pool
+	logger  *slog.Logger
+	pool    *pgxpool.Pool
+	tenancy auth.TenancyLogic
 }
 
 // NewTxManager creates a builder that can then be used to initializa a new transaction manager.
@@ -63,6 +69,14 @@ func (b *TxManagerBuilder) SetPool(value *pgxpool.Pool) *TxManagerBuilder {
 	return b
 }
 
+// SetTenancyLogic sets the tenancy logic used to determine which tenants are visible to the current user. When set,
+// each new transaction will have the 'auth.tenants' session variable configured so that row-level security policies can
+// filter rows by tenant. This is optional; when not set, no tenant filtering is applied.
+func (b *TxManagerBuilder) SetTenancyLogic(value auth.TenancyLogic) *TxManagerBuilder {
+	b.tenancy = value
+	return b
+}
+
 // Build uses the information stored in the builder to create a new transaction manager.
 func (b *TxManagerBuilder) Build() (result TxManager, err error) {
 	// Check parameters:
@@ -77,10 +91,17 @@ func (b *TxManagerBuilder) Build() (result TxManager, err error) {
 
 	// Create and populate the object:
 	result = &txManager{
-		logger: b.logger,
-		pool:   b.pool,
+		logger:  b.logger,
+		pool:    b.pool,
+		tenancy: b.tenancy,
 	}
 	return
+}
+
+// SetTenancyLogic replaces the tenancy logic at runtime. This is intended for tests where different tenancy
+// configurations are needed across test cases that share the same transaction manager.
+func (m *txManager) SetTenancyLogic(value auth.TenancyLogic) {
+	m.tenancy = value
 }
 
 // Begin starts a new transaction. Note that the created transaction is lazy in the sense that it will not create a real
@@ -151,7 +172,9 @@ func (t *managedTx) ReportError(err *error) {
 	}
 }
 
-// ensureReal makes sure that the real transaction exists, creating it if needed.
+// ensureReal makes sure that the real transaction exists, creating it if needed. When a tenancy logic has been
+// configured it also sets the 'auth.tenants' session variable so that row-level security policies can filter rows by
+// tenant.
 func (t *managedTx) ensureReal(ctx context.Context) error {
 	if t.real != nil {
 		return nil
@@ -159,6 +182,38 @@ func (t *managedTx) ensureReal(ctx context.Context) error {
 	t.manager.logger.DebugContext(ctx, "Starting transaction")
 	var err error
 	t.real, err = t.manager.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	if t.manager.tenancy != nil {
+		err = t.setTenants(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to set tenants on transaction: %w", err)
+		}
+	}
+	return nil
+}
+
+// setTenants uses the tenancy logic to determine which tenants are visible to the current user and writes that
+// information into the 'auth.tenants' session variable so that row-level security policies can filter rows. For
+// subjects with universal access the special value '*' is used; otherwise a JSON array of tenant identifiers is
+// written.
+func (t *managedTx) setTenants(ctx context.Context) error {
+	tenants, err := t.manager.tenancy.DetermineVisibleTenants(ctx)
+	if err != nil {
+		return err
+	}
+	var value string
+	if tenants.Universal() {
+		value = "*"
+	} else {
+		data, err := json.Marshal(tenants.Inclusions())
+		if err != nil {
+			return err
+		}
+		value = string(data)
+	}
+	_, err = t.real.Exec(ctx, "select set_config('auth.tenants', $1, true)", value)
 	return err
 }
 

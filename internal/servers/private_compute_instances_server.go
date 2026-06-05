@@ -105,7 +105,6 @@ func (b *PrivateComputeInstancesServerBuilder) Build() (result *PrivateComputeIn
 	// Create the templates DAO:
 	templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {
@@ -115,7 +114,6 @@ func (b *PrivateComputeInstancesServerBuilder) Build() (result *PrivateComputeIn
 	// Create the catalog items DAO:
 	catalogItemsDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceCatalogItem]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {
@@ -125,7 +123,6 @@ func (b *PrivateComputeInstancesServerBuilder) Build() (result *PrivateComputeIn
 	// Create the Subnets DAO for network validation:
 	subnetsDao, err := dao.NewGenericDAO[*privatev1.Subnet]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {
@@ -135,7 +132,6 @@ func (b *PrivateComputeInstancesServerBuilder) Build() (result *PrivateComputeIn
 	// Create the SecurityGroups DAO for network validation:
 	securityGroupsDao, err := dao.NewGenericDAO[*privatev1.SecurityGroup]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

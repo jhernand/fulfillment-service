@@ -105,7 +105,6 @@ func (b *ComputeInstanceCatalogItemsServerBuilder) Build() (result *ComputeInsta
 
 	computeInstancesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstance]().
 		SetLogger(b.logger).
-		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()
 	if err != nil {

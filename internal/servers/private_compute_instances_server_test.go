@@ -39,7 +39,6 @@ var _ = Describe("Private compute instances server", func() {
 		// Create a default test subnet for tests that don't explicitly create one:
 		subnetsDao, err := dao.NewGenericDAO[*privatev1.Subnet]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -65,7 +64,6 @@ var _ = Describe("Private compute instances server", func() {
 	createTestNetworkClass := func(ctx context.Context) *privatev1.NetworkClass {
 		ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -93,7 +91,6 @@ var _ = Describe("Private compute instances server", func() {
 	createTestVirtualNetwork := func(ctx context.Context, networkClassID string) *privatev1.VirtualNetwork {
 		vnDao, err := dao.NewGenericDAO[*privatev1.VirtualNetwork]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -119,7 +116,6 @@ var _ = Describe("Private compute instances server", func() {
 	createTestSubnet := func(ctx context.Context, vnID string, state privatev1.SubnetState) *privatev1.Subnet {
 		subnetDao, err := dao.NewGenericDAO[*privatev1.Subnet]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -145,7 +141,6 @@ var _ = Describe("Private compute instances server", func() {
 	createTestSecurityGroup := func(ctx context.Context, vnID string, state privatev1.SecurityGroupState) *privatev1.SecurityGroup {
 		sgDao, err := dao.NewGenericDAO[*privatev1.SecurityGroup]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -225,7 +220,6 @@ var _ = Describe("Private compute instances server", func() {
 			// Create a template DAO to insert a template
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -824,7 +818,6 @@ var _ = Describe("Private compute instances server", func() {
 			// Create a template WITHOUT spec defaults:
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -869,7 +862,6 @@ var _ = Describe("Private compute instances server", func() {
 			// Create a template WITHOUT spec defaults:
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -916,7 +908,6 @@ var _ = Describe("Private compute instances server", func() {
 			// Create a template with only some spec defaults:
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -976,7 +967,6 @@ var _ = Describe("Private compute instances server", func() {
 				var err error
 				catalogItemsDao, err = dao.NewGenericDAO[*privatev1.ComputeInstanceCatalogItem]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 			})
@@ -1260,7 +1250,6 @@ var _ = Describe("Private compute instances server", func() {
 			// Create test template
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -1373,7 +1362,6 @@ var _ = Describe("Private compute instances server", func() {
 				// (simulating a migrated VM that uses pod network)
 				ciDao, err := dao.NewGenericDAO[*privatev1.ComputeInstance]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 
@@ -1606,7 +1594,6 @@ var _ = Describe("Private compute instances server", func() {
 				subnet.GetStatus().SetState(privatev1.SubnetState_SUBNET_STATE_PENDING)
 				subnetDAO, err := dao.NewGenericDAO[*privatev1.Subnet]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 				_, err = subnetDAO.Update().SetObject(subnet).Do(ctx)

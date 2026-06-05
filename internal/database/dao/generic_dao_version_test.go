@@ -14,83 +14,35 @@ language governing permissions and limitations under the License.
 package dao
 
 import (
-	"context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/mock/gomock"
 
 	testsv1 "github.com/osac-project/fulfillment-service/internal/api/osac/tests/v1"
-	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/collections"
 	"github.com/osac-project/fulfillment-service/internal/database"
 )
 
 var _ = Describe("Version", func() {
-	var (
-		ctx     context.Context
-		ctrl    *gomock.Controller
-		tenancy *auth.MockTenancyLogic
-		tx      database.Tx
-		generic *GenericDAO[*testsv1.Object]
-	)
+	var generic *GenericDAO[*testsv1.Object]
 
 	BeforeEach(func() {
 		var err error
 
-		// Create a context:
-		ctx = context.Background()
-
-		// Create the mock controller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
-
-		// Prepare the database pool:
-		db, err := server.NewInstance().Build()
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(db.Close)
-		pool, err := db.Pool(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(pool.Close)
-		_, err = pool.Exec(ctx, createObjectsTableSQL)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Create the transaction manager:
-		tm, err := database.NewTxManager().
-			SetLogger(logger).
-			SetPool(pool).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-
-		// Start a transaction and add it to the context:
-		tx, err = tm.Begin(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			err := tx.End(ctx)
-			Expect(err).ToNot(HaveOccurred())
-		})
-		ctx = database.TxIntoContext(ctx, tx)
-
-		// Create a tenancy logic without restrictions:
-		tenancy = auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewUniversalSet[string](), nil).
-			AnyTimes()
-
 		// Create the DAO:
 		generic, err = NewGenericDAO[*testsv1.Object]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	// checkDatabaseVersion checks the version of the object in the database.
 	checkDatabaseVersion := func(id string, expected int32) {
+		tx, err := database.TxFromContext(ctx)
+		Expect(err).ToNot(HaveOccurred())
 		row := tx.QueryRow(ctx, "select version from objects where id = $1", id)
 		var actual int32
-		err := row.Scan(&actual)
+		err = row.Scan(&actual)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(actual).To(Equal(expected))
 	}

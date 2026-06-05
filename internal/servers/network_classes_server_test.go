@@ -471,7 +471,6 @@ var _ = Describe("Network classes server", func() {
 				// Create two default network classes:
 				ncDao, ncErr := dao.NewGenericDAO[*privatev1.NetworkClass]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(ncErr).ToNot(HaveOccurred())
 
@@ -613,7 +612,6 @@ var _ = Describe("Network classes server", func() {
 				// Create NC-A as default via DAO:
 				ncDao, ncErr := dao.NewGenericDAO[*privatev1.NetworkClass]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(ncErr).ToNot(HaveOccurred())
 
@@ -659,7 +657,6 @@ var _ = Describe("Network classes server", func() {
 				// Create first default NC via DAO (bypassing server swap logic):
 				ncDao, ncErr := dao.NewGenericDAO[*privatev1.NetworkClass]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(ncErr).ToNot(HaveOccurred())
 
@@ -698,7 +695,6 @@ var _ = Describe("Network classes server", func() {
 				// Create a DAO for direct data setup:
 				ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 

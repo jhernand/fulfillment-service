@@ -194,7 +194,6 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	// Create the DAO:
 	daoBuilder := dao.NewGenericDAO[O]()
 	daoBuilder.SetLogger(b.logger)
-	daoBuilder.SetTenancyLogic(b.tenancyLogic)
 	if b.notifier != nil {
 		daoBuilder.AddEventCallback(s.notifyEvent)
 	}

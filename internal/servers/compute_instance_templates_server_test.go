@@ -49,6 +49,7 @@ var _ = Describe("Compute instance templates server", func() {
 		tm, err := database.NewTxManager().
 			SetLogger(logger).
 			SetPool(pool).
+			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 

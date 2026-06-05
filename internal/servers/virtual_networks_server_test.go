@@ -46,7 +46,6 @@ var _ = Describe("Virtual networks server", func() {
 		// Create a default NetworkClass for tests:
 		ncDao, err := dao.NewGenericDAO[*privatev1.NetworkClass]().
 			SetLogger(logger).
-			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
@@ -439,7 +438,6 @@ var _ = Describe("Virtual networks server", func() {
 			// Create a second non-default NetworkClass via DAO:
 			ncDao, ncErr := dao.NewGenericDAO[*privatev1.NetworkClass]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(ncErr).ToNot(HaveOccurred())
 
@@ -536,7 +534,6 @@ var _ = Describe("Virtual networks server", func() {
 			// Remove the default NC that BeforeEach created:
 			ncDao, ncErr := dao.NewGenericDAO[*privatev1.NetworkClass]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(ncErr).ToNot(HaveOccurred())
 			_, ncErr = ncDao.Delete().SetId("default").Do(ctx)

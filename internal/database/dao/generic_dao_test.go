@@ -14,7 +14,6 @@ language governing permissions and limitations under the License.
 package dao
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,12 +23,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	testsv1 "github.com/osac-project/fulfillment-service/internal/api/osac/tests/v1"
-	"github.com/osac-project/fulfillment-service/internal/auth"
-	"github.com/osac-project/fulfillment-service/internal/collections"
 	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/uuid"
 )
@@ -41,67 +37,16 @@ var _ = Describe("Generic DAO", func() {
 		objectCount  = maxLimit + 1
 	)
 
-	var (
-		ctx     context.Context
-		ctrl    *gomock.Controller
-		tenancy *auth.MockTenancyLogic
-		tx      database.Tx
-	)
-
 	sort := func(objects []*testsv1.Object) {
 		sort.Slice(objects, func(i, j int) bool {
 			return strings.Compare(objects[i].GetId(), objects[j].GetId()) < 0
 		})
 	}
 
-	BeforeEach(func() {
-		var err error
-
-		// Create a context:
-		ctx = context.Background()
-
-		// Create the mock controller:
-		ctrl = gomock.NewController(GinkgoT())
-		DeferCleanup(ctrl.Finish)
-
-		// Prepare the database pool:
-		db, err := server.NewInstance().Build()
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(db.Close)
-		pool, err := db.Pool(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(pool.Close)
-		_, err = pool.Exec(ctx, createObjectsTableSQL)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Create the transaction manager:
-		tm, err := database.NewTxManager().
-			SetLogger(logger).
-			SetPool(pool).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
-
-		// Start a transaction and add it to the context:
-		tx, err = tm.Begin(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		DeferCleanup(func() {
-			err := tx.End(ctx)
-			Expect(err).ToNot(HaveOccurred())
-		})
-		ctx = database.TxIntoContext(ctx, tx)
-
-		// Create a tenancy logic without restrictions:
-		tenancy = auth.NewMockTenancyLogic(ctrl)
-		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
-			Return(collections.NewUniversalSet[string](), nil).
-			AnyTimes()
-	})
-
 	Describe("Creation", func() {
 		It("Can be built if all the required parameters are set", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(generic).ToNot(BeNil())
@@ -109,24 +54,14 @@ var _ = Describe("Generic DAO", func() {
 
 		It("Fails if logger is not set", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).To(MatchError("logger is mandatory"))
-			Expect(generic).To(BeNil())
-		})
-
-		It("Fails if tenancy logic is not set", func() {
-			generic, err := NewGenericDAO[*testsv1.Object]().
-				SetLogger(logger).
-				Build()
-			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(generic).To(BeNil())
 		})
 
 		It("Fails if default limit is zero", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				SetDefaultLimit(0).
 				Build()
 			Expect(err).To(MatchError("default limit must be a possitive integer, but it is 0"))
@@ -136,7 +71,6 @@ var _ = Describe("Generic DAO", func() {
 		It("Fails if default limit is negative", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				SetDefaultLimit(-1).
 				Build()
 			Expect(err).To(MatchError("default limit must be a possitive integer, but it is -1"))
@@ -146,7 +80,6 @@ var _ = Describe("Generic DAO", func() {
 		It("Fails if max limit is zero", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				SetMaxLimit(0).
 				Build()
 			Expect(err).To(MatchError("max limit must be a possitive integer, but it is 0"))
@@ -156,7 +89,6 @@ var _ = Describe("Generic DAO", func() {
 		It("Fails if max limit is negative", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				SetMaxLimit(-1).
 				Build()
 			Expect(err).To(MatchError("max limit must be a possitive integer, but it is -1"))
@@ -166,7 +98,6 @@ var _ = Describe("Generic DAO", func() {
 		It("Fails if max limit is less than default limit", func() {
 			generic, err := NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				SetMaxLimit(100).
 				SetDefaultLimit(1000).
 				Build()
@@ -186,7 +117,6 @@ var _ = Describe("Generic DAO", func() {
 			var err error
 			generic, err = NewGenericDAO[*testsv1.Object]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				SetDefaultLimit(defaultLimit).
 				SetMaxLimit(maxLimit).
 				Build()
@@ -562,6 +492,8 @@ var _ = Describe("Generic DAO", func() {
 			object := response.GetObject()
 
 			// Verify that the idientifier isn't stored in the 'data' column:
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
 			row := tx.QueryRow(ctx, "select data from objects where id = $1", object.GetId())
 			var data []byte
 			err = row.Scan(&data)
@@ -584,6 +516,8 @@ var _ = Describe("Generic DAO", func() {
 			object := response.GetObject()
 
 			// Verify that the database isn't stored in the 'data' column:
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
 			row := tx.QueryRow(ctx, "select data from objects where id = $1", object.GetId())
 			var data []byte
 			err = row.Scan(&data)
@@ -618,6 +552,8 @@ var _ = Describe("Generic DAO", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify that the object has been deleted and the data copied to the archive table:
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
 			row := tx.QueryRow(ctx, `select count(*) from objects where id = $1`, object.GetId())
 			var count int
 			err = row.Scan(&count)
@@ -688,6 +624,8 @@ var _ = Describe("Generic DAO", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify that it hasn't been archived:
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
 			row := tx.QueryRow(ctx, `select count(*) from archived_objects where id = $1`, object.GetId())
 			var count int
 			err = row.Scan(&count)
@@ -772,6 +710,8 @@ var _ = Describe("Generic DAO", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify that labels and annotations were archived:
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
 			row := tx.QueryRow(
 				ctx,
 				`
@@ -841,6 +781,8 @@ var _ = Describe("Generic DAO", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify that labels and annotations were archived:
+			tx, err := database.TxFromContext(ctx)
+			Expect(err).ToNot(HaveOccurred())
 			row := tx.QueryRow(
 				ctx,
 				`
@@ -886,9 +828,11 @@ var _ = Describe("Generic DAO", func() {
 
 		Describe("Finalizers", func() {
 			checkDatabase := func(object *testsv1.Object, expected ...string) {
+				tx, err := database.TxFromContext(ctx)
+				Expect(err).ToNot(HaveOccurred())
 				row := tx.QueryRow(ctx, "select finalizers from objects where id = $1", object.GetId())
 				var actual []string
-				err := row.Scan(&actual)
+				err = row.Scan(&actual)
 				Expect(err).ToNot(HaveOccurred())
 				values := make([]any, len(expected))
 				for i, value := range expected {

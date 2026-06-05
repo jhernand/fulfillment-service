@@ -89,14 +89,12 @@ var _ = Describe("Private clusters server", func() {
 			// Create the host types DAO:
 			hostTypesDao, err := dao.NewGenericDAO[*privatev1.HostType]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create the templates DAO:
 			templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
 				SetLogger(logger).
-				SetTenancyLogic(tenancy).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -1008,7 +1006,6 @@ var _ = Describe("Private clusters server", func() {
 				var err error
 				catalogItemsDao, err = dao.NewGenericDAO[*privatev1.ClusterCatalogItem]().
 					SetLogger(logger).
-					SetTenancyLogic(tenancy).
 					Build()
 				Expect(err).ToNot(HaveOccurred())
 			})
