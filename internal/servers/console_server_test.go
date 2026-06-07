@@ -144,10 +144,6 @@ func (m *mockTxManager) Begin(ctx context.Context) (database.Tx, error) {
 	return &mockTx{}, nil
 }
 
-func (m *mockTxManager) End(ctx context.Context, tx database.Tx) error {
-	return nil
-}
-
 // mockTx is a no-op transaction for testing.
 type mockTx struct{}
 
@@ -164,6 +160,8 @@ func (m *mockTx) Exec(ctx context.Context, query string, args ...any) (pgconn.Co
 }
 
 func (m *mockTx) ReportError(err *error) {}
+
+func (m *mockTx) End(ctx context.Context) error { return nil }
 
 // newFakeHubClientFactory returns a HubClientFactory that ignores the config
 // and always returns the provided fake client.

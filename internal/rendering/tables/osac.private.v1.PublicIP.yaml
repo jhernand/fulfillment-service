@@ -35,4 +35,4 @@ columns:
   lookup: true
 
 - header: ATTACHED
-  value: this.status.attached
+  value: "has(this.status) && this.status.attached? 'true': 'false'"

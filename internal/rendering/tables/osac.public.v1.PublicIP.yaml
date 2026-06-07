@@ -30,4 +30,4 @@ columns:
   value: "this.status.address != ''? this.status.address: '-'"
 
 - header: ATTACHED
-  value: this.status.attached
+  value: "has(this.status) && this.status.attached? 'true': 'false'"

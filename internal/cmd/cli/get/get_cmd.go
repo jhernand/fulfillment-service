@@ -30,6 +30,7 @@ import (
 
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/get/kubeconfig"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/get/password"
+	"github.com/osac-project/fulfillment-service/internal/cmd/cli/get/publicippool"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/get/token"
 	"github.com/osac-project/fulfillment-service/internal/config"
 	"github.com/osac-project/fulfillment-service/internal/logging"
@@ -63,6 +64,7 @@ func Cmd() *cobra.Command {
 	}
 	result.AddCommand(kubeconfig.Cmd())
 	result.AddCommand(password.Cmd())
+	result.AddCommand(publicippool.Cmd())
 	result.AddCommand(token.Cmd())
 	flags := result.Flags()
 	flags.StringVarP(
@@ -228,15 +230,7 @@ func (c *runnerContext) list(ctx context.Context, keys []string) (results []prot
 		}
 	}
 
-	// Exclude deleted objects unless explicitly requested.
-	if !c.args.includeDeleted {
-		const notDeletedFilter = "!has(this.metadata.deletion_timestamp)"
-		if options.Filter != "" {
-			options.Filter = fmt.Sprintf("%s && (%s)", notDeletedFilter, options.Filter)
-		} else {
-			options.Filter = notDeletedFilter
-		}
-	}
+	options.IncludeDeleted = c.args.includeDeleted
 
 	listResult, err := c.objectHelper.List(ctx, options)
 	if err != nil {

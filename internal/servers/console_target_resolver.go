@@ -185,7 +185,7 @@ func (r *ConsoleTargetResolver) lookupDBState(ctx context.Context, resourceID st
 		return
 	}
 	defer func() {
-		if endErr := r.txManager.End(ctx, tx); endErr != nil && err == nil {
+		if endErr := tx.End(ctx); endErr != nil && err == nil {
 			err = status.Errorf(codes.Internal, "transaction cleanup failed: %v", endErr)
 		}
 	}()
