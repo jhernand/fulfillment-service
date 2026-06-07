@@ -476,3 +476,158 @@ var _ = Describe("Organization authorization boundaries", func() {
 		Expect(roleStrings).To(ContainElement("tenant-idp-manager"))
 	})
 })
+
+var _ = Describe("Organization edge cases and resilience", func() {
+	var (
+		ctx    context.Context
+		client privatev1.OrganizationsClient
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		client = privatev1.NewOrganizationsClient(tool.InternalView().AdminConn())
+	})
+
+	It("Empty name is rejected", func() {
+		By("Attempting to create organization with empty name")
+		_, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
+			Object: privatev1.Organization_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name: "",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+	})
+
+	It("Name with special characters is rejected", func() {
+		By("Attempting to create organization with invalid characters")
+		invalidNames := []string{
+			"test/slash",
+			"test org space",
+			"test@at-sign",
+			"test:colon",
+		}
+		for _, name := range invalidNames {
+			By(fmt.Sprintf("Trying name %q", name))
+			_, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
+				Object: privatev1.Organization_builder{
+					Metadata: privatev1.Metadata_builder{
+						Name: name,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred(), "expected error for name %q", name)
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument),
+				"expected InvalidArgument for name %q, got %v", name, status.Code())
+		}
+	})
+
+	It("Very long name is rejected", func() {
+		By("Attempting to create organization with a 300-character name")
+		longName := strings.Repeat("a", 300)
+		_, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
+			Object: privatev1.Organization_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name: longName,
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+	})
+
+	It("Re-create after delete succeeds with same name", func() {
+		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Creating organization %q", name))
+		id := createOrg(ctx, client, name)
+		waitForOrgSynced(ctx, client, id)
+
+		By("Deleting the organization")
+		_, err := client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+			Id: id,
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Waiting for organization to be fully removed")
+		Eventually(
+			func(g Gomega) {
+				_, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+					Id: id,
+				}.Build())
+				g.Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				g.Expect(ok).To(BeTrue())
+				g.Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			},
+			2*time.Minute,
+			time.Second,
+		).Should(Succeed())
+
+		By("Re-creating organization with the same name")
+		createResponse, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
+			Object: privatev1.Organization_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name: name,
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		newId := createResponse.GetObject().GetId()
+		DeferCleanup(func() {
+			_, _ = client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+				Id: newId,
+			}.Build())
+		})
+
+		By("Verifying the re-created organization reaches SYNCED")
+		waitForOrgSynced(ctx, client, newId)
+	})
+
+	It("Delete during sync is handled gracefully", func() {
+		name := fmt.Sprintf("test-%s", uuid.New())
+
+		By(fmt.Sprintf("Creating organization %q", name))
+		createResponse, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
+			Object: privatev1.Organization_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name: name,
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		id := createResponse.GetObject().GetId()
+
+		By("Immediately deleting the organization before it reaches SYNCED")
+		_, err = client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+			Id: id,
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Verifying the organization eventually returns NotFound")
+		Eventually(
+			func(g Gomega) {
+				_, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+					Id: id,
+				}.Build())
+				g.Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				g.Expect(ok).To(BeTrue())
+				g.Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			},
+			2*time.Minute,
+			time.Second,
+		).Should(Succeed())
+
+		By("Verifying the organization is also removed from Keycloak")
+		verifyOrgRemovedFromKeycloak(ctx, name)
+	})
+})
