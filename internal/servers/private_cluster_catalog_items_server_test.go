@@ -21,7 +21,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
+	"go.uber.org/mock/gomock"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
+
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Private cluster catalog items server", func() {
@@ -62,6 +67,16 @@ var _ = Describe("Private cluster catalog items server", func() {
 				Build()
 			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
+		})
+
+		It("Can be built without explicit reference checker", func() {
+			server, err := NewPrivateClusterCatalogItemsServer().
+				SetLogger(logger).
+				SetAttributionLogic(attribution).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(server).ToNot(BeNil())
 		})
 	})
 
@@ -341,6 +356,76 @@ var _ = Describe("Private cluster catalog items server", func() {
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
+		})
+
+		It("Blocks delete when referenced by a cluster", func() {
+			createResponse, err := server.Create(ctx, privatev1.ClusterCatalogItemsCreateRequest_builder{
+				Object: privatev1.ClusterCatalogItem_builder{
+					Title:     "Referenced catalog item",
+					Template:  "my-template-id",
+					Published: true,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catalogItem := createResponse.GetObject()
+
+			clustersDao, err := dao.NewGenericDAO[*privatev1.Cluster]().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			_, err = clustersDao.Create().SetObject(
+				privatev1.Cluster_builder{
+					Metadata: privatev1.Metadata_builder{
+						Name:   "ref-cluster",
+						Tenant: "system",
+					}.Build(),
+					Spec: privatev1.ClusterSpec_builder{
+						CatalogItem: catalogItem.GetId(),
+						Template:    "my-template-id",
+					}.Build(),
+				}.Build(),
+			).Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = server.Delete(ctx, privatev1.ClusterCatalogItemsDeleteRequest_builder{
+				Id: catalogItem.GetId(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.FailedPrecondition))
+			Expect(status.Message()).To(ContainSubstring("still referenced"))
+
+			getResponse, err := server.Get(ctx, privatev1.ClusterCatalogItemsGetRequest_builder{
+				Id: catalogItem.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject()).ToNot(BeNil())
+			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).To(BeNil())
+		})
+
+		It("Returns error when reference check fails during delete", func() {
+			createResponse, err := server.Create(ctx, privatev1.ClusterCatalogItemsCreateRequest_builder{
+				Object: privatev1.ClusterCatalogItem_builder{
+					Title:    "Catalog item with failing check",
+					Template: "my-template-id",
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catalogItem := createResponse.GetObject()
+
+			mockCtrl := gomock.NewController(GinkgoT())
+			mockChecker := NewMockCatalogItemReferenceChecker(mockCtrl)
+			mockChecker.EXPECT().hasReference(gomock.Any(), catalogItem.GetId()).
+				Return(false, fmt.Errorf("database connection lost"))
+			server.referenceChecker = mockChecker
+
+			_, err = server.Delete(ctx, privatev1.ClusterCatalogItemsDeleteRequest_builder{
+				Id: catalogItem.GetId(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("database connection lost"))
 		})
 	})
 })

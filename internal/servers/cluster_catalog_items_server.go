@@ -119,6 +119,7 @@ func (b *ClusterCatalogItemsServerBuilder) Build() (result *ClusterCatalogItemsS
 		SetAttributionLogic(b.attributionLogic).
 		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
+		SetReferenceChecker(referenceChecker).
 		Build()
 	if err != nil {
 		return
