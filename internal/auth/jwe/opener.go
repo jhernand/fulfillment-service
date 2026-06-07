@@ -25,11 +25,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"golang.org/x/sync/singleflight"
 )
 
 // Claims contains the parsed standard and custom claims from a verified token.
@@ -55,14 +56,19 @@ type OpenerBuilder struct {
 }
 
 // Opener decrypts nested JWTs (JWE, RSA-OAEP-256) and verifies the inner
-// JWS (RS256) against a cached JWKS. Enforces single-use via JTI tracking.
+// JWS (RS256) against a JWKS fetched on demand when the token's kid is
+// unknown. Enforces single-use via JTI tracking.
 type Opener struct {
 	logger        *slog.Logger
 	decryptionKey *privateKeyReloader
 	jwksURL       string
 	issuer        string
 	audience      string
-	jwksCache     *jwk.Cache
+	fetchOpts     []jwk.FetchOption  // TLS config reused for every jwk.Fetch call
+	jwks          jwk.Set            // cached JWKS, refreshed on unknown kid
+	jwksMu        sync.Mutex         // protects jwks and lastAttempt
+	lastAttempt   time.Time          // last JWKS refresh attempt, zero after Build
+	refreshGroup  singleflight.Group // coalesces concurrent JWKS refreshes
 	mu            sync.Mutex
 	seen          map[string]time.Time // jti -> cleanup expiry
 }
@@ -72,7 +78,7 @@ func NewOpener() *OpenerBuilder {
 	return &OpenerBuilder{}
 }
 
-// SetContext sets the context used for JWKS cache lifetime and the JTI cleanup goroutine. This is mandatory.
+// SetContext sets the context used for the initial JWKS fetch and the JTI cleanup goroutine. This is mandatory.
 func (b *OpenerBuilder) SetContext(value context.Context) *OpenerBuilder {
 	b.ctx = value
 	return b
@@ -155,14 +161,10 @@ func (b *OpenerBuilder) Build() (*Opener, error) {
 		return nil, fmt.Errorf("JWKS URL %q must use HTTPS scheme", b.jwksURL)
 	}
 
-	// Initialize the JWKS cache with automatic background refresh.
-	cache, err := jwk.NewCache(b.ctx, httprc.NewClient())
-	if err != nil {
-		return nil, fmt.Errorf("create JWKS cache: %w", err)
-	}
-	var regOpts []jwk.RegisterOption
+	// Build fetch options for the JWKS endpoint.
+	var fetchOpts []jwk.FetchOption
 	if b.caPool != nil {
-		regOpts = append(regOpts, jwk.WithHTTPClient(
+		fetchOpts = append(fetchOpts, jwk.WithHTTPClient(
 			jwk.WrapHTTPClientDefaults(&http.Client{
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{
@@ -173,8 +175,11 @@ func (b *OpenerBuilder) Build() (*Opener, error) {
 			}),
 		))
 	}
-	if err := cache.Register(b.ctx, b.jwksURL, regOpts...); err != nil {
-		return nil, fmt.Errorf("register JWKS URL %q: %w", b.jwksURL, err)
+
+	// Seed the cache; validates that the endpoint is reachable.
+	jwks, err := jwk.Fetch(b.ctx, b.jwksURL, fetchOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("initial JWKS fetch from %q: %w", b.jwksURL, err)
 	}
 
 	// Create and populate the object:
@@ -184,16 +189,19 @@ func (b *OpenerBuilder) Build() (*Opener, error) {
 		jwksURL:       b.jwksURL,
 		issuer:        b.issuer,
 		audience:      b.audience,
-		jwksCache:     cache,
-		seen:          make(map[string]time.Time),
+		fetchOpts:     fetchOpts,
+		jwks:          jwks,
+		// lastAttempt intentionally zero: the bootstrap fetch does not count
+		// toward the rate limit, so the first unknown-kid refresh is immediate.
+		seen: make(map[string]time.Time),
 	}
 	go o.cleanupLoop(b.ctx)
 	return o, nil
 }
 
 // Open decrypts the JWE outer layer, verifies the JWS inner layer against
-// the cached JWKS, validates standard claims (iss, aud, exp with 5s skew),
-// and enforces JTI single-use. Returns parsed claims on success.
+// the JWKS (refreshing on unknown kid), validates standard claims (iss, aud,
+// exp with 5s skew), and enforces JTI single-use. Returns parsed claims on success.
 func (o *Opener) Open(ctx context.Context, tokenString string) (*Claims, error) {
 	if err := o.decryptionKey.ensureLoaded(ctx); err != nil {
 		return nil, fmt.Errorf("reload decryption key: %w", err)
@@ -207,7 +215,7 @@ func (o *Opener) Open(ctx context.Context, tokenString string) (*Claims, error) 
 		return nil, errors.New("decryption private key not loaded")
 	}
 
-	// Step 1: Decrypt JWE outer layer.
+	// Decrypt JWE outer layer.
 	jwsPayload, err := jwe.Decrypt([]byte(tokenString),
 		jwe.WithKey(jwa.RSA_OAEP_256(), decPrivKey),
 	)
@@ -215,52 +223,129 @@ func (o *Opener) Open(ctx context.Context, tokenString string) (*Claims, error) 
 		return nil, fmt.Errorf("decrypt token: %w", err)
 	}
 
-	// Step 2: Look up cached JWKS and verify JWS inner layer.
-	set, err := o.jwksCache.Lookup(ctx, o.jwksURL)
+	// Resolve the signing keyset (refresh on unknown kid).
+	set, err := o.resolveKeySet(ctx, jwsPayload)
 	if err != nil {
-		o.logger.WarnContext(ctx, "JWKS cache lookup failed",
-			slog.String("jwks_url", o.jwksURL),
-			slog.Any("error", err),
-		)
-		return nil, fmt.Errorf("lookup JWKS from cache: %w", err)
+		return nil, err
 	}
 
-	parseOpts := []jwt.ParseOption{
+	// Verify JWS and validate standard claims.
+	tok, err := jwt.Parse(jwsPayload,
 		jwt.WithKeySet(set),
 		jwt.WithIssuer(o.issuer),
-		jwt.WithAcceptableSkew(5 * time.Second),
-	}
-	parseOpts = append(parseOpts, jwt.WithAudience(o.audience))
-
-	tok, err := jwt.Parse(jwsPayload, parseOpts...)
+		jwt.WithAcceptableSkew(5*time.Second),
+		jwt.WithAudience(o.audience),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("verify token: %w", err)
 	}
 
-	// Step 3: Extract standard claims.
+	// Extract claims from verified token.
+	claims, err := extractClaims(tok)
+	if err != nil {
+		return nil, err
+	}
+
+	// JTI single-use enforcement.
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if _, exists := o.seen[claims.JTI]; exists {
+		return nil, fmt.Errorf("token already used (jti: %s)", claims.JTI)
+	}
+	o.seen[claims.JTI] = claims.ExpiresAt.Add(5 * time.Second)
+
+	return claims, nil
+}
+
+// resolveKeySet returns the JWKS to verify against, refreshing from
+// the endpoint if the token's kid is not in the cached set.
+func (o *Opener) resolveKeySet(ctx context.Context, jwsPayload []byte) (jwk.Set, error) {
+	jwsMsg, err := jws.Parse(jwsPayload)
+	if err != nil {
+		return nil, fmt.Errorf("parse JWS: %w", err)
+	}
+
+	o.jwksMu.Lock()
+	set := o.jwks
+	o.jwksMu.Unlock()
+
+	sigs := jwsMsg.Signatures()
+	if len(sigs) == 0 {
+		return set, nil
+	}
+	kid, ok := sigs[0].ProtectedHeaders().KeyID()
+	if !ok {
+		return set, nil
+	}
+	if _, found := set.LookupKeyID(kid); found {
+		return set, nil
+	}
+	return o.refreshJWKS(ctx), nil
+}
+
+// minRefreshInterval is the minimum time between JWKS refresh attempts.
+// Prevents amplification attacks where forged kid values trigger unbounded
+// outbound HTTP requests to the JWKS endpoint.
+const minRefreshInterval = 60 * time.Second
+
+// refreshJWKS coalesces concurrent JWKS refreshes via singleflight.
+// Rate-limited to one fetch per minRefreshInterval.
+func (o *Opener) refreshJWKS(ctx context.Context) jwk.Set {
+	// Detach from the caller's context so one cancelled request does
+	// not abort the shared fetch. Also strips deadline intentionally —
+	// the HTTP transport timeout bounds the fetch.
+	ctx = context.WithoutCancel(ctx)
+
+	v, _, _ := o.refreshGroup.Do("jwks", func() (any, error) {
+		o.jwksMu.Lock()
+		if time.Since(o.lastAttempt) < minRefreshInterval {
+			set := o.jwks
+			o.jwksMu.Unlock()
+			return set, nil
+		}
+		o.lastAttempt = time.Now()
+		o.jwksMu.Unlock()
+
+		set, err := jwk.Fetch(ctx, o.jwksURL, o.fetchOpts...)
+		if err != nil {
+			o.logger.WarnContext(ctx, "JWKS refresh failed, using cached keyset",
+				slog.String("jwks_url", o.jwksURL),
+				slog.Any("error", err),
+			)
+			o.jwksMu.Lock()
+			cached := o.jwks
+			o.jwksMu.Unlock()
+			return cached, nil
+		}
+
+		o.jwksMu.Lock()
+		o.jwks = set
+		o.jwksMu.Unlock()
+		return set, nil
+	})
+	return v.(jwk.Set)
+}
+
+// extractClaims reads standard and custom claims from a verified JWT token.
+func extractClaims(tok jwt.Token) (*Claims, error) {
 	jti, ok := tok.JwtID()
 	if !ok || jti == "" {
 		return nil, errors.New("token missing jti")
 	}
-
 	sub, ok := tok.Subject()
 	if !ok || sub == "" {
 		return nil, errors.New("token missing sub")
 	}
-
 	exp, ok := tok.Expiration()
 	if !ok {
 		return nil, errors.New("token missing exp")
 	}
-
 	iat, _ := tok.IssuedAt()
 
-	// Step 4: Extract custom claims (everything not in the standard set).
 	custom := make(map[string]any)
 	for _, key := range tok.Keys() {
 		switch key {
 		case "iss", "sub", "aud", "jti", "iat", "exp", "nbf":
-			// standard claims handled above
 		default:
 			var val any
 			if err := tok.Get(key, &val); err == nil {
@@ -268,15 +353,6 @@ func (o *Opener) Open(ctx context.Context, tokenString string) (*Claims, error) 
 			}
 		}
 	}
-
-	// Step 5: JTI single-use check.
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if _, exists := o.seen[jti]; exists {
-		return nil, fmt.Errorf("token already used (jti: %s)", jti)
-	}
-	o.seen[jti] = exp.Add(5 * time.Second)
-
 	return &Claims{
 		Subject:   sub,
 		JTI:       jti,

@@ -22,12 +22,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwa"
@@ -552,6 +555,99 @@ var _ = Describe("Token", func() {
 			Expect(kid2).To(Equal(kid1))
 		})
 	})
+
+	Describe("Opener JWKS refresh", func() {
+		It("Refreshes JWKS and succeeds when the signing key rotates", func() {
+			jwksServer, jwksCAPool := serveJWKS(sealer)
+			defer jwksServer.Close()
+
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(audience).
+				SetCAPool(jwksCAPool).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Seal and open with the original key (cache hit path).
+			token1, _, err := sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+			parsed1, err := opener.Open(ctx, token1)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsed1.Subject).To(Equal("jane"))
+
+			// Rotate signing cert/key (simulates cert-manager rotation).
+			// Sealer hot-reloads via mtime; JWKS endpoint now serves the new kid.
+			time.Sleep(10 * time.Millisecond)
+			generateLeafCert(signingCertFile, signingKeyFile, "fulfillment-token-signer", testCA)
+
+			// Seal a token signed with the rotated key (new kid).
+			token2, _, err := sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Open must succeed: opener detects unknown kid, refreshes JWKS
+			// from the endpoint (now serving the new key), and verifies.
+			parsed2, err := opener.Open(ctx, token2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsed2.Subject).To(Equal("jane"))
+		})
+
+		It("Concurrent Open calls succeed when refresh is in-flight", func() {
+			jwksServer, jwksCAPool, reqCount := serveSlowJWKS(sealer, 200*time.Millisecond)
+			defer jwksServer.Close()
+
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(audience).
+				SetCAPool(jwksCAPool).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			time.Sleep(10 * time.Millisecond)
+			generateLeafCert(signingCertFile, signingKeyFile, "fulfillment-token-signer", testCA)
+
+			const n = 5
+			tokens := make([]string, n)
+			for i := range tokens {
+				tok, _, err := sealer.Seal(ctx, fmt.Sprintf("user-%d", i), audience, nil, 30*time.Second)
+				Expect(err).ToNot(HaveOccurred())
+				tokens[i] = tok
+			}
+
+			var wg sync.WaitGroup
+			errs := make([]error, n)
+			subs := make([]string, n)
+			wg.Add(n)
+			for i := range tokens {
+				go func(i int) {
+					defer wg.Done()
+					defer GinkgoRecover()
+					claims, err := opener.Open(ctx, tokens[i])
+					errs[i] = err
+					if claims != nil {
+						subs[i] = claims.Subject
+					}
+				}(i)
+			}
+			wg.Wait()
+
+			for i := range errs {
+				Expect(errs[i]).ToNot(HaveOccurred(), "request %d failed", i)
+				Expect(subs[i]).To(Equal(fmt.Sprintf("user-%d", i)))
+			}
+
+			// Build() fetches once. After rotation, singleflight coalesces
+			// all concurrent refreshes into one additional request.
+			Expect(reqCount.Load()).To(Equal(int32(2)))
+		})
+	})
 })
 
 // countDots counts the number of '.' characters in a string.
@@ -583,6 +679,30 @@ func serveJWKS(sealer *Sealer) (*httptest.Server, *x509.CertPool) {
 	pool := x509.NewCertPool()
 	pool.AddCert(server.Certificate())
 	return server, pool
+}
+
+// serveSlowJWKS is like serveJWKS but delays the first response by the
+// given duration. Returns an atomic request counter.
+func serveSlowJWKS(sealer *Sealer, firstDelay time.Duration) (*httptest.Server, *x509.CertPool, *atomic.Int32) {
+	var reqCount atomic.Int32
+	var once sync.Once
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount.Add(1)
+		once.Do(func() { time.Sleep(firstDelay) })
+		set, err := sealer.JWKSet(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(set); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}))
+	pool := x509.NewCertPool()
+	pool.AddCert(server.Certificate())
+	return server, pool, &reqCount
 }
 
 // generateTestCA creates a self-signed test CA.
