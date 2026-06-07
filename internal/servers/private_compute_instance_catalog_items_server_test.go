@@ -21,7 +21,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
+	"go.uber.org/mock/gomock"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
+
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/database/dao"
 )
 
 var _ = Describe("Private compute instance catalog items server", func() {
@@ -62,6 +67,16 @@ var _ = Describe("Private compute instance catalog items server", func() {
 				Build()
 			Expect(err).To(MatchError("tenancy logic is mandatory"))
 			Expect(server).To(BeNil())
+		})
+
+		It("Can be built without explicit reference checker", func() {
+			server, err := NewPrivateComputeInstanceCatalogItemsServer().
+				SetLogger(logger).
+				SetAttributionLogic(attribution).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(server).ToNot(BeNil())
 		})
 	})
 
@@ -340,6 +355,76 @@ var _ = Describe("Private compute instance catalog items server", func() {
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
 			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).ToNot(BeNil())
+		})
+
+		It("Blocks delete when referenced by a compute instance", func() {
+			createResponse, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+				Object: privatev1.ComputeInstanceCatalogItem_builder{
+					Title:     "Referenced CI catalog item",
+					Template:  "my-ci-template-id",
+					Published: true,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catalogItem := createResponse.GetObject()
+
+			ciDao, err := dao.NewGenericDAO[*privatev1.ComputeInstance]().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+			_, err = ciDao.Create().SetObject(
+				privatev1.ComputeInstance_builder{
+					Metadata: privatev1.Metadata_builder{
+						Name:   "ref-ci",
+						Tenant: "system",
+					}.Build(),
+					Spec: privatev1.ComputeInstanceSpec_builder{
+						CatalogItem: catalogItem.GetId(),
+						Template:    "my-ci-template-id",
+					}.Build(),
+				}.Build(),
+			).Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = server.Delete(ctx, privatev1.ComputeInstanceCatalogItemsDeleteRequest_builder{
+				Id: catalogItem.GetId(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.FailedPrecondition))
+			Expect(status.Message()).To(ContainSubstring("still referenced"))
+
+			getResponse, err := server.Get(ctx, privatev1.ComputeInstanceCatalogItemsGetRequest_builder{
+				Id: catalogItem.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject()).ToNot(BeNil())
+			Expect(getResponse.GetObject().GetMetadata().GetDeletionTimestamp()).To(BeNil())
+		})
+
+		It("Returns error when reference check fails during delete", func() {
+			createResponse, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+				Object: privatev1.ComputeInstanceCatalogItem_builder{
+					Title:    "CI catalog item with failing check",
+					Template: "my-ci-template-id",
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catalogItem := createResponse.GetObject()
+
+			mockCtrl := gomock.NewController(GinkgoT())
+			mockChecker := NewMockCatalogItemReferenceChecker(mockCtrl)
+			mockChecker.EXPECT().hasReference(gomock.Any(), catalogItem.GetId()).
+				Return(false, fmt.Errorf("database connection lost"))
+			server.referenceChecker = mockChecker
+
+			_, err = server.Delete(ctx, privatev1.ComputeInstanceCatalogItemsDeleteRequest_builder{
+				Id: catalogItem.GetId(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("database connection lost"))
 		})
 	})
 })
