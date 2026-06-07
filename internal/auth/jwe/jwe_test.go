@@ -11,7 +11,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package token
+package jwe
 
 import (
 	"context"
@@ -30,6 +30,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwa"
+	"github.com/lestrrat-go/jwx/v3/jwe"
+	"github.com/lestrrat-go/jwx/v3/jwk"
+	"github.com/lestrrat-go/jwx/v3/jwt"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -45,6 +49,7 @@ var testCA *testCAInfo
 
 var _ = Describe("Token", func() {
 	var (
+		ctx                context.Context
 		tmpDir             string
 		signingCertFile    string
 		signingKeyFile     string
@@ -52,10 +57,11 @@ var _ = Describe("Token", func() {
 		encryptionKeyFile  string
 		sealer             *Sealer
 		issuer             string
-		audience           []string
+		audience           string
 	)
 
 	BeforeEach(func() {
+		ctx = context.Background()
 		var err error
 		tmpDir, err = os.MkdirTemp("", "token-test-*")
 		Expect(err).ToNot(HaveOccurred())
@@ -70,8 +76,14 @@ var _ = Describe("Token", func() {
 		generateLeafCert(encryptionCertFile, encryptionKeyFile, "fulfillment-token-encryption", testCA)
 
 		issuer = "https://fulfillment.test.example.com"
-		audience = []string{"test-audience"}
-		sealer, err = NewSealer(logger, signingCertFile, signingKeyFile, encryptionCertFile, issuer, audience)
+		audience = "test-audience"
+		sealer, err = NewSealer().
+			SetLogger(logger).
+			SetSigningCertFile(signingCertFile).
+			SetSigningKeyFile(signingKeyFile).
+			SetEncryptionCertFile(encryptionCertFile).
+			SetIssuer(issuer).
+			Build()
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -89,7 +101,7 @@ var _ = Describe("Token", func() {
 				},
 			}
 
-			tokenString, expiresAt, err := sealer.Seal("jane", claims, 30*time.Second)
+			tokenString, expiresAt, err := sealer.Seal(ctx, "jane", audience, claims, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(tokenString).ToNot(BeEmpty())
 			Expect(expiresAt).To(BeTemporally("~", time.Now().Add(30*time.Second), 2*time.Second))
@@ -108,15 +120,15 @@ var _ = Describe("Token", func() {
 			jwksServer, jwksCAPool := serveJWKS(sealer)
 			defer jwksServer.Close()
 
-			opener, err := NewOpener(
-				context.Background(),
-				logger,
-				encryptionKeyFile,
-				jwksServer.URL,
-				issuer,
-				audience,
-				jwksCAPool,
-			)
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(audience).
+				SetCAPool(jwksCAPool).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			parsed, err := opener.Open(context.Background(), tokenString)
@@ -132,13 +144,21 @@ var _ = Describe("Token", func() {
 		})
 
 		It("Roundtrips a token with empty custom claims", func() {
-			tokenString, _, err := sealer.Seal("admin", nil, 30*time.Second)
+			tokenString, _, err := sealer.Seal(ctx, "admin", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			jwksServer, jwksCAPool := serveJWKS(sealer)
 			defer jwksServer.Close()
 
-			opener, err := NewOpener(context.Background(), logger, encryptionKeyFile, jwksServer.URL, issuer, audience, jwksCAPool)
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(audience).
+				SetCAPool(jwksCAPool).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			parsed, err := opener.Open(context.Background(), tokenString)
@@ -150,13 +170,21 @@ var _ = Describe("Token", func() {
 
 	Describe("Expiry", func() {
 		It("Rejects an expired token", func() {
-			tokenString, _, err := sealer.Seal("jane", nil, -10*time.Second)
+			tokenString, _, err := sealer.Seal(ctx, "jane", audience, nil, -10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			jwksServer, jwksCAPool := serveJWKS(sealer)
 			defer jwksServer.Close()
 
-			opener, err := NewOpener(context.Background(), logger, encryptionKeyFile, jwksServer.URL, issuer, audience, jwksCAPool)
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(audience).
+				SetCAPool(jwksCAPool).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = opener.Open(context.Background(), tokenString)
@@ -167,13 +195,21 @@ var _ = Describe("Token", func() {
 
 	Describe("JTI single-use", func() {
 		It("Rejects a replayed token", func() {
-			tokenString, _, err := sealer.Seal("jane", nil, 30*time.Second)
+			tokenString, _, err := sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			jwksServer, jwksCAPool := serveJWKS(sealer)
 			defer jwksServer.Close()
 
-			opener, err := NewOpener(context.Background(), logger, encryptionKeyFile, jwksServer.URL, issuer, audience, jwksCAPool)
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(audience).
+				SetCAPool(jwksCAPool).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = opener.Open(context.Background(), tokenString)
@@ -187,7 +223,7 @@ var _ = Describe("Token", func() {
 
 	Describe("Wrong keys", func() {
 		It("Rejects a token encrypted with the wrong key", func() {
-			tokenString, _, err := sealer.Seal("jane", nil, 30*time.Second)
+			tokenString, _, err := sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create an opener with a different decryption key.
@@ -198,7 +234,15 @@ var _ = Describe("Token", func() {
 			jwksServer, jwksCAPool := serveJWKS(sealer)
 			defer jwksServer.Close()
 
-			opener, err := NewOpener(context.Background(), logger, wrongKeyFile, jwksServer.URL, issuer, audience, jwksCAPool)
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(wrongKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(audience).
+				SetCAPool(jwksCAPool).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = opener.Open(context.Background(), tokenString)
@@ -212,17 +256,31 @@ var _ = Describe("Token", func() {
 			otherSigningKey := filepath.Join(tmpDir, "other-signing.key")
 			generateLeafCert(otherSigningCrt, otherSigningKey, "other-signer", testCA)
 
-			otherSealer, err := NewSealer(logger, otherSigningCrt, otherSigningKey, encryptionCertFile, issuer, audience)
+			otherSealer, err := NewSealer().
+				SetLogger(logger).
+				SetSigningCertFile(otherSigningCrt).
+				SetSigningKeyFile(otherSigningKey).
+				SetEncryptionCertFile(encryptionCertFile).
+				SetIssuer(issuer).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			tokenString, _, err := otherSealer.Seal("jane", nil, 30*time.Second)
+			tokenString, _, err := otherSealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Serve JWKS from the *original* sealer (different signing key).
 			jwksServer, jwksCAPool := serveJWKS(sealer)
 			defer jwksServer.Close()
 
-			opener, err := NewOpener(context.Background(), logger, encryptionKeyFile, jwksServer.URL, issuer, audience, jwksCAPool)
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(audience).
+				SetCAPool(jwksCAPool).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 
 			_, err = opener.Open(context.Background(), tokenString)
@@ -232,7 +290,7 @@ var _ = Describe("Token", func() {
 
 	Describe("JWKS endpoint", func() {
 		It("Returns a valid JWKS with the signing key", func() {
-			set, err := sealer.JWKSet()
+			set, err := sealer.JWKSet(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(set.Len()).To(Equal(1))
 
@@ -254,17 +312,124 @@ var _ = Describe("Token", func() {
 
 	Describe("JWKS URL validation", func() {
 		It("Rejects a non-HTTPS JWKS URL", func() {
-			_, err := NewOpener(
-				context.Background(),
-				logger,
-				encryptionKeyFile,
-				"http://example.com/.well-known/jwks.json",
-				issuer,
-				audience,
-				nil,
-			)
+			_, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL("http://example.com/.well-known/jwks.json").
+				SetIssuer(issuer).
+				SetAudience(audience).
+				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("HTTPS"))
+		})
+	})
+
+	Describe("Audience validation", func() {
+		It("Rejects a token with wrong audience", func() {
+			tokenString, _, err := sealer.Seal(ctx, "jane", "aud-a", nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			jwksServer, jwksCAPool := serveJWKS(sealer)
+			defer jwksServer.Close()
+
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience("aud-b").
+				SetCAPool(jwksCAPool).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = opener.Open(context.Background(), tokenString)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("aud"))
+		})
+
+		It("Accepts a token when audience matches", func() {
+			tokenString, _, err := sealer.Seal(ctx, "jane", "my-service", nil, 30*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			jwksServer, jwksCAPool := serveJWKS(sealer)
+			defer jwksServer.Close()
+
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience("my-service").
+				SetCAPool(jwksCAPool).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			parsed, err := opener.Open(context.Background(), tokenString)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsed.Subject).To(Equal("jane"))
+		})
+
+		It("Accepts a token when opener audience is in multi-value aud claim", func() {
+			// Build a token with multiple audiences by using the JWT builder directly,
+			// since Seal now always sets a single-element aud.
+			now := time.Now()
+			tok, err := jwt.NewBuilder().
+				Issuer(issuer).
+				Audience([]string{"aud-a", "aud-b"}).
+				Subject("jane").
+				JwtID("multi-aud-test-jti").
+				IssuedAt(now).
+				Expiration(now.Add(30 * time.Second)).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Import the signing private key as JWK with kid matching the
+			// sealer's JWKS, so the keyset-based verification succeeds.
+			sigKey := loadTestPrivateKey(signingKeyFile)
+			sigJWK, err := jwk.Import(sigKey)
+			Expect(err).ToNot(HaveOccurred())
+			jwkSet, err := sealer.JWKSet(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			pubKey, ok := jwkSet.Key(0)
+			Expect(ok).To(BeTrue())
+			kid, ok := pubKey.KeyID()
+			Expect(ok).To(BeTrue())
+			Expect(sigJWK.Set(jwk.KeyIDKey, kid)).To(Succeed())
+
+			encCert := loadTestCertificate(encryptionCertFile)
+
+			serialized, err := jwt.NewSerializer().
+				Sign(jwt.WithKey(jwa.RS256(), sigJWK)).
+				Encrypt(
+					jwt.WithKey(jwa.RSA_OAEP_256(), encCert.PublicKey),
+					jwt.WithEncryptOption(jwe.WithContentEncryption(jwa.A256GCM())),
+					jwt.WithEncryptOption(jwe.WithCompress(jwa.Deflate())),
+				).
+				Serialize(tok)
+			Expect(err).ToNot(HaveOccurred())
+
+			jwksServer, jwksCAPool := serveJWKS(sealer)
+			defer jwksServer.Close()
+
+			// Opener configured for "aud-b" should accept this token because
+			// "aud-b" is present in the token's aud array.
+			opener, err := NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience("aud-b").
+				SetCAPool(jwksCAPool).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			parsed, err := opener.Open(context.Background(), string(serialized))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsed.Subject).To(Equal("jane"))
 		})
 	})
 
@@ -279,7 +444,13 @@ var _ = Describe("Token", func() {
 			generateLeafCert(otherCertFile, otherKeyFile, "signer", testCA)
 
 			// Use the cert from one pair and the key from another.
-			_, err := NewSealer(logger, mismatchedCertFile, otherKeyFile, encryptionCertFile, issuer, audience)
+			_, err := NewSealer().
+				SetLogger(logger).
+				SetSigningCertFile(mismatchedCertFile).
+				SetSigningKeyFile(otherKeyFile).
+				SetEncryptionCertFile(encryptionCertFile).
+				SetIssuer(issuer).
+				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("does not match"))
 		})
@@ -287,7 +458,7 @@ var _ = Describe("Token", func() {
 		It("Reloads when the cert file changes", func() {
 			claims := map[string]any{"test": "value"}
 
-			tokenString1, _, err := sealer.Seal("jane", claims, 30*time.Second)
+			tokenString1, _, err := sealer.Seal(ctx, "jane", audience, claims, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Regenerate the cert/key files (simulating cert-manager rotation).
@@ -295,7 +466,7 @@ var _ = Describe("Token", func() {
 			generateLeafCert(signingCertFile, signingKeyFile, "fulfillment-token-signer", testCA)
 
 			// Seal again -- should use the new key.
-			tokenString2, _, err := sealer.Seal("jane", claims, 30*time.Second)
+			tokenString2, _, err := sealer.Seal(ctx, "jane", audience, claims, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			// The two tokens should be different (different keys, different JTI).
@@ -304,7 +475,7 @@ var _ = Describe("Token", func() {
 
 		It("Preserves consistent state when private key reload fails", func() {
 			// Seal with original keys -- should work.
-			_, _, err := sealer.Seal("jane", nil, 30*time.Second)
+			_, _, err := sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Overwrite key file with a key from a different cert pair.
@@ -323,7 +494,7 @@ var _ = Describe("Token", func() {
 			Expect(os.WriteFile(signingCertFile, certPEM, 0o600)).To(Succeed())
 
 			// Seal should fail with mismatch error.
-			_, _, err = sealer.Seal("jane", nil, 30*time.Second)
+			_, _, err = sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("does not match"))
 
@@ -332,12 +503,12 @@ var _ = Describe("Token", func() {
 			generateLeafCert(signingCertFile, signingKeyFile, "fulfillment-token-signer", testCA)
 
 			// Seal should succeed -- struct was not corrupted by the failed reload.
-			_, _, err = sealer.Seal("jane", nil, 30*time.Second)
+			_, _, err = sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
 		It("Reloads when only the key file changes", func() {
-			_, _, err := sealer.Seal("jane", nil, 30*time.Second)
+			_, _, err := sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Record original cert mtime.
@@ -353,15 +524,15 @@ var _ = Describe("Token", func() {
 			Expect(os.Chtimes(signingCertFile, origCertMtime, origCertMtime)).To(Succeed())
 
 			// Seal should use the new key (reload triggered by key mtime).
-			_, _, err = sealer.Seal("jane", nil, 30*time.Second)
+			_, _, err = sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
 		It("Does not reload when neither file has changed", func() {
-			_, _, err := sealer.Seal("jane", nil, 30*time.Second)
+			_, _, err := sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			set1, err := sealer.JWKSet()
+			set1, err := sealer.JWKSet(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			key1, ok := set1.Key(0)
 			Expect(ok).To(BeTrue())
@@ -369,10 +540,10 @@ var _ = Describe("Token", func() {
 			Expect(ok).To(BeTrue())
 
 			// Seal again without touching any files.
-			_, _, err = sealer.Seal("jane", nil, 30*time.Second)
+			_, _, err = sealer.Seal(ctx, "jane", audience, nil, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			set2, err := sealer.JWKSet()
+			set2, err := sealer.JWKSet(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			key2, ok := set2.Key(0)
 			Expect(ok).To(BeTrue())
@@ -398,7 +569,7 @@ func countDots(s string) int {
 // the server along with a CA pool that trusts its certificate.
 func serveJWKS(sealer *Sealer) (*httptest.Server, *x509.CertPool) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		set, err := sealer.JWKSet()
+		set, err := sealer.JWKSet(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -464,4 +635,28 @@ func generateLeafCert(certFile, keyFile, dnsName string, ca *testCAInfo) {
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	err = os.WriteFile(keyFile, keyPEM, 0o600)
 	Expect(err).ToNot(HaveOccurred())
+}
+
+// loadTestPrivateKey reads and parses an RSA private key from a PEM file.
+func loadTestPrivateKey(keyFile string) *rsa.PrivateKey {
+	data, err := os.ReadFile(keyFile)
+	Expect(err).ToNot(HaveOccurred())
+	block, _ := pem.Decode(data)
+	Expect(block).ToNot(BeNil())
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	Expect(err).ToNot(HaveOccurred())
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	Expect(ok).To(BeTrue())
+	return rsaKey
+}
+
+// loadTestCertificate reads and parses an X.509 certificate from a PEM file.
+func loadTestCertificate(certFile string) *x509.Certificate {
+	data, err := os.ReadFile(certFile)
+	Expect(err).ToNot(HaveOccurred())
+	block, _ := pem.Decode(data)
+	Expect(block).ToNot(BeNil())
+	cert, err := x509.ParseCertificate(block.Bytes)
+	Expect(err).ToNot(HaveOccurred())
+	return cert
 }

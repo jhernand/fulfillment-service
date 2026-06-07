@@ -22,21 +22,21 @@ import (
 	. "github.com/onsi/gomega"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
-	"github.com/osac-project/fulfillment-service/internal/token"
+	"github.com/osac-project/fulfillment-service/internal/auth/jwe"
 )
 
-var _ = Describe("SigningKeysServer", func() {
+var _ = Describe("JsonWebKeySetServer", func() {
 	Describe("Build", func() {
 		It("should fail without logger", func() {
-			_, err := NewSigningKeysServer().
-				SetSealer(&token.Sealer{}).
+			_, err := NewJsonWebKeySetServer().
+				SetSealer(&jwe.Sealer{}).
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("logger"))
 		})
 
 		It("should fail without sealer", func() {
-			_, err := NewSigningKeysServer().
+			_, err := NewJsonWebKeySetServer().
 				SetLogger(logger).
 				Build()
 			Expect(err).To(HaveOccurred())
@@ -46,7 +46,7 @@ var _ = Describe("SigningKeysServer", func() {
 
 	Describe("Get", func() {
 		It("should return a valid JWKS with one RSA signing key", func() {
-			tmpDir, err := os.MkdirTemp("", "signing-keys-test-*")
+			tmpDir, err := os.MkdirTemp("", "jwks-test-*")
 			Expect(err).NotTo(HaveOccurred())
 			defer os.RemoveAll(tmpDir)
 
@@ -59,19 +59,22 @@ var _ = Describe("SigningKeysServer", func() {
 			generateSelfSignedCert(encryptionCertFile, encryptionKeyFile, "test-encryption")
 			_ = encryptionKeyFile
 
-			sealer, err := token.NewSealer(
-				logger, signingCertFile, signingKeyFile, encryptionCertFile,
-				"https://test.example.com", []string{"test-audience"},
-			)
+			sealer, err := jwe.NewSealer().
+				SetLogger(logger).
+				SetSigningCertFile(signingCertFile).
+				SetSigningKeyFile(signingKeyFile).
+				SetEncryptionCertFile(encryptionCertFile).
+				SetIssuer("https://test.example.com").
+				Build()
 			Expect(err).NotTo(HaveOccurred())
 
-			server, err := NewSigningKeysServer().
+			server, err := NewJsonWebKeySetServer().
 				SetLogger(logger).
 				SetSealer(sealer).
 				Build()
 			Expect(err).NotTo(HaveOccurred())
 
-			resp, err := server.Get(context.Background(), publicv1.SigningKeysGetRequest_builder{}.Build())
+			resp, err := server.Get(context.Background(), publicv1.JsonWebKeySetGetRequest_builder{}.Build())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.ContentType).To(Equal("application/json"))
 

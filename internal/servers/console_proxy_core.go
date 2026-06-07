@@ -23,7 +23,8 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/console"
 )
 
-// ConsoleProxyCoreBuilder builds a ConsoleProxyCore.
+// ConsoleProxyCoreBuilder contains the data and logic needed to create a console proxy core. Don't create instances
+// of this type directly, use the NewConsoleProxyCore function instead.
 type ConsoleProxyCoreBuilder struct {
 	logger  *slog.Logger
 	opener  *console.TicketOpener
@@ -39,27 +40,32 @@ type ConsoleProxyCore struct {
 	manager *console.Manager
 }
 
-// NewConsoleProxyCore creates a new builder for the console proxy core.
+// NewConsoleProxyCore creates a builder that can then be used to configure and create a new console proxy core.
 func NewConsoleProxyCore() *ConsoleProxyCoreBuilder {
 	return &ConsoleProxyCoreBuilder{}
 }
 
+// SetLogger sets the logger. This is mandatory.
 func (b *ConsoleProxyCoreBuilder) SetLogger(value *slog.Logger) *ConsoleProxyCoreBuilder {
 	b.logger = value
 	return b
 }
 
+// SetOpener sets the ticket opener used to decrypt and verify console tickets. This is mandatory.
 func (b *ConsoleProxyCoreBuilder) SetOpener(value *console.TicketOpener) *ConsoleProxyCoreBuilder {
 	b.opener = value
 	return b
 }
 
+// SetManager sets the console session manager. This is mandatory.
 func (b *ConsoleProxyCoreBuilder) SetManager(value *console.Manager) *ConsoleProxyCoreBuilder {
 	b.manager = value
 	return b
 }
 
+// Build uses the data stored in the builder to create and configure a new console proxy core.
 func (b *ConsoleProxyCoreBuilder) Build() (*ConsoleProxyCore, error) {
+	// Check parameters:
 	if b.logger == nil {
 		return nil, errors.New("logger is mandatory")
 	}
@@ -69,6 +75,8 @@ func (b *ConsoleProxyCoreBuilder) Build() (*ConsoleProxyCore, error) {
 	if b.manager == nil {
 		return nil, errors.New("manager is mandatory")
 	}
+
+	// Create and populate the object:
 	return &ConsoleProxyCore{
 		logger:  b.logger,
 		opener:  b.opener,

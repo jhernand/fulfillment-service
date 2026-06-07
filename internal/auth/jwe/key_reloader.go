@@ -11,9 +11,10 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package token
+package jwe
 
 import (
+	"context"
 	"crypto/rsa"
 	"fmt"
 	"log/slog"
@@ -41,7 +42,7 @@ type certKeyReloader struct {
 }
 
 // ensureLoaded checks the cert and key file mtimes and reloads if changed.
-func (r *certKeyReloader) ensureLoaded() error {
+func (r *certKeyReloader) ensureLoaded(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -67,7 +68,7 @@ func (r *certKeyReloader) ensureLoaded() error {
 	}
 
 	// Phase B: parse everything into local variables.
-	r.logger.Info("Loading certificate",
+	r.logger.InfoContext(ctx, "Loading certificate",
 		slog.String("cert_file", r.certFile),
 		slog.Time("mtime", certInfo.ModTime()),
 	)
@@ -140,7 +141,7 @@ type privateKeyReloader struct {
 }
 
 // ensureLoaded checks the key file's mtime and reloads if changed.
-func (r *privateKeyReloader) ensureLoaded() error {
+func (r *privateKeyReloader) ensureLoaded(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -153,7 +154,7 @@ func (r *privateKeyReloader) ensureLoaded() error {
 		return nil
 	}
 
-	r.logger.Info("Loading private key",
+	r.logger.InfoContext(ctx, "Loading private key",
 		slog.String("key_file", r.keyFile),
 		slog.Time("mtime", info.ModTime()),
 	)

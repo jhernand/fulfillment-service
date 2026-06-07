@@ -225,7 +225,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	if err != nil {
 		return err
 	}
-	err = publicv1.RegisterSigningKeysHandler(ctx, gatewayMux, c.grpcClient)
+	err = publicv1.RegisterJsonWebKeySetHandler(ctx, gatewayMux, c.grpcClient)
 	if err != nil {
 		return err
 	}

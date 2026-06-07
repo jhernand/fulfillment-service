@@ -35,6 +35,7 @@ import (
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 
+	"github.com/osac-project/fulfillment-service/internal/auth/jwe"
 	"github.com/osac-project/fulfillment-service/internal/console"
 	"github.com/osac-project/fulfillment-service/internal/logging"
 	"github.com/osac-project/fulfillment-service/internal/metrics"
@@ -42,7 +43,6 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/recovery"
 	"github.com/osac-project/fulfillment-service/internal/servers"
 	shtdwn "github.com/osac-project/fulfillment-service/internal/shutdown"
-	"github.com/osac-project/fulfillment-service/internal/token"
 )
 
 // Cmd creates and returns the `start console-proxy` command.
@@ -143,15 +143,15 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		slog.String("jwks_url", jwksURL),
 		slog.String("decryption_key", c.args.tokenDecryptionKey),
 	)
-	tokenOpener, err := token.NewOpener(
-		ctx,
-		c.logger,
-		c.args.tokenDecryptionKey,
-		jwksURL,
-		c.args.tokenIssuer,
-		[]string{console.TicketAudience},
-		caPool,
-	)
+	tokenOpener, err := jwe.NewOpener().
+		SetContext(ctx).
+		SetLogger(c.logger).
+		SetDecryptionKeyFile(c.args.tokenDecryptionKey).
+		SetJWKSURL(jwksURL).
+		SetIssuer(c.args.tokenIssuer).
+		SetAudience(console.TicketAudience).
+		SetCAPool(caPool).
+		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create token opener: %w", err)
 	}

@@ -219,7 +219,7 @@ func (c *runnerContext) proxyVNC(
 			return func() { conn.(*net.TCPConn).SetReadDeadline(time.Time{}) }
 		},
 		OnDisconnect: func(msg string) {
-			c.logger.Debug("VNC stream disconnected", "message", msg)
+			c.logger.DebugContext(ctx, "VNC stream disconnected", "message", msg)
 		},
 	})
 	// Viewer TCP is localhost — not a transient failure, exit cleanly.

@@ -11,7 +11,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package token
+package jwe
 
 import (
 	"log/slog"
@@ -21,9 +21,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestToken(t *testing.T) {
+func TestJwe(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Token package")
+	RunSpecs(t, "JWE package")
 }
 
 // Logger used for tests:

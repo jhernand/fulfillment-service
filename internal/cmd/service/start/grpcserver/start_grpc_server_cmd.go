@@ -40,6 +40,7 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
+	"github.com/osac-project/fulfillment-service/internal/auth/jwe"
 	"github.com/osac-project/fulfillment-service/internal/console"
 	"github.com/osac-project/fulfillment-service/internal/database"
 	hubscheme "github.com/osac-project/fulfillment-service/internal/kubernetes/scheme"
@@ -49,7 +50,6 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/recovery"
 	"github.com/osac-project/fulfillment-service/internal/servers"
 	shtdwn "github.com/osac-project/fulfillment-service/internal/shutdown"
-	"github.com/osac-project/fulfillment-service/internal/token"
 	"github.com/osac-project/fulfillment-service/internal/version"
 )
 
@@ -993,14 +993,13 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 
 	// Create the token sealer (sign + encrypt infrastructure):
 	c.logger.InfoContext(ctx, "Creating token sealer")
-	tokenSealer, err := token.NewSealer(
-		c.logger,
-		c.args.tokenSignerCrt,
-		c.args.tokenSignerKey,
-		c.args.tokenEncryptionCrt,
-		c.args.tokenIssuer,
-		[]string{console.TicketAudience},
-	)
+	tokenSealer, err := jwe.NewSealer().
+		SetLogger(c.logger).
+		SetSigningCertFile(c.args.tokenSignerCrt).
+		SetSigningKeyFile(c.args.tokenSignerKey).
+		SetEncryptionCertFile(c.args.tokenEncryptionCrt).
+		SetIssuer(c.args.tokenIssuer).
+		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create token sealer: %w", err)
 	}
@@ -1008,16 +1007,16 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	// Wrap the token sealer for console-specific ticket claim mapping:
 	ticketSealer := console.NewTicketSealer(tokenSealer)
 
-	// Create the signing keys server (serves JWKS at /.well-known/jwks.json):
-	c.logger.InfoContext(ctx, "Creating signing keys server")
-	signingKeysServer, err := servers.NewSigningKeysServer().
+	// Create the JSON Web Key Set server (serves JWKS at /.well-known/jwks.json):
+	c.logger.InfoContext(ctx, "Creating JSON Web Key Set server")
+	jsonWebKeySetServer, err := servers.NewJsonWebKeySetServer().
 		SetLogger(c.logger).
 		SetSealer(tokenSealer).
 		Build()
 	if err != nil {
-		return fmt.Errorf("failed to create signing keys server: %w", err)
+		return fmt.Errorf("failed to create JSON Web Key Set server: %w", err)
 	}
-	publicv1.RegisterSigningKeysServer(grpcServer, signingKeysServer)
+	publicv1.RegisterJsonWebKeySetServer(grpcServer, jsonWebKeySetServer)
 
 	// Build the console target resolver (lookup/policy only):
 	hubLookup := servers.NewPrivateServerHubLookup(privateHubsServer)
@@ -1026,7 +1025,6 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		SetComputeInstanceLookup(servers.NewPrivateServerCILookup(privateComputeInstancesServer)).
 		SetHubLookup(hubLookup).
 		SetHubClientFactory(servers.NewDefaultHubClientFactory(hubScheme)).
-		SetTxManager(txManager).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create console target resolver: %w", err)
@@ -1172,7 +1170,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 
 // publicMethodRegex is regular expression for the methods that are considered public, including the capabilities,
 // JWKS, reflection, and health methods. These will skip authentication and authorization.
-const publicMethodRegex = `^/(osac\.public\.v1\.(Capabilities/|SigningKeys/)|grpc\.(reflection|health)\.).*$`
+const publicMethodRegex = `^/(osac\.public\.v1\.(Capabilities/|JsonWebKeySet/)|grpc\.(reflection|health)\.).*$`
 
 // grpcServerUserAgent is the user agent string for the gRPC server.
 const grpcServerUserAgent = "fulfillment-grpc-server"

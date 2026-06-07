@@ -54,7 +54,8 @@ type CreateSessionResult struct {
 	ExpiresAt time.Time
 }
 
-// SessionServiceBuilder builds a SessionService.
+// SessionServiceBuilder contains the data and logic needed to create a session service. Don't create instances of this
+// type directly, use the NewSessionService function instead.
 type SessionServiceBuilder struct {
 	logger   *slog.Logger
 	resolver TargetResolver
@@ -69,27 +70,32 @@ type SessionService struct {
 	sealer   *TicketSealer
 }
 
-// NewSessionService creates a new builder for the session service.
+// NewSessionService creates a builder that can then be used to configure and create a new session service.
 func NewSessionService() *SessionServiceBuilder {
 	return &SessionServiceBuilder{}
 }
 
+// SetLogger sets the logger. This is mandatory.
 func (b *SessionServiceBuilder) SetLogger(value *slog.Logger) *SessionServiceBuilder {
 	b.logger = value
 	return b
 }
 
+// SetResolver sets the target resolver. This is mandatory.
 func (b *SessionServiceBuilder) SetResolver(value TargetResolver) *SessionServiceBuilder {
 	b.resolver = value
 	return b
 }
 
+// SetSealer sets the ticket sealer. This is mandatory.
 func (b *SessionServiceBuilder) SetSealer(value *TicketSealer) *SessionServiceBuilder {
 	b.sealer = value
 	return b
 }
 
+// Build uses the data stored in the builder to create and configure a new session service.
 func (b *SessionServiceBuilder) Build() (*SessionService, error) {
+	// Check parameters:
 	if b.logger == nil {
 		return nil, errors.New("logger is mandatory")
 	}
@@ -99,6 +105,8 @@ func (b *SessionServiceBuilder) Build() (*SessionService, error) {
 	if b.sealer == nil {
 		return nil, errors.New("sealer is mandatory")
 	}
+
+	// Create and populate the object:
 	return &SessionService{
 		logger:   b.logger,
 		resolver: b.resolver,
@@ -129,7 +137,7 @@ func (s *SessionService) CreateSession(ctx context.Context, req *CreateSessionRe
 		TargetURI:   target.BackendURI,
 		TargetToken: target.BackendToken,
 	}
-	tokenString, expiresAt, err := s.sealer.Seal(ticket, DefaultTicketTTL)
+	tokenString, expiresAt, err := s.sealer.Seal(ctx, ticket, DefaultTicketTTL)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to seal ticket: %v", err)
 	}

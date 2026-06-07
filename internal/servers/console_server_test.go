@@ -46,10 +46,10 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	authpkg "github.com/osac-project/fulfillment-service/internal/auth"
+	"github.com/osac-project/fulfillment-service/internal/auth/jwe"
 	"github.com/osac-project/fulfillment-service/internal/console"
 	"github.com/osac-project/fulfillment-service/internal/database"
 	"github.com/osac-project/fulfillment-service/internal/kubernetes/labels"
-	"github.com/osac-project/fulfillment-service/internal/token"
 )
 
 // mockCIServer implements just the Get method of privatev1.ComputeInstancesServer.
@@ -238,10 +238,13 @@ func createTestSealer() (*console.TicketSealer, string) {
 	generateSelfSignedCert(encryptionCertFile, encryptionKeyFile, "test-encryption")
 	_ = encryptionKeyFile // only the cert is needed by the sealer
 
-	tokenSealer, err := token.NewSealer(
-		logger, signingCertFile, signingKeyFile, encryptionCertFile,
-		"https://fulfillment.test.example.com", []string{console.TicketAudience},
-	)
+	tokenSealer, err := jwe.NewSealer().
+		SetLogger(logger).
+		SetSigningCertFile(signingCertFile).
+		SetSigningKeyFile(signingKeyFile).
+		SetEncryptionCertFile(encryptionCertFile).
+		SetIssuer("https://fulfillment.test.example.com").
+		Build()
 	Expect(err).NotTo(HaveOccurred())
 
 	return console.NewTicketSealer(tokenSealer), tmpDir
@@ -370,7 +373,6 @@ var _ = Describe("Console Server", func() {
 				SetComputeInstanceLookup(NewPrivateServerCILookup(ciServer)).
 				SetHubLookup(NewPrivateServerHubLookup(hubServer)).
 				SetHubClientFactory(newFakeHubClientFactory(fakeK8s)).
-				SetTxManager(&mockTxManager{}).
 				Build()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -405,6 +407,7 @@ var _ = Describe("Console Server", func() {
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{
 				User: "testuser",
 			})
+			ctx = database.TxManagerIntoContext(ctx, &mockTxManager{})
 			resp, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
 				Object: publicv1.ConsoleSession_builder{
 					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
@@ -422,6 +425,7 @@ var _ = Describe("Console Server", func() {
 			buildServer()
 
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{User: "testuser"})
+			ctx = database.TxManagerIntoContext(ctx, &mockTxManager{})
 			_, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
 				Object: publicv1.ConsoleSession_builder{
 					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
@@ -445,6 +449,7 @@ var _ = Describe("Console Server", func() {
 			buildServer()
 
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{User: "testuser"})
+			ctx = database.TxManagerIntoContext(ctx, &mockTxManager{})
 			_, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
 				Object: publicv1.ConsoleSession_builder{
 					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,
@@ -460,6 +465,7 @@ var _ = Describe("Console Server", func() {
 			buildServer()
 
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{User: "testuser"})
+			ctx = database.TxManagerIntoContext(ctx, &mockTxManager{})
 			_, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
 				Object: publicv1.ConsoleSession_builder{
 					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_HOST,
@@ -484,6 +490,7 @@ var _ = Describe("Console Server", func() {
 			buildServer()
 
 			ctx := authpkg.ContextWithSubject(context.Background(), &authpkg.Subject{User: "testuser"})
+			ctx = database.TxManagerIntoContext(ctx, &mockTxManager{})
 			_, err := server.Create(ctx, publicv1.ConsoleSessionsCreateRequest_builder{
 				Object: publicv1.ConsoleSession_builder{
 					ResourceType: publicv1.ConsoleResourceType_CONSOLE_RESOURCE_TYPE_COMPUTE_INSTANCE,

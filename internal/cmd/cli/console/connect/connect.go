@@ -78,7 +78,7 @@ func WithRetry(ctx context.Context, opts Options, handler StreamHandler) error {
 
 		// Check if this is a permanent error (no retry).
 		if IsPermanentError(err) {
-			opts.Logger.Debug("Permanent error, not retrying", "error", err)
+			opts.Logger.DebugContext(ctx, "Permanent error, not retrying", "error", err)
 			return fmt.Errorf("%s", UserFacingError(err))
 		}
 
@@ -86,7 +86,7 @@ func WithRetry(ctx context.Context, opts Options, handler StreamHandler) error {
 		// retry counter -- the server was reachable, this is a new failure
 		// sequence.
 		if errors.Is(err, ErrConnectionLost) {
-			opts.Logger.Debug("Connection lost, resetting retry counter", "error", err)
+			opts.Logger.DebugContext(ctx, "Connection lost, resetting retry counter", "error", err)
 			fmt.Fprintln(spinner.Writer())
 			wasConnected = true
 			consecutiveFailures = 0
@@ -102,7 +102,7 @@ func WithRetry(ctx context.Context, opts Options, handler StreamHandler) error {
 
 		spinner.Start(retryMessage(wasConnected, opts.InstanceID, consecutiveFailures, maxConsecutiveRetries, backoff))
 
-		opts.Logger.Debug("Retrying after transient error",
+		opts.Logger.DebugContext(ctx, "Retrying after transient error",
 			"error", err, "attempt", consecutiveFailures, "backoff", backoff)
 
 		select {
@@ -183,7 +183,7 @@ func connectOnce(ctx context.Context, opts Options, handler StreamHandler) error
 		return err
 	}
 
-	opts.Logger.Debug("Console stream established", "instance", opts.InstanceID)
+	opts.Logger.DebugContext(streamCtx, "Console stream established", "instance", opts.InstanceID)
 
 	if opts.OnConnected != nil {
 		opts.OnConnected(ctx)

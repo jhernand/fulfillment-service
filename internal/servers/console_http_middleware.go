@@ -74,7 +74,7 @@ func ConsolePanicRecovery(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				logger.Error("Console handler panicked",
+				logger.ErrorContext(r.Context(), "Console handler panicked",
 					slog.Any("panic", rec),
 					slog.String("stack", string(debug.Stack())),
 				)
@@ -95,14 +95,14 @@ func ConsoleLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		// Sanitize the path to strip query parameters (may contain token).
 		cleanPath := r.URL.Path
 
-		logger.Info("Console request started",
+		logger.InfoContext(r.Context(), "Console request started",
 			slog.String("method", r.Method),
 			slog.String("path", cleanPath),
 		)
 
 		next.ServeHTTP(w, r)
 
-		logger.Info("Console request completed",
+		logger.InfoContext(r.Context(), "Console request completed",
 			slog.String("method", r.Method),
 			slog.String("path", cleanPath),
 			slog.Duration("duration", time.Since(start)),

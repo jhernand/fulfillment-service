@@ -18,12 +18,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/osac-project/fulfillment-service/internal/token"
+	"github.com/osac-project/fulfillment-service/internal/auth/jwe"
 )
 
 const (
 	// TicketAudience is the JWT audience for console proxy tickets.
-	// Used by the wiring layer when constructing token.Sealer/token.Opener.
+	// Used by the wiring layer when constructing jwe.Sealer/jwe.Opener.
 	TicketAudience = "fulfillment-console-proxy"
 
 	claimClientID    = "client_id"
@@ -51,20 +51,19 @@ type targetClaims struct {
 }
 
 // TicketSealer seals console tickets as nested JWTs (JWE wrapping JWS).
-// It wraps a generic token.Sealer with console-specific claim mapping.
+// It wraps a generic jwe.Sealer with console-specific claim mapping.
 type TicketSealer struct {
-	sealer *token.Sealer
+	sealer *jwe.Sealer
 }
 
 // NewTicketSealer creates a new ticket sealer wrapping a pre-constructed
-// token.Sealer. The caller is responsible for constructing the Sealer with
-// the correct audience (TicketAudience) and key material.
-func NewTicketSealer(sealer *token.Sealer) *TicketSealer {
+// jwe.Sealer. The TicketSealer injects the TicketAudience claim at seal time.
+func NewTicketSealer(sealer *jwe.Sealer) *TicketSealer {
 	return &TicketSealer{sealer: sealer}
 }
 
 // Seal signs and encrypts a console ticket into a nested JWT.
-func (s *TicketSealer) Seal(ticket *Ticket, ttl time.Duration) (string, time.Time, error) {
+func (s *TicketSealer) Seal(ctx context.Context, ticket *Ticket, ttl time.Duration) (string, time.Time, error) {
 	if ticket == nil {
 		return "", time.Time{}, errors.New("ticket must not be nil")
 	}
@@ -76,19 +75,19 @@ func (s *TicketSealer) Seal(ticket *Ticket, ttl time.Duration) (string, time.Tim
 			Token: ticket.TargetToken,
 		},
 	}
-	return s.sealer.Seal(ticket.User, claims, ttl)
+	return s.sealer.Seal(ctx, ticket.User, TicketAudience, claims, ttl)
 }
 
 // TicketOpener decrypts and verifies console tickets from nested JWTs.
-// It wraps a generic token.Opener with console-specific claim extraction.
+// It wraps a generic jwe.Opener with console-specific claim extraction.
 type TicketOpener struct {
-	opener *token.Opener
+	opener *jwe.Opener
 }
 
 // NewTicketOpener creates a new ticket opener wrapping a pre-constructed
-// token.Opener. The caller is responsible for constructing the Opener with
+// jwe.Opener. The caller is responsible for constructing the Opener with
 // the correct audience (TicketAudience), JWKS URL, and key material.
-func NewTicketOpener(opener *token.Opener) *TicketOpener {
+func NewTicketOpener(opener *jwe.Opener) *TicketOpener {
 	return &TicketOpener{opener: opener}
 }
 

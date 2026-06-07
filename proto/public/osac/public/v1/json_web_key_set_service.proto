@@ -18,17 +18,17 @@ package osac.public.v1;
 import "google/api/annotations.proto";
 import "google/api/httpbody.proto";
 
-// Request message for the `Get` method of the `SigningKeys` service.
-message SigningKeysGetRequest {}
+// Request message for the `Get` method of the `JsonWebKeySet` service.
+message JsonWebKeySetGetRequest {}
 
 // Provides the JSON Web Key Set containing the public signing keys used to verify tokens issued by this server.
 // This endpoint does not require authentication.
-service SigningKeys {
+service JsonWebKeySet {
   // Returns the JSON Web Key Set (JWKS) containing the public signing keys.
   //
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-  rpc Get(SigningKeysGetRequest) returns (google.api.HttpBody) {
+  rpc Get(JsonWebKeySetGetRequest) returns (google.api.HttpBody) {
     option (google.api.http) = {get: "/.well-known/jwks.json"};
   }
 }

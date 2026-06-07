@@ -24,45 +24,52 @@ import (
 	"google.golang.org/grpc/status"
 
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
-	"github.com/osac-project/fulfillment-service/internal/token"
+	"github.com/osac-project/fulfillment-service/internal/auth/jwe"
 )
 
-// SigningKeysServerBuilder builds a SigningKeysServer.
-type SigningKeysServerBuilder struct {
+// JsonWebKeySetServerBuilder contains the data and logic needed to create a JSON Web Key Set server. Don't create
+// instances of this type directly, use the NewJsonWebKeySetServer function instead.
+type JsonWebKeySetServerBuilder struct {
 	logger *slog.Logger
-	sealer *token.Sealer
+	sealer *jwe.Sealer
 }
 
-// signingKeysServer implements the SigningKeys gRPC service.
-type signingKeysServer struct {
-	publicv1.UnimplementedSigningKeysServer
+// jsonWebKeySetServer implements the JsonWebKeySet gRPC service.
+type jsonWebKeySetServer struct {
+	publicv1.UnimplementedJsonWebKeySetServer
 	logger *slog.Logger
-	sealer *token.Sealer
+	sealer *jwe.Sealer
 }
 
-// NewSigningKeysServer creates a new builder for the signing keys server.
-func NewSigningKeysServer() *SigningKeysServerBuilder {
-	return &SigningKeysServerBuilder{}
+// NewJsonWebKeySetServer creates a builder that can then be used to configure and create a new JSON Web Key Set server.
+func NewJsonWebKeySetServer() *JsonWebKeySetServerBuilder {
+	return &JsonWebKeySetServerBuilder{}
 }
 
-func (b *SigningKeysServerBuilder) SetLogger(value *slog.Logger) *SigningKeysServerBuilder {
+// SetLogger sets the logger. This is mandatory.
+func (b *JsonWebKeySetServerBuilder) SetLogger(value *slog.Logger) *JsonWebKeySetServerBuilder {
 	b.logger = value
 	return b
 }
 
-func (b *SigningKeysServerBuilder) SetSealer(value *token.Sealer) *SigningKeysServerBuilder {
+// SetSealer sets the token sealer used to provide the JWKS. This is mandatory.
+func (b *JsonWebKeySetServerBuilder) SetSealer(value *jwe.Sealer) *JsonWebKeySetServerBuilder {
 	b.sealer = value
 	return b
 }
 
-func (b *SigningKeysServerBuilder) Build() (publicv1.SigningKeysServer, error) {
+// Build uses the data stored in the builder to create and configure a new JSON Web Key Set server.
+func (b *JsonWebKeySetServerBuilder) Build() (publicv1.JsonWebKeySetServer, error) {
+	// Check parameters:
 	if b.logger == nil {
 		return nil, errors.New("logger is mandatory")
 	}
 	if b.sealer == nil {
 		return nil, errors.New("sealer is mandatory")
 	}
-	return &signingKeysServer{
+
+	// Create and populate the object:
+	return &jsonWebKeySetServer{
 		logger: b.logger,
 		sealer: b.sealer,
 	}, nil
@@ -70,11 +77,11 @@ func (b *SigningKeysServerBuilder) Build() (publicv1.SigningKeysServer, error) {
 
 // Get returns the JSON Web Key Set containing the public signing keys
 // used to verify tokens issued by this server.
-func (s *signingKeysServer) Get(
+func (s *jsonWebKeySetServer) Get(
 	ctx context.Context,
-	req *publicv1.SigningKeysGetRequest,
+	req *publicv1.JsonWebKeySetGetRequest,
 ) (*httpbody.HttpBody, error) {
-	set, err := s.sealer.JWKSet()
+	set, err := s.sealer.JWKSet(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to build JWKS", slog.String("error", err.Error()))
 		return nil, status.Errorf(codes.Internal, "failed to build JWKS")

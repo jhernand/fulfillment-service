@@ -15,7 +15,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             (unknown)
-// source: osac/public/v1/signing_keys_service.proto
+// source: osac/public/v1/json_web_key_set_service.proto
 
 package publicv1
 
@@ -33,117 +33,117 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SigningKeys_Get_FullMethodName = "/osac.public.v1.SigningKeys/Get"
+	JsonWebKeySet_Get_FullMethodName = "/osac.public.v1.JsonWebKeySet/Get"
 )
 
-// SigningKeysClient is the client API for SigningKeys service.
+// JsonWebKeySetClient is the client API for JsonWebKeySet service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // Provides the JSON Web Key Set containing the public signing keys used to verify tokens issued by this server.
 // This endpoint does not require authentication.
-type SigningKeysClient interface {
+type JsonWebKeySetClient interface {
 	// Returns the JSON Web Key Set (JWKS) containing the public signing keys.
 	//
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	Get(ctx context.Context, in *SigningKeysGetRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error)
+	Get(ctx context.Context, in *JsonWebKeySetGetRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error)
 }
 
-type signingKeysClient struct {
+type jsonWebKeySetClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewSigningKeysClient(cc grpc.ClientConnInterface) SigningKeysClient {
-	return &signingKeysClient{cc}
+func NewJsonWebKeySetClient(cc grpc.ClientConnInterface) JsonWebKeySetClient {
+	return &jsonWebKeySetClient{cc}
 }
 
-func (c *signingKeysClient) Get(ctx context.Context, in *SigningKeysGetRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error) {
+func (c *jsonWebKeySetClient) Get(ctx context.Context, in *JsonWebKeySetGetRequest, opts ...grpc.CallOption) (*httpbody.HttpBody, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(httpbody.HttpBody)
-	err := c.cc.Invoke(ctx, SigningKeys_Get_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, JsonWebKeySet_Get_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// SigningKeysServer is the server API for SigningKeys service.
-// All implementations must embed UnimplementedSigningKeysServer
+// JsonWebKeySetServer is the server API for JsonWebKeySet service.
+// All implementations must embed UnimplementedJsonWebKeySetServer
 // for forward compatibility.
 //
 // Provides the JSON Web Key Set containing the public signing keys used to verify tokens issued by this server.
 // This endpoint does not require authentication.
-type SigningKeysServer interface {
+type JsonWebKeySetServer interface {
 	// Returns the JSON Web Key Set (JWKS) containing the public signing keys.
 	//
 	// buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
 	// buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
-	Get(context.Context, *SigningKeysGetRequest) (*httpbody.HttpBody, error)
-	mustEmbedUnimplementedSigningKeysServer()
+	Get(context.Context, *JsonWebKeySetGetRequest) (*httpbody.HttpBody, error)
+	mustEmbedUnimplementedJsonWebKeySetServer()
 }
 
-// UnimplementedSigningKeysServer must be embedded to have
+// UnimplementedJsonWebKeySetServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedSigningKeysServer struct{}
+type UnimplementedJsonWebKeySetServer struct{}
 
-func (UnimplementedSigningKeysServer) Get(context.Context, *SigningKeysGetRequest) (*httpbody.HttpBody, error) {
+func (UnimplementedJsonWebKeySetServer) Get(context.Context, *JsonWebKeySetGetRequest) (*httpbody.HttpBody, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
-func (UnimplementedSigningKeysServer) mustEmbedUnimplementedSigningKeysServer() {}
-func (UnimplementedSigningKeysServer) testEmbeddedByValue()                     {}
+func (UnimplementedJsonWebKeySetServer) mustEmbedUnimplementedJsonWebKeySetServer() {}
+func (UnimplementedJsonWebKeySetServer) testEmbeddedByValue()                       {}
 
-// UnsafeSigningKeysServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to SigningKeysServer will
+// UnsafeJsonWebKeySetServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to JsonWebKeySetServer will
 // result in compilation errors.
-type UnsafeSigningKeysServer interface {
-	mustEmbedUnimplementedSigningKeysServer()
+type UnsafeJsonWebKeySetServer interface {
+	mustEmbedUnimplementedJsonWebKeySetServer()
 }
 
-func RegisterSigningKeysServer(s grpc.ServiceRegistrar, srv SigningKeysServer) {
-	// If the following call pancis, it indicates UnimplementedSigningKeysServer was
+func RegisterJsonWebKeySetServer(s grpc.ServiceRegistrar, srv JsonWebKeySetServer) {
+	// If the following call pancis, it indicates UnimplementedJsonWebKeySetServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&SigningKeys_ServiceDesc, srv)
+	s.RegisterService(&JsonWebKeySet_ServiceDesc, srv)
 }
 
-func _SigningKeys_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SigningKeysGetRequest)
+func _JsonWebKeySet_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonWebKeySetGetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SigningKeysServer).Get(ctx, in)
+		return srv.(JsonWebKeySetServer).Get(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SigningKeys_Get_FullMethodName,
+		FullMethod: JsonWebKeySet_Get_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SigningKeysServer).Get(ctx, req.(*SigningKeysGetRequest))
+		return srv.(JsonWebKeySetServer).Get(ctx, req.(*JsonWebKeySetGetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// SigningKeys_ServiceDesc is the grpc.ServiceDesc for SigningKeys service.
+// JsonWebKeySet_ServiceDesc is the grpc.ServiceDesc for JsonWebKeySet service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var SigningKeys_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "osac.public.v1.SigningKeys",
-	HandlerType: (*SigningKeysServer)(nil),
+var JsonWebKeySet_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "osac.public.v1.JsonWebKeySet",
+	HandlerType: (*JsonWebKeySetServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "Get",
-			Handler:    _SigningKeys_Get_Handler,
+			Handler:    _JsonWebKeySet_Get_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "osac/public/v1/signing_keys_service.proto",
+	Metadata: "osac/public/v1/json_web_key_set_service.proto",
 }

@@ -31,22 +31,24 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/osac-project/fulfillment-service/internal/token"
+	"github.com/osac-project/fulfillment-service/internal/auth/jwe"
 )
 
 var _ = Describe("Ticket", func() {
 	var (
+		ctx                context.Context
 		tmpDir             string
 		signingCertFile    string
 		signingKeyFile     string
 		encryptionCertFile string
 		encryptionKeyFile  string
-		tokenSealer        *token.Sealer
+		tokenSealer        *jwe.Sealer
 		sealer             *TicketSealer
 		issuer             string
 	)
 
 	BeforeEach(func() {
+		ctx = context.Background()
 		var err error
 		tmpDir, err = os.MkdirTemp("", "ticket-test-*")
 		Expect(err).ToNot(HaveOccurred())
@@ -61,7 +63,13 @@ var _ = Describe("Ticket", func() {
 		generateTicketLeafCert(encryptionCertFile, encryptionKeyFile, "fulfillment-ticket-encryption", ca)
 
 		issuer = "https://fulfillment.test.example.com"
-		tokenSealer, err = token.NewSealer(logger, signingCertFile, signingKeyFile, encryptionCertFile, issuer, []string{TicketAudience})
+		tokenSealer, err = jwe.NewSealer().
+			SetLogger(logger).
+			SetSigningCertFile(signingCertFile).
+			SetSigningKeyFile(signingKeyFile).
+			SetEncryptionCertFile(encryptionCertFile).
+			SetIssuer(issuer).
+			Build()
 		Expect(err).ToNot(HaveOccurred())
 		sealer = NewTicketSealer(tokenSealer)
 	})
@@ -80,7 +88,7 @@ var _ = Describe("Ticket", func() {
 				TargetToken: "test-bearer-token",
 			}
 
-			tokenString, expiresAt, err := sealer.Seal(ticket, 30*time.Second)
+			tokenString, expiresAt, err := sealer.Seal(ctx, ticket, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(tokenString).ToNot(BeEmpty())
 			Expect(expiresAt).To(BeTemporally("~", time.Now().Add(30*time.Second), 2*time.Second))
@@ -89,15 +97,15 @@ var _ = Describe("Ticket", func() {
 			jwksServer, jwksCAPool := serveTicketJWKS(tokenSealer)
 			defer jwksServer.Close()
 
-			tokenOpener, err := token.NewOpener(
-				context.Background(),
-				logger,
-				encryptionKeyFile,
-				jwksServer.URL,
-				issuer,
-				[]string{TicketAudience},
-				jwksCAPool,
-			)
+			tokenOpener, err := jwe.NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(TicketAudience).
+				SetCAPool(jwksCAPool).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 			opener := NewTicketOpener(tokenOpener)
 
@@ -118,13 +126,21 @@ var _ = Describe("Ticket", func() {
 				TargetURI:   "wss://hub:6443/apis/console.osac.openshift.io/v1alpha1/namespaces/ns/computeinstances/vm2/console",
 			}
 
-			tokenString, _, err := sealer.Seal(ticket, 30*time.Second)
+			tokenString, _, err := sealer.Seal(ctx, ticket, 30*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			jwksServer, jwksCAPool := serveTicketJWKS(tokenSealer)
 			defer jwksServer.Close()
 
-			tokenOpener, err := token.NewOpener(context.Background(), logger, encryptionKeyFile, jwksServer.URL, issuer, []string{TicketAudience}, jwksCAPool)
+			tokenOpener, err := jwe.NewOpener().
+				SetContext(context.Background()).
+				SetLogger(logger).
+				SetDecryptionKeyFile(encryptionKeyFile).
+				SetJWKSURL(jwksServer.URL).
+				SetIssuer(issuer).
+				SetAudience(TicketAudience).
+				SetCAPool(jwksCAPool).
+				Build()
 			Expect(err).ToNot(HaveOccurred())
 			opener := NewTicketOpener(tokenOpener)
 
@@ -142,9 +158,9 @@ var _ = Describe("Ticket", func() {
 
 // serveTicketJWKS starts a TLS test server serving the token sealer's JWKS
 // and returns the server along with a CA pool that trusts its certificate.
-func serveTicketJWKS(sealer *token.Sealer) (*httptest.Server, *x509.CertPool) {
+func serveTicketJWKS(sealer *jwe.Sealer) (*httptest.Server, *x509.CertPool) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		set, err := sealer.JWKSet()
+		set, err := sealer.JWKSet(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
