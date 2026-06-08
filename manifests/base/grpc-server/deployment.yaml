@@ -46,7 +46,6 @@ spec:
             path: tls.crt
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
