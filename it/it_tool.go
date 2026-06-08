@@ -1880,7 +1880,8 @@ func (t *Tool) KeycloakAdminRequest(ctx context.Context, method, path string, in
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				RootCAs: t.caPool,
+				RootCAs:    t.caPool,
+				MinVersion: tls.VersionTLS12,
 			},
 		},
 	}

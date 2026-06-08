@@ -72,7 +72,7 @@ func waitForOrgSynced(ctx context.Context, client privatev1.OrganizationsClient,
 
 func verifyOrgInKeycloak(ctx context.Context, name string) {
 	code, body, err := tool.KeycloakAdminRequest(ctx, http.MethodGet,
-		fmt.Sprintf("/organizations?search=%s", name), nil)
+		fmt.Sprintf("/organizations?exact=true&search=%s", name), nil)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(code).To(Equal(http.StatusOK))
 	var kcOrgs []map[string]any
@@ -84,7 +84,7 @@ func verifyOrgRemovedFromKeycloak(ctx context.Context, name string) {
 	Eventually(
 		func(g Gomega) {
 			code, body, err := tool.KeycloakAdminRequest(ctx, http.MethodGet,
-				fmt.Sprintf("/organizations?search=%s", name), nil)
+				fmt.Sprintf("/organizations?exact=true&search=%s", name), nil)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(code).To(Equal(http.StatusOK))
 			var kcOrgs []map[string]any
