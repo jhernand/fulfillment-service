@@ -95,7 +95,7 @@ spec:
         - --token-signer-crt=/etc/fulfillment-token-signer/tls.crt
         - --token-signer-key=/etc/fulfillment-token-signer/tls.key
         - --token-encryption-crt=/etc/fulfillment-token-encryption/tls.crt
-        - --token-issuer=https://fulfillment-api.osac.svc.cluster.local:8000
+        - --token-issuer=https://fulfillment-api:8000
         ports:
         - name: grpc
           containerPort: 8000

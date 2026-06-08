@@ -67,7 +67,7 @@ spec:
         - console-proxy
         - --log-level=info
         - --ca-file=/etc/fulfillment-console-proxy/tls/cas
-        - --token-issuer=https://fulfillment-api.osac.svc.cluster.local:8000
+        - --token-issuer=https://fulfillment-api:8000
         - --token-decryption-key=/etc/fulfillment-token-encryption/tls.key
         - --grpc-listener-address=0.0.0.0:8000
         - --grpc-listener-tls-crt=/etc/fulfillment-console-proxy/tls/tls.crt
@@ -75,7 +75,7 @@ spec:
         - --console-listener-address=0.0.0.0:8090
         - --console-listener-tls-crt=/etc/fulfillment-console-proxy/tls/tls.crt
         - --console-listener-tls-key=/etc/fulfillment-console-proxy/tls/tls.key
-        - --console-cors-allowed-origins=https://fulfillment-api.osac.svc.cluster.local
+        - --console-cors-allowed-origins=https://fulfillment-api
         - --metrics-listener-address=0.0.0.0:8002
         ports:
         - name: grpc
