@@ -19,6 +19,7 @@ To work with this project you will need the following tools:
 - [curl](https://curl.se) - Used to test the REST API from the CLI.
 - [jq](https://jqlang.org) - Used by some of the commands in this document.
 - [kind](https://kind.sigs.k8s.io) - Used to create Kubernetes clusters for integration tests.
+- [helm](https://helm.sh/) - Used by default to deploy the service during integration tests.
 
 ## Building the binaries
 
