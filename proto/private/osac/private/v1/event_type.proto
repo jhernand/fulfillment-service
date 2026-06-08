@@ -23,6 +23,7 @@ import "osac/private/v1/compute_instance_template_type.proto";
 import "osac/private/v1/compute_instance_type.proto";
 import "osac/private/v1/host_type_type.proto";
 import "osac/private/v1/hub_type.proto";
+import "osac/private/v1/instance_type_type.proto";
 import "osac/private/v1/network_class_type.proto";
 import "osac/private/v1/organization_type.proto";
 import "osac/private/v1/project_type.proto";
@@ -66,6 +67,7 @@ message Event {
     ComputeInstanceCatalogItem compute_instance_catalog_item = 23;
     Project project = 24;
     PublicIPAttachment public_ip_attachment = 25;
+    InstanceType instance_type = 26;
   }
 }
 
