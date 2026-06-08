@@ -1850,6 +1850,81 @@ func (t *Tool) makeKeycloakTokenSource(ctx context.Context, username, password s
 	return
 }
 
+// KeycloakAdminRequest makes an authenticated request to the Keycloak admin API for the 'osac' realm.
+// The path is relative to /admin/realms/osac (e.g., "/organizations", "/users/{id}").
+func (t *Tool) KeycloakAdminRequest(ctx context.Context, method, path string, input any) (
+	code int, output []byte, err error,
+) {
+	store, err := auth.NewMemoryTokenStore().
+		SetLogger(t.logger).
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create Keycloak admin token store: %w", err)
+		return
+	}
+	tokenSource, err := oauth.NewTokenSource().
+		SetLogger(t.logger).
+		SetStore(store).
+		SetCaPool(t.caPool).
+		SetIssuer(fmt.Sprintf("https://%s/realms/master", keycloakAddr)).
+		SetFlow(oauth.PasswordFlow).
+		SetClientId("admin-cli").
+		SetUsername("admin").
+		SetPassword(t.secret).
+		SetScopes("openid").
+		Build()
+	if err != nil {
+		err = fmt.Errorf("failed to create Keycloak admin token source: %w", err)
+		return
+	}
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs:    t.caPool,
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
+	var body io.Reader
+	if input != nil {
+		var data []byte
+		data, err = json.Marshal(input)
+		if err != nil {
+			err = fmt.Errorf("failed to marshal request body: %w", err)
+			return
+		}
+		body = bytes.NewReader(data)
+	}
+	url := fmt.Sprintf("https://%s/admin/realms/osac%s", keycloakAddr, path)
+	request, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		err = fmt.Errorf("failed to create request: %w", err)
+		return
+	}
+	if input != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	token, err := tokenSource.Token(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to get token: %w", err)
+		return
+	}
+	request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.Access))
+	response, err := httpClient.Do(request)
+	if err != nil {
+		err = fmt.Errorf("failed to send request: %w", err)
+		return
+	}
+	defer response.Body.Close()
+	output, err = io.ReadAll(response.Body)
+	if err != nil {
+		err = fmt.Errorf("failed to read response body: %w", err)
+		return
+	}
+	code = response.StatusCode
+	return
+}
+
 // makeGrpcConn creates a gRPC connection that automatically adds the token to the request.
 func (t *Tool) makeGrpcConn(addr string, tokenSource auth.TokenSource) (result *grpc.ClientConn, err error) {
 	userAgent := fmt.Sprintf("%s/%s", userAgent, version.Get())
