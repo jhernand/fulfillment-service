@@ -117,6 +117,14 @@ data:
                       max_age: "86400"
                   routes:
 
+                  # JWKS endpoint for token verification. Public, unauthenticated.
+                  - name: jwks
+                    match:
+                      path: /.well-known/jwks.json
+                    route:
+                      cluster: rest-gateway
+                      timeout: 10s
+
                   # This route is for the WebSocket console proxy. Console sessions are long-lived
                   # and require HTTP/1.1 for the WebSocket upgrade. This route must be matched
                   # before the rest-gateway route which catches all /api/... paths. The ticket
@@ -247,6 +255,14 @@ data:
                       allow_credentials: true
                       max_age: "86400"
                   routes:
+
+                  # JWKS endpoint for token verification. Public, unauthenticated.
+                  - name: jwks
+                    match:
+                      path: /.well-known/jwks.json
+                    route:
+                      cluster: rest-gateway
+                      timeout: 10s
 
                   # This route is for the REST gateway.
                   - name: rest-gateway

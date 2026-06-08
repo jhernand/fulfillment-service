@@ -123,6 +123,14 @@ static_resources:
                   timeout: 0s
                   idle_timeout: 1800s
 
+              # JWKS endpoint for token verification. Public, unauthenticated.
+              - name: jwks
+                match:
+                  path: /.well-known/jwks.json
+                route:
+                  cluster: rest-gateway
+                  timeout: 10s
+
               # This route is for the REST gateway. The public API endpoints use path prefixes
               # like /api/fulfillment/ and /api/events/.
               - name: rest-gateway
@@ -229,6 +237,14 @@ static_resources:
                   allow_credentials: true
                   max_age: "86400"
               routes:
+
+              # JWKS endpoint for token verification. Public, unauthenticated.
+              - name: jwks
+                match:
+                  path: /.well-known/jwks.json
+                route:
+                  cluster: rest-gateway
+                  timeout: 10s
 
               # This route is for the REST gateway.
               - name: rest-gateway
