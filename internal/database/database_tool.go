@@ -461,12 +461,16 @@ func (t *tool) CheckSchema(ctx context.Context) error {
 	}
 	defer pool.Close()
 
-	// Get the list of object and archive tables:
+	// Get the list of object, archive, and active tables:
 	objectTables, err := t.listObjectTables(ctx, pool)
 	if err != nil {
 		return err
 	}
 	archiveTables, err := t.listArchiveTables(ctx, pool)
+	if err != nil {
+		return err
+	}
+	activeTables, err := t.listActiveTables(ctx, pool)
 	if err != nil {
 		return err
 	}
@@ -478,6 +482,9 @@ func (t *tool) CheckSchema(ctx context.Context) error {
 	}
 	for _, table := range archiveTables {
 		issues += t.checkArchiveTable(ctx, pool, table)
+	}
+	for _, table := range activeTables {
+		issues += t.checkActiveTable(ctx, pool, table)
 	}
 	if issues > 0 {
 		return fmt.Errorf("found %d issues in the database schema", issues)
@@ -502,6 +509,7 @@ func (t *tool) listObjectTables(ctx context.Context, pool *pgxpool.Pool) (result
 			n.nspname = 'public' and
 			c.relkind = 'r' and
 			c.relname not like 'archived_%' and
+			c.relname not like 'active_%' and
 			c.relname not in ('notifications', 'schema_migrations')
 		order by
 			c.relname
@@ -583,6 +591,7 @@ func (t *tool) checkObjectTable(ctx context.Context, pool *pgxpool.Pool, table s
 	issues += t.checkPrimaryKey(ctx, pool, table)
 	issues += t.checkTenantForeignKey(ctx, pool, table)
 	issues += t.checkTableExists(ctx, pool, "archived_"+table)
+	issues += t.checkTableExists(ctx, pool, "active_"+table)
 	return issues
 }
 
@@ -593,6 +602,124 @@ func (t *tool) checkArchiveTable(ctx context.Context, pool *pgxpool.Pool, table 
 	issues += t.checkColumns(ctx, pool, table, toolArchivedColumns)
 	issues += t.checkTableExists(ctx, pool, strings.TrimPrefix(table, "archived_"))
 	return issues
+}
+
+// listActiveTables returns the sorted list of active table names from the public schema.
+func (t *tool) listActiveTables(ctx context.Context, pool *pgxpool.Pool) (result []string, err error) {
+	rows, err := pool.Query(
+		ctx,
+		`
+		select
+			c.relname
+		from
+			pg_catalog.pg_class c
+		join
+			pg_catalog.pg_namespace n on n.oid = c.relnamespace
+		where
+			n.nspname = 'public' and
+			c.relkind = 'r' and
+			c.relname like 'active_%'
+		order by
+			c.relname
+		`,
+	)
+	if err != nil {
+		err = fmt.Errorf("failed to get list of active tables: %w", err)
+		return
+	}
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			err = fmt.Errorf("failed to scan active table name: %w", err)
+			return
+		}
+		tables = append(tables, name)
+	}
+	err = rows.Err()
+	if err != nil {
+		err = fmt.Errorf("failed to get list of active tables: %w", err)
+		return
+	}
+	result = tables
+	return
+}
+
+// checkActiveTable performs all consistency checks for a single active table: verifies that it has the expected column
+// with the correct type, a primary key on 'id', a foreign key to the corresponding object table, and that the object
+// table exists. Returns the number of issues found.
+func (t *tool) checkActiveTable(ctx context.Context, pool *pgxpool.Pool, table string) int {
+	issues := 0
+	objectTable := strings.TrimPrefix(table, "active_")
+	issues += t.checkColumns(ctx, pool, table, toolActiveColumns)
+	issues += t.checkPrimaryKey(ctx, pool, table)
+	issues += t.checkActiveForeignKey(ctx, pool, table, objectTable)
+	issues += t.checkTableExists(ctx, pool, objectTable)
+	return issues
+}
+
+// checkActiveForeignKey verifies that the given active table has a foreign key constraint on the 'id' column
+// referencing the 'id' column of the corresponding object table. Returns the number of issues found.
+func (t *tool) checkActiveForeignKey(ctx context.Context, pool *pgxpool.Pool, activeTable,
+	objectTable string) int {
+	constraint := activeTable + "_fk"
+	var count int
+	row := pool.QueryRow(
+		ctx,
+		`
+		select
+			count(*)
+		from
+			pg_catalog.pg_constraint con
+		join
+			pg_catalog.pg_class c on c.oid = con.conrelid
+		join
+			pg_catalog.pg_namespace n on n.oid = c.relnamespace
+		join
+			pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum = any(con.conkey)
+		join
+			pg_catalog.pg_class fc on fc.oid = con.confrelid
+		join
+			pg_catalog.pg_namespace fn on fn.oid = fc.relnamespace
+		join
+			pg_catalog.pg_attribute fa on fa.attrelid = fc.oid and fa.attnum = any(con.confkey)
+		where
+			n.nspname = 'public' and
+			c.relname = $1 and
+			con.conname = $2 and
+			con.contype = 'f' and
+			a.attname = 'id' and
+			fn.nspname = 'public' and
+			fc.relname = $3 and
+			fa.attname = 'id'`,
+		activeTable,
+		constraint,
+		objectTable,
+	)
+	err := row.Scan(&count)
+	if err != nil {
+		t.logger.ErrorContext(
+			ctx,
+			"Failed to check active table foreign key",
+			slog.String("active_table", activeTable),
+			slog.String("object_table", objectTable),
+			slog.Any("error", err),
+		)
+		return 1
+	}
+	if count != 1 {
+		t.logger.ErrorContext(
+			ctx,
+			"Active table is missing the foreign key constraint to its object table",
+			slog.String("active_table", activeTable),
+			slog.String("object_table", objectTable),
+			slog.String("constraint", constraint),
+		)
+		return 1
+	}
+	return 0
 }
 
 // checkColumns verifies that the given table contains all the columns specified in the expected map with the correct
@@ -867,6 +994,12 @@ var toolObjectColumns = map[string]string{
 	"name":               "text",
 	"tenant":             "text",
 	"version":            "integer",
+}
+
+// toolActiveColumns maps each column name that the DAO expects in every active object table to its expected
+// PostgreSQL full type, as reported by 'pg_catalog.format_type'.
+var toolActiveColumns = map[string]string{
+	"id": "text",
 }
 
 // toolArchivedColumns maps each column name that the DAO expects in every archived object table to its expected
