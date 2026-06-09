@@ -37,5 +37,5 @@ images:
   newName: ghcr.io/osac-project/fulfillment-service
   newTag: main
 - name: postgres
-  newName: quay.io/sclorg/postgresql-15-c9s
-  newTag: latest
+  newName: quay.io/sclorg/postgresql-18-c10s
+  digest: sha256:6be2c9d855f06fb665257a6b0911676a38d740be7022cc61acee1c99a832b1b2

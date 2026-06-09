@@ -59,7 +59,7 @@ To quickly run a local postgresql database in a container, run the following com
 ```
 podman run -d --name postgresql_database \
   -e POSTGRESQL_USER=user -e POSTGRESQL_PASSWORD=pass -e POSTGRESQL_DATABASE=db \
-  -p 127.0.0.1:5432:5432 quay.io/sclorg/postgresql-15-c9s:latest
+  -p 127.0.0.1:5432:5432 quay.io/sclorg/postgresql-18-c10s:latest
 ```
 
 Done!

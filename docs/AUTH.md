@@ -124,7 +124,7 @@ helm install keycloak oci://ghcr.io/osac/charts/keycloak \
 | `certs.issuerRef.kind` | The kind of cert-manager issuer (`ClusterIssuer` or `Issuer`) | No | `ClusterIssuer` |
 | `certs.issuerRef.name` | The name of the cert-manager issuer for TLS certificates | **Yes** | None |
 | `images.keycloak` | The Keycloak container image | No | `quay.io/keycloak/keycloak:26.3` |
-| `images.postgres` | The PostgreSQL container image | No | `quay.io/sclorg/postgresql-15-c9s:latest` |
+| `images.postgres` | The PostgreSQL container image | No | `quay.io/sclorg/postgresql-18-c10s:latest` |
 
 ### Important Notes
 

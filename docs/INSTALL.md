@@ -3,7 +3,7 @@
 This document describes how to install the service on OpenShift. It uses the Keycloak operator for
 identity management and presents three options for the PostgreSQL database: CloudNativePG (CNPG),
 the Crunchy PostgreSQL operator (PGO), and the Zalando PostgreSQL operator. These are just
-suggestions. The service will work with any PostgreSQL 15+ database as long as the connection
+suggestions. The service will work with any PostgreSQL 18+ database as long as the connection
 details are provided correctly. Similarly, the service requires Keycloak specifically, but it will
 work with any Keycloak installation regardless of how it was deployed - whether via the operator,
 manually, or by other means - as long as it is correctly configured with the required realm,
@@ -192,7 +192,7 @@ on OpenShift.
 
 ## Install the PostgreSQL operator
 
-The service requires a PostgreSQL 15+ database. This guide presents three options for deploying
+The service requires a PostgreSQL 18+ database. This guide presents three options for deploying
 PostgreSQL on Kubernetes: CloudNativePG (CNPG), the Crunchy PostgreSQL operator (PGO), and the
 Zalando PostgreSQL operator. Choose one of the options below and follow the corresponding
 instructions. The rest of this guide will note where commands differ depending on which operator
@@ -343,10 +343,10 @@ helm upgrade pgo oci://registry.developers.crunchydata.com/crunchydata/pgo \
 --wait
 ```
 
-PGO creates databases owned by the `postgres` superuser. In PostgreSQL 15 the default privileges on
-the `public` schema were tightened, so application users cannot create tables unless they own the
-schema. To fix this, create a ConfigMap with initialization SQL that transfers schema ownership to
-each application user. PGO will run this SQL automatically as part of cluster creation:
+PGO creates databases owned by the `postgres` superuser. Beginning with PostgreSQL 15, the default
+privileges on the `public` schema were tightened, so application users cannot create tables unless
+they own the schema. To fix this, create a ConfigMap with initialization SQL that transfers schema
+ownership to each application user. PGO will run this SQL automatically as part of cluster creation:
 
 ```shell
 oc create configmap -n postgres osac-init-sql --from-literal=init.sql='
@@ -414,7 +414,7 @@ metadata:
   namespace: postgres
   name: osac
 spec:
-  postgresVersion: 15
+  postgresVersion: 18
   customTLSSecret:
     name: osac-server-tls
   customReplicationTLSSecret:
@@ -549,7 +549,7 @@ spec:
   volume:
     size: 10Gi
   postgresql:
-    version: "15"
+    version: "18"
   users:
     keycloak: []
     service: []
