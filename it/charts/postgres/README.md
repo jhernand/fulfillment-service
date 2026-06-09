@@ -20,7 +20,7 @@ The following table lists the configurable parameters of the PostgreSQL chart:
 | `certs.issuerRef.kind`     | The kind of cert-manager issuer (`ClusterIssuer` or `Issuer`) | No       | `ClusterIssuer`                              |
 | `certs.issuerRef.name`     | The name of the cert-manager issuer for TLS certificates      | **Yes**  | None                                         |
 | `certs.caBundle.configMap` | ConfigMap with trusted CA certificates for client auth        | No       | Uses the server certificate CA               |
-| `images.postgres`          | The PostgreSQL container image                                | No       | `quay.io/sclorg/postgresql-15-c9s:latest`    |
+| `images.postgres`          | The PostgreSQL container image                                | No       | `quay.io/sclorg/postgresql-18-c10s:latest`    |
 | `databases`                | List of databases and users to create (see below)             | No       | `[]`                                         |
 
 Note that the `certs.issuerRef.name` parameter is required. For example, to install the chart in a
