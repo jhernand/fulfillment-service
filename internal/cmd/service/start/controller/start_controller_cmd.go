@@ -183,7 +183,7 @@ type runnerContext struct {
 }
 
 // run runs the `start controllers` command.
-func (r *runnerContext) run(cmd *cobra.Command, argv []string) error {
+func (r *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:gocyclo
 	var err error
 
 	// Get the context:

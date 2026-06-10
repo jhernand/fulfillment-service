@@ -1,5 +1,9 @@
 version: "2"
 
+formatters:
+  enable:
+    - gofmt
+
 run:
   timeout: 10m
 
@@ -72,6 +76,7 @@ linters:
       - linters:
           - gosec
           - errcheck
+          - gocyclo
         path: (internal/testing/|^it/|internal/database/database_container\.go)
       - linters:
           - unused

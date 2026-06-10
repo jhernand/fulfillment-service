@@ -143,7 +143,7 @@ type runnerContext struct {
 }
 
 // run runs the `start grpc-server` command.
-func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
+func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:gocyclo
 	// Get the context and create a cancellable version:
 	ctx, cancel := context.WithCancel(cmd.Context())
 
