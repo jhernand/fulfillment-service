@@ -451,11 +451,7 @@ func (s *GenericServer[O]) Create(ctx context.Context, request any, response any
 	if err != nil {
 		var alreadyExistsErr *dao.ErrAlreadyExists
 		if errors.As(err, &alreadyExistsErr) {
-			return grpcstatus.Errorf(
-				grpccodes.AlreadyExists,
-				"object with identifier '%s' already exists",
-				alreadyExistsErr.ID,
-			)
+			return grpcstatus.Errorf(grpccodes.AlreadyExists, "%s", alreadyExistsErr.Error())
 		}
 		var deniedErr *dao.ErrDenied
 		if errors.As(err, &deniedErr) {
