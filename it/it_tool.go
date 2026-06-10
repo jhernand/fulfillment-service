@@ -214,7 +214,7 @@ func (b *ToolBuilder) Build() (result *Tool, err error) {
 	}
 	if b.deployMode != deployModeHelm && b.deployMode != deployModeKustomize {
 		err = fmt.Errorf(
-			"invalid deploy mode '%s'i must be '%s' or '%s'",
+			"invalid deploy mode '%s' must be '%s' or '%s'",
 			b.deployMode, deployModeHelm, deployModeKustomize,
 		)
 		return
@@ -1060,7 +1060,7 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 					"basic",
 					"username",
 					"groups",
-					"osac-api",
+					auth.Audience,
 				},
 			},
 		)
