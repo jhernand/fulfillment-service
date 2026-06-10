@@ -95,7 +95,7 @@ type filterTranslatorResult struct {
 	sql string
 
 	// precedence is the precedence of the operator used at the top of the translation. This is used to decide if
-	// it is necessary to put parenthesis arround the text to use it in larger translations.
+	// it is necessary to put parenthesis around the text to use it in larger translations.
 	//
 	// Note that this is the precedence of SQL operators, not of CEL operators.
 	precedence int

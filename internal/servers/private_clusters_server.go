@@ -336,14 +336,14 @@ func (s *PrivateClustersServer) validateNoDuplicateConditions(object *privatev1.
 	conditionTypes := &bitset.BitSet{}
 	for _, condition := range conditions {
 		conditionType := condition.GetType()
-		if conditionTypes.Test(uint(conditionType)) {
+		if conditionTypes.Test(uint(conditionType)) { // #nosec G115 -- proto enum, non-negative
 			return grpcstatus.Errorf(
 				grpccodes.InvalidArgument,
 				"condition '%s' is duplicated",
 				conditionType.String(),
 			)
 		}
-		conditionTypes.Set(uint(conditionType))
+		conditionTypes.Set(uint(conditionType)) // #nosec G115 -- proto enum, non-negative
 	}
 	return nil
 }
@@ -523,7 +523,7 @@ func (s *PrivateClustersServer) validateTemplateImmutability(ctx context.Context
 		templateParamsEqual := func(first, second *anypb.Any) bool {
 			return proto.Equal(first, second)
 		}
-		if !maps.EqualFunc(existingSpec.GetTemplateParameters(), newSpec.GetTemplateParameters(), templateParamsEqual) {
+		if !maps.EqualFunc(existingSpec.GetTemplateParameters(), newSpec.GetTemplateParameters(), templateParamsEqual) { //nolint:govet // inline: Go compiler doesn't support type param inference for inlining yet
 			return grpcstatus.Errorf(
 				grpccodes.InvalidArgument,
 				"cannot change spec.template_parameters: template parameters are immutable",

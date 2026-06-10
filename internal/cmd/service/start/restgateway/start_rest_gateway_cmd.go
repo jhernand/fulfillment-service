@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/http"
 	"syscall"
+	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/pkg/errors"
@@ -26,8 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -106,6 +105,8 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	gwListener, err := network.NewListener().
 		SetLogger(c.logger).
 		SetFlags(c.flags, network.HttpListenerName).
+		AddTLSProtocol("h2").
+		AddTLSProtocol("http/1.1").
 		Build()
 	if err != nil {
 		return err
@@ -343,8 +344,12 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		slog.String("address", metricsListener.Addr().String()),
 	)
 	metricsServer := &http.Server{
-		Addr:    metricsListener.Addr().String(),
-		Handler: promhttp.Handler(),
+		Addr:              metricsListener.Addr().String(),
+		Handler:           promhttp.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	go func() {
 		err := metricsServer.Serve(metricsListener)
@@ -364,10 +369,15 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		"Start serving",
 		slog.String("address", gwListener.Addr().String()),
 	)
-	http2Server := &http2.Server{}
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
 	http1Server := &http.Server{
-		Addr:    gwListener.Addr().String(),
-		Handler: h2c.NewHandler(handler, http2Server),
+		Addr:              gwListener.Addr().String(),
+		Handler:           handler,
+		Protocols:         &protocols,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
 		err := http1Server.Serve(gwListener)

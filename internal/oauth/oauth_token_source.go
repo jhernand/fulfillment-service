@@ -212,7 +212,7 @@ func (b *TokenSourceBuilder) SetHttpClient(value *http.Client) *TokenSourceBuild
 }
 
 // SetOpenFunc sets the function to use to open a URL used by the code flow in the browser. This is optional and
-// defaults to a function that is generally apropriate for all platforms, so there is no need to set it.
+// defaults to a function that is generally appropriate for all platforms, so there is no need to set it.
 // This is intended mostly for unit tests, where it is convenient to use a mock function to avoid opening a real
 // browser.
 func (b *TokenSourceBuilder) SetOpenFunc(value func(ctx context.Context, url string) error) *TokenSourceBuilder {

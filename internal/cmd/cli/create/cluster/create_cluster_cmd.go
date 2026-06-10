@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -526,7 +527,7 @@ func (c *runnerContext) parseTemplateParameters(ctx context.Context,
 			)
 			continue
 		}
-		data, err := os.ReadFile(file)
+		data, err := os.ReadFile(filepath.Clean(file))
 		if errors.Is(err, os.ErrNotExist) {
 			issues = append(
 				issues, fmt.Sprintf(

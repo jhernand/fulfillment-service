@@ -60,7 +60,6 @@ type GenericServer[O dao.Object] struct {
 	tenancyLogic     auth.TenancyLogic
 	template         proto.Message
 	metadataField    protoreflect.FieldDescriptor
-	nameField        protoreflect.FieldDescriptor
 	listRequest      proto.Message
 	listResponse     proto.Message
 	getRequest       proto.Message
