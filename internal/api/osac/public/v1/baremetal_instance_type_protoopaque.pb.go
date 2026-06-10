@@ -143,7 +143,7 @@ const (
 	BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_PROVISIONED BareMetalInstanceConditionType = 1
 	// OS image and user configuration have been applied by the provisioning provider.
 	BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_CONFIGURATION_APPLIED BareMetalInstanceConditionType = 2
-	// The machine is available and assigned to the tenant (HostLease active).
+	// The machine is available and assigned to the tenant.
 	// Does not indicate OS readiness — the tenant is responsible for OS-level checks.
 	BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_READY BareMetalInstanceConditionType = 3
 	// A power cycle (restart) is currently in progress.
