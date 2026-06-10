@@ -39,8 +39,6 @@ message BareMetalInstanceCatalogItem {
   bool published = 6;
 
   // Field 7 is omitted: `tenant` is an internal field managed by the server, not exposed through the public API.
-  // When a Tenant Admin creates a catalog item via the public API, the server automatically scopes it to the
-  // caller's tenant.
 
   // Definitions of the fields that users can or cannot set when creating a resource from this catalog item.
   repeated FieldDefinition field_definitions = 8;
