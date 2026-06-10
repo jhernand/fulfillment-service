@@ -1,0 +1,39 @@
+//
+// Copyright (c) 2025 Red Hat, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//
+
+syntax = "proto3";
+
+package osac.private.v1;
+
+import "osac/private/v1/field_definition_type.proto";
+import "osac/private/v1/metadata_type.proto";
+
+// A bare metal instance catalog item defines a curated hardware offering that references an underlying bare metal
+// instance template. Admins control which fields users can set, enforce defaults, and validate input via JSON Schema.
+message BareMetalInstanceCatalogItem {
+  string id = 1;
+  Metadata metadata = 2;
+  string title = 3;
+  string description = 4;
+
+  // Identifier of the underlying bare metal instance template that this catalog item references.
+  string template = 5;
+
+  // Whether this catalog item is visible in the public API.
+  bool published = 6;
+
+  // Tenant scope for this catalog item. An empty string means the item is global and visible to all tenants.
+  string tenant = 7;
+
+  repeated FieldDefinition field_definitions = 8;
+}
