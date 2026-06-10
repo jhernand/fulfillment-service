@@ -26,7 +26,7 @@ var _ = DescribeMigration("Add catalog items unique name per tenant", func() {
 	DescribeTable(
 		"Enforces name uniqueness per tenant",
 		func(ctx context.Context, table, name1, tenant1, name2, tenant2 string, shouldFail bool) {
-			err := tool.Migrate(ctx, 52)
+			err := tool.Migrate(ctx, 53)
 			Expect(err).ToNot(HaveOccurred())
 
 			var insertSQL string
@@ -67,7 +67,7 @@ var _ = DescribeMigration("Add catalog items unique name per tenant", func() {
 	)
 
 	It("Allows reuse of name after soft-delete", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 52)
+		err := tool.Migrate(ctx, 53)
 		Expect(err).ToNot(HaveOccurred())
 
 		_, err = conn.Exec(ctx,
