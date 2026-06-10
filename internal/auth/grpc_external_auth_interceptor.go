@@ -32,15 +32,20 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// MetadataFetcher fetches object metadata (tenant and project name) for authorization.
+// Returns empty strings if object not found or on error.
+type MetadataFetcher func(ctx context.Context, id string) (tenant, project string)
+
 // GrpcExternalAuthType is the name of the external authentication type.
 const GrpcExternalAuthType = "external"
 
 // GrpcExternalAuthInterceptorBuilder contains the data and logic needed to build an interceptor that performs
 // authentication and authorization by calling an external service using the Envoy ext_authz gRPC protocol.
 type GrpcExternalAuthInterceptorBuilder struct {
-	logger        *slog.Logger
-	grpcClient    *grpc.ClientConn
-	publicMethods []string
+	logger          *slog.Logger
+	grpcClient      *grpc.ClientConn
+	publicMethods   []string
+	metadataFetcher MetadataFetcher
 }
 
 // GrpcExternalAuthInterceptor is an interceptor that performs authentication and authorization by calling an external
@@ -50,9 +55,10 @@ type GrpcExternalAuthInterceptorBuilder struct {
 // downstream handlers. The interceptor also has access to the request message, allowing it to include object-specific
 // details (like identifiers and tenants) in the authorization request.
 type GrpcExternalAuthInterceptor struct {
-	logger        *slog.Logger
-	authClient    envoyauthv3.AuthorizationClient
-	publicMethods []*regexp.Regexp
+	logger          *slog.Logger
+	authClient      envoyauthv3.AuthorizationClient
+	publicMethods   []*regexp.Regexp
+	metadataFetcher MetadataFetcher
 }
 
 // NewGrpcExternalAuthInterceptor creates a builder that can then be used to configure and create an authentication
@@ -86,6 +92,13 @@ func (b *GrpcExternalAuthInterceptorBuilder) AddPublicMethodRegex(value string) 
 	return b
 }
 
+// SetMetadataFetcher sets the function used to retrieve object metadata (tenant and project name) for authorization.
+// This is optional - if not set, metadata will not be fetched for authorization.
+func (b *GrpcExternalAuthInterceptorBuilder) SetMetadataFetcher(value MetadataFetcher) *GrpcExternalAuthInterceptorBuilder {
+	b.metadataFetcher = value
+	return b
+}
+
 // Build uses the data stored in the builder to create and configure a new interceptor.
 func (b *GrpcExternalAuthInterceptorBuilder) Build() (result *GrpcExternalAuthInterceptor, err error) {
 	// Check parameters:
@@ -112,9 +125,10 @@ func (b *GrpcExternalAuthInterceptorBuilder) Build() (result *GrpcExternalAuthIn
 
 	// Create and populate the object:
 	result = &GrpcExternalAuthInterceptor{
-		logger:        b.logger,
-		authClient:    authClient,
-		publicMethods: publicMethods,
+		logger:          b.logger,
+		authClient:      authClient,
+		publicMethods:   publicMethods,
+		metadataFetcher: b.metadataFetcher,
 	}
 	return
 }
@@ -269,6 +283,18 @@ func (i *GrpcExternalAuthInterceptor) buildCheckRequest(ctx context.Context, met
 		id := i.extractId(ctx, request)
 		if id != "" {
 			extensions["id"] = id
+		}
+
+		// For project Get/Delete/Update operations, fetch the authoritative tenant and name from the database
+		// to prevent clients from spoofing these values for authorization bypass.
+		if i.shouldFetchProjectMetadata(method, id) && i.metadataFetcher != nil {
+			tenant, name := i.metadataFetcher(ctx, id)
+			if tenant != "" {
+				extensions["tenant"] = tenant
+			}
+			if name != "" {
+				extensions["name"] = name
+			}
 		}
 	}
 
@@ -436,6 +462,19 @@ func (i *GrpcExternalAuthInterceptor) isPublicMethod(method string) bool {
 		}
 	}
 	return false
+}
+
+// shouldFetchProjectMetadata determines if we should fetch project metadata from the database for authorization.
+// This is needed for Get/Delete/Update operations to prevent clients from spoofing tenant/name values for
+// authorization bypass.
+func (i *GrpcExternalAuthInterceptor) shouldFetchProjectMetadata(method string, id string) bool {
+	if id == "" {
+		return false
+	}
+	// Fetch metadata for Projects Get, Delete, and Update operations
+	return method == "/osac.public.v1.Projects/Get" ||
+		method == "/osac.public.v1.Projects/Delete" ||
+		method == "/osac.public.v1.Projects/Update"
 }
 
 // grpcExternalAuthInternalError is the error returned an internal error is detected that pevents completing the
