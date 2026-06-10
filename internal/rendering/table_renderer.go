@@ -386,6 +386,7 @@ func (r *TableRenderer) renderCellEnum(val types.Int, enumDesc protoreflect.Enum
 		if err != nil {
 			return err
 		}
+		return nil
 	}
 	valueTxt := string(valueDesc.Name())
 
