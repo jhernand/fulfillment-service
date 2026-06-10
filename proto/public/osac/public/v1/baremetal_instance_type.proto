@@ -109,7 +109,7 @@ enum BareMetalInstanceConditionType {
   // OS image and user configuration have been applied by the provisioning provider.
   BARE_METAL_INSTANCE_CONDITION_TYPE_CONFIGURATION_APPLIED = 2;
 
-  // The machine is available and assigned to the tenant (HostLease active).
+  // The machine is available and assigned to the tenant.
   // Does not indicate OS readiness — the tenant is responsible for OS-level checks.
   BARE_METAL_INSTANCE_CONDITION_TYPE_READY = 3;
 
