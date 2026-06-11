@@ -35,12 +35,18 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// A bare metal instance template defines a hardware profile (host type, OS image, network configuration)
+// that can be used to create bare metal instances via a catalog item.
 type BareMetalInstanceTemplate struct {
-	state         protoimpl.MessageState                 `protogen:"hybrid.v1"`
-	Id            string                                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Metadata      *Metadata                              `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Title         string                                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	state protoimpl.MessageState `protogen:"hybrid.v1"`
+	// Unique identifier of the template.
+	Id       string    `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Metadata *Metadata `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	// Human friendly short description of the template, suitable for displaying in one single line on a UI or CLI.
+	Title string `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	// Human friendly long description of the template, using Markdown format.
+	Description string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	// Default spec values applied when creating a BareMetalInstance from this template.
 	SpecDefaults  *BareMetalInstanceTemplateSpecDefaults `protobuf:"bytes,5,opt,name=spec_defaults,json=specDefaults,proto3" json:"spec_defaults,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -151,10 +157,14 @@ func (x *BareMetalInstanceTemplate) ClearSpecDefaults() {
 type BareMetalInstanceTemplate_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
-	Id           string
-	Metadata     *Metadata
-	Title        string
-	Description  string
+	// Unique identifier of the template.
+	Id       string
+	Metadata *Metadata
+	// Human friendly short description of the template, suitable for displaying in one single line on a UI or CLI.
+	Title string
+	// Human friendly long description of the template, using Markdown format.
+	Description string
+	// Default spec values applied when creating a BareMetalInstance from this template.
 	SpecDefaults *BareMetalInstanceTemplateSpecDefaults
 }
 
@@ -170,7 +180,8 @@ func (b0 BareMetalInstanceTemplate_builder) Build() *BareMetalInstanceTemplate {
 	return m0
 }
 
-// No overridable spec fields in this initial version; fields will be added in future
+// Default values for bare metal instance spec fields.
+// No overridable spec fields are defined in this initial version; fields will be added in future
 // enhancements as tenant-configurable options are introduced (e.g. networking integration).
 type BareMetalInstanceTemplateSpecDefaults struct {
 	state         protoimpl.MessageState `protogen:"hybrid.v1"`

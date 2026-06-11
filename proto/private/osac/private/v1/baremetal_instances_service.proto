@@ -23,6 +23,7 @@ message BareMetalInstancesListRequest {
   optional int32 offset = 1;
   optional int32 limit = 2;
   optional string filter = 3;
+  optional string order = 4;
 }
 
 message BareMetalInstancesListResponse {
@@ -32,6 +33,7 @@ message BareMetalInstancesListResponse {
 }
 
 message BareMetalInstancesGetRequest {
+  // Unique identifier of the bare metal instance.
   string id = 1;
 }
 
@@ -50,6 +52,10 @@ message BareMetalInstancesCreateResponse {
 message BareMetalInstancesUpdateRequest {
   BareMetalInstance object = 1;
   google.protobuf.FieldMask update_mask = 2;
+
+  // Lock enables optimistic locking. When set to true, the server verifies that the current version of the object
+  // matches the value of the metadata.version field of the submitted object. If they differ the update will be
+  // rejected. This is useful to prevent lost updates when multiple clients are modifying the same object concurrently.
   bool lock = 3;
 }
 
@@ -58,12 +64,14 @@ message BareMetalInstancesUpdateResponse {
 }
 
 message BareMetalInstancesDeleteRequest {
+  // Unique identifier of the bare metal instance.
   string id = 1;
 }
 
 message BareMetalInstancesDeleteResponse {}
 
 message BareMetalInstancesSignalRequest {
+  // Unique identifier of the bare metal instance.
   string id = 1;
 }
 

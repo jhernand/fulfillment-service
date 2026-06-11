@@ -341,6 +341,7 @@ func (x *BareMetalInstanceTemplatesGetRequest) SetId(v string) {
 type BareMetalInstanceTemplatesGetRequest_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
+	// Unique identifier of the template.
 	Id string
 }
 
@@ -650,7 +651,10 @@ type BareMetalInstanceTemplatesUpdateRequest_builder struct {
 
 	Object     *BareMetalInstanceTemplate
 	UpdateMask *fieldmaskpb.FieldMask
-	Lock       bool
+	// Lock enables optimistic locking. When set to true, the server verifies that the current version of the object
+	// matches the value of the metadata.version field of the submitted object. If they differ the update will be
+	// rejected. This is useful to prevent lost updates when multiple clients are modifying the same object concurrently.
+	Lock bool
 }
 
 func (b0 BareMetalInstanceTemplatesUpdateRequest_builder) Build() *BareMetalInstanceTemplatesUpdateRequest {
@@ -777,6 +781,7 @@ func (x *BareMetalInstanceTemplatesDeleteRequest) SetId(v string) {
 type BareMetalInstanceTemplatesDeleteRequest_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
+	// Unique identifier of the template.
 	Id string
 }
 
@@ -877,6 +882,7 @@ func (x *BareMetalInstanceTemplatesSignalRequest) SetId(v string) {
 type BareMetalInstanceTemplatesSignalRequest_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
+	// Unique identifier of the template.
 	Id string
 }
 

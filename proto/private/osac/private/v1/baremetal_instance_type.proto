@@ -19,36 +19,71 @@ import "google/protobuf/timestamp.proto";
 import "osac/private/v1/condition_status_type.proto";
 import "osac/private/v1/metadata_type.proto";
 
+// Contains the details of a bare metal instance.
+//
+// The `spec` contains the desired details, and may be modified by the user. The `status` contains the current status
+// of the bare metal instance, is provided by the system and can't be modified by the user.
 message BareMetalInstance {
+  // Unique identifier of the bare metal instance.
   string id = 1;
+
   Metadata metadata = 2;
   BareMetalInstanceSpec spec = 3;
   BareMetalInstanceStatus status = 4;
 }
 
+// The spec contains the details of a bare metal instance as desired by the user.
 message BareMetalInstanceSpec {
+  // Reference to the BareMetalInstanceCatalogItem. Required on create; immutable after creation.
   string catalog_item = 1;
+
+  // SSH public key injected into the OS at provisioning time. Immutable after creation.
+  // Must be a valid SSH public key in OpenSSH format (ssh-rsa, ssh-ed25519, etc.).
+  // Invalid keys are rejected at create time with a 400 error.
   optional string ssh_key = 2;
+
+  // User data (e.g. cloud-init). Passed to the OS at first boot. Immutable after creation.
+  // Maximum size: 64 KB.
   optional string user_data = 3;
+
+  // Run strategy controls the power state of the bare metal instance.
+  // An enum is used rather than a boolean to leave room for future states (e.g. suspended backends).
   optional BareMetalInstanceRunStrategy run_strategy = 4;
-  optional google.protobuf.Timestamp restart_requested_at = 5;
+
+  // Used to trigger a restart of the physical machine. Change it to any value to trigger the restart.
+  // The value itself is not important; only the change matters.
+  // The controller compares this with `status.restart_trigger` and initiates a power cycle when they differ.
+  string restart_trigger = 5;
 }
 
+// The status contains the details of the bare metal instance provided by the system.
 message BareMetalInstanceStatus {
+  // Indicates the overall state of the bare metal instance.
   BareMetalInstanceState state = 1;
+
+  // Contains a list of conditions that describe in detail the status of the bare metal instance.
   repeated BareMetalInstanceCondition conditions = 2;
-  optional google.protobuf.Timestamp last_restarted_at = 3;
+
+  // Echo of `spec.restart_trigger` after the controller has executed the requested restart.
+  // The controller sets this to match `spec.restart_trigger` once the power cycle is complete.
+  string restart_trigger = 3;
 
   // Identifier of the hub that was selected for this bare metal instance.
   string hub = 4;
 }
 
+// Run strategy for the bare metal instance.
 enum BareMetalInstanceRunStrategy {
   BARE_METAL_INSTANCE_RUN_STRATEGY_UNSPECIFIED = 0;
+
+  // The instance is kept powered on.
   BARE_METAL_INSTANCE_RUN_STRATEGY_ALWAYS = 1;
+
+  // The instance is powered off.
   BARE_METAL_INSTANCE_RUN_STRATEGY_HALTED = 2;
 }
 
+// Represents the overall state of a bare metal instance.
 enum BareMetalInstanceState {
   BARE_METAL_INSTANCE_STATE_UNSPECIFIED  = 0;
   BARE_METAL_INSTANCE_STATE_PROVISIONING = 1;
@@ -57,6 +92,7 @@ enum BareMetalInstanceState {
   BARE_METAL_INSTANCE_STATE_DELETING     = 4;
 }
 
+// Contains the details of a condition that describes the status of a bare metal instance.
 message BareMetalInstanceCondition {
   BareMetalInstanceConditionType type = 1;
   ConditionStatus status = 2;
@@ -65,12 +101,26 @@ message BareMetalInstanceCondition {
   optional string message = 5;
 }
 
+// Types of conditions used to describe the status of a bare metal instance.
 enum BareMetalInstanceConditionType {
   BARE_METAL_INSTANCE_CONDITION_TYPE_UNSPECIFIED           = 0;
+
+  // Infrastructure has been allocated to this instance by the baremetal fulfillment component.
   BARE_METAL_INSTANCE_CONDITION_TYPE_PROVISIONED           = 1;
+
+  // OS image and user configuration have been applied by the provisioning provider.
   BARE_METAL_INSTANCE_CONDITION_TYPE_CONFIGURATION_APPLIED = 2;
+
+  // The machine is available and assigned to the tenant.
+  // Does not indicate OS readiness — the tenant is responsible for OS-level checks.
   BARE_METAL_INSTANCE_CONDITION_TYPE_READY                 = 3;
+
+  // A power cycle (restart) is currently in progress.
   BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS   = 4;
+
+  // A restart request has failed.
   BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED        = 5;
+
+  // Configuration changes require a restart to take effect.
   BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_REQUIRED      = 6;
 }

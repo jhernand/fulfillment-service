@@ -17,14 +17,25 @@ package osac.private.v1;
 
 import "osac/private/v1/metadata_type.proto";
 
+// A bare metal instance template defines a hardware profile (host type, OS image, network configuration)
+// that can be used to create bare metal instances via a catalog item.
 message BareMetalInstanceTemplate {
+  // Unique identifier of the template.
   string id = 1;
+
   Metadata metadata = 2;
+
+  // Human friendly short description of the template, suitable for displaying in one single line on a UI or CLI.
   string title = 3;
+
+  // Human friendly long description of the template, using Markdown format.
   string description = 4;
+
+  // Default spec values applied when creating a BareMetalInstance from this template.
   BareMetalInstanceTemplateSpecDefaults spec_defaults = 5;
 }
 
-// No overridable spec fields in this initial version; fields will be added in future
+// Default values for bare metal instance spec fields.
+// No overridable spec fields are defined in this initial version; fields will be added in future
 // enhancements as tenant-configurable options are introduced (e.g. networking integration).
 message BareMetalInstanceTemplateSpecDefaults {}

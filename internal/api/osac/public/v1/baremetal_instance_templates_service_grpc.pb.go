@@ -32,8 +32,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	BareMetalInstanceTemplates_List_FullMethodName = "/osac.public.v1.BareMetalInstanceTemplates/List"
-	BareMetalInstanceTemplates_Get_FullMethodName  = "/osac.public.v1.BareMetalInstanceTemplates/Get"
+	BareMetalInstanceTemplates_List_FullMethodName   = "/osac.public.v1.BareMetalInstanceTemplates/List"
+	BareMetalInstanceTemplates_Get_FullMethodName    = "/osac.public.v1.BareMetalInstanceTemplates/Get"
+	BareMetalInstanceTemplates_Create_FullMethodName = "/osac.public.v1.BareMetalInstanceTemplates/Create"
+	BareMetalInstanceTemplates_Update_FullMethodName = "/osac.public.v1.BareMetalInstanceTemplates/Update"
+	BareMetalInstanceTemplates_Delete_FullMethodName = "/osac.public.v1.BareMetalInstanceTemplates/Delete"
 )
 
 // BareMetalInstanceTemplatesClient is the client API for BareMetalInstanceTemplates service.
@@ -42,6 +45,9 @@ const (
 type BareMetalInstanceTemplatesClient interface {
 	List(ctx context.Context, in *BareMetalInstanceTemplatesListRequest, opts ...grpc.CallOption) (*BareMetalInstanceTemplatesListResponse, error)
 	Get(ctx context.Context, in *BareMetalInstanceTemplatesGetRequest, opts ...grpc.CallOption) (*BareMetalInstanceTemplatesGetResponse, error)
+	Create(ctx context.Context, in *BareMetalInstanceTemplatesCreateRequest, opts ...grpc.CallOption) (*BareMetalInstanceTemplatesCreateResponse, error)
+	Update(ctx context.Context, in *BareMetalInstanceTemplatesUpdateRequest, opts ...grpc.CallOption) (*BareMetalInstanceTemplatesUpdateResponse, error)
+	Delete(ctx context.Context, in *BareMetalInstanceTemplatesDeleteRequest, opts ...grpc.CallOption) (*BareMetalInstanceTemplatesDeleteResponse, error)
 }
 
 type bareMetalInstanceTemplatesClient struct {
@@ -72,12 +78,45 @@ func (c *bareMetalInstanceTemplatesClient) Get(ctx context.Context, in *BareMeta
 	return out, nil
 }
 
+func (c *bareMetalInstanceTemplatesClient) Create(ctx context.Context, in *BareMetalInstanceTemplatesCreateRequest, opts ...grpc.CallOption) (*BareMetalInstanceTemplatesCreateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BareMetalInstanceTemplatesCreateResponse)
+	err := c.cc.Invoke(ctx, BareMetalInstanceTemplates_Create_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bareMetalInstanceTemplatesClient) Update(ctx context.Context, in *BareMetalInstanceTemplatesUpdateRequest, opts ...grpc.CallOption) (*BareMetalInstanceTemplatesUpdateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BareMetalInstanceTemplatesUpdateResponse)
+	err := c.cc.Invoke(ctx, BareMetalInstanceTemplates_Update_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *bareMetalInstanceTemplatesClient) Delete(ctx context.Context, in *BareMetalInstanceTemplatesDeleteRequest, opts ...grpc.CallOption) (*BareMetalInstanceTemplatesDeleteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BareMetalInstanceTemplatesDeleteResponse)
+	err := c.cc.Invoke(ctx, BareMetalInstanceTemplates_Delete_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BareMetalInstanceTemplatesServer is the server API for BareMetalInstanceTemplates service.
 // All implementations must embed UnimplementedBareMetalInstanceTemplatesServer
 // for forward compatibility.
 type BareMetalInstanceTemplatesServer interface {
 	List(context.Context, *BareMetalInstanceTemplatesListRequest) (*BareMetalInstanceTemplatesListResponse, error)
 	Get(context.Context, *BareMetalInstanceTemplatesGetRequest) (*BareMetalInstanceTemplatesGetResponse, error)
+	Create(context.Context, *BareMetalInstanceTemplatesCreateRequest) (*BareMetalInstanceTemplatesCreateResponse, error)
+	Update(context.Context, *BareMetalInstanceTemplatesUpdateRequest) (*BareMetalInstanceTemplatesUpdateResponse, error)
+	Delete(context.Context, *BareMetalInstanceTemplatesDeleteRequest) (*BareMetalInstanceTemplatesDeleteResponse, error)
 	mustEmbedUnimplementedBareMetalInstanceTemplatesServer()
 }
 
@@ -93,6 +132,15 @@ func (UnimplementedBareMetalInstanceTemplatesServer) List(context.Context, *Bare
 }
 func (UnimplementedBareMetalInstanceTemplatesServer) Get(context.Context, *BareMetalInstanceTemplatesGetRequest) (*BareMetalInstanceTemplatesGetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
+}
+func (UnimplementedBareMetalInstanceTemplatesServer) Create(context.Context, *BareMetalInstanceTemplatesCreateRequest) (*BareMetalInstanceTemplatesCreateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
+}
+func (UnimplementedBareMetalInstanceTemplatesServer) Update(context.Context, *BareMetalInstanceTemplatesUpdateRequest) (*BareMetalInstanceTemplatesUpdateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
+}
+func (UnimplementedBareMetalInstanceTemplatesServer) Delete(context.Context, *BareMetalInstanceTemplatesDeleteRequest) (*BareMetalInstanceTemplatesDeleteResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
 }
 func (UnimplementedBareMetalInstanceTemplatesServer) mustEmbedUnimplementedBareMetalInstanceTemplatesServer() {
 }
@@ -152,6 +200,60 @@ func _BareMetalInstanceTemplates_Get_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BareMetalInstanceTemplates_Create_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BareMetalInstanceTemplatesCreateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BareMetalInstanceTemplatesServer).Create(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BareMetalInstanceTemplates_Create_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BareMetalInstanceTemplatesServer).Create(ctx, req.(*BareMetalInstanceTemplatesCreateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BareMetalInstanceTemplates_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BareMetalInstanceTemplatesUpdateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BareMetalInstanceTemplatesServer).Update(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BareMetalInstanceTemplates_Update_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BareMetalInstanceTemplatesServer).Update(ctx, req.(*BareMetalInstanceTemplatesUpdateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BareMetalInstanceTemplates_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BareMetalInstanceTemplatesDeleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BareMetalInstanceTemplatesServer).Delete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BareMetalInstanceTemplates_Delete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BareMetalInstanceTemplatesServer).Delete(ctx, req.(*BareMetalInstanceTemplatesDeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BareMetalInstanceTemplates_ServiceDesc is the grpc.ServiceDesc for BareMetalInstanceTemplates service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -166,6 +268,18 @@ var BareMetalInstanceTemplates_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Get",
 			Handler:    _BareMetalInstanceTemplates_Get_Handler,
+		},
+		{
+			MethodName: "Create",
+			Handler:    _BareMetalInstanceTemplates_Create_Handler,
+		},
+		{
+			MethodName: "Update",
+			Handler:    _BareMetalInstanceTemplates_Update_Handler,
+		},
+		{
+			MethodName: "Delete",
+			Handler:    _BareMetalInstanceTemplates_Delete_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

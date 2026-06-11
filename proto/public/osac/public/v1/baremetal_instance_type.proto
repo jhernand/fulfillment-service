@@ -50,12 +50,10 @@ message BareMetalInstanceSpec {
   // An enum is used rather than a boolean to leave room for future states (e.g. suspended backends).
   optional BareMetalInstanceRunStrategy run_strategy = 4;
 
-  // RestartRequestedAt is a timestamp signal to request a power cycle.
-  //
-  // Set this field to the current time (usually NOW) to request a restart.
-  // The controller will execute the restart if this timestamp is greater than
-  // `status.last_restarted_at`.
-  optional google.protobuf.Timestamp restart_requested_at = 5;
+  // Used to trigger a restart of the physical machine. Change it to any value to trigger the restart.
+  // The value itself is not important; only the change matters.
+  // The controller compares this with `status.restart_trigger` and initiates a power cycle when they differ.
+  string restart_trigger = 5;
 }
 
 // The status contains the details of the bare metal instance provided by the system.
@@ -66,8 +64,9 @@ message BareMetalInstanceStatus {
   // Contains a list of conditions that describe in detail the status of the bare metal instance.
   repeated BareMetalInstanceCondition conditions = 2;
 
-  // LastRestartedAt records when the last restart was initiated by the controller.
-  optional google.protobuf.Timestamp last_restarted_at = 3;
+  // Echo of `spec.restart_trigger` after the controller has executed the requested restart.
+  // The controller sets this to match `spec.restart_trigger` once the power cycle is complete.
+  string restart_trigger = 3;
 }
 
 // Run strategy for the bare metal instance.
