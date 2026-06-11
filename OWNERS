@@ -1,26 +1,28 @@
-approvers:
-- jhernand
-- adriengentil
-- tzvatot
-- larsks
-- tzumainn
-- akshaynadkarni
-- trewest
-- omer-vishlitzky
-- eranco74
-- rgolangh
-- ygalblum
-- eliorerz
-reviewers:
-- jhernand
-- adriengentil
-- tzvatot
-- larsks
-- tzumainn
-- akshaynadkarni
-- trewest
-- omer-vishlitzky
-- eranco74
-- rgolangh
-- ygalblum
-- eliorerz
+filters:
+  "[^.]":
+    approvers:
+    - jhernand
+    - adriengentil
+    - tzvatot
+    - larsks
+    - tzumainn
+    - akshaynadkarni
+    - trewest
+    - omer-vishlitzky
+    - eranco74
+    - rgolangh
+    - ygalblum
+    - eliorerz
+    reviewers:
+    - jhernand
+    - adriengentil
+    - tzvatot
+    - larsks
+    - tzumainn
+    - akshaynadkarni
+    - trewest
+    - omer-vishlitzky
+    - eranco74
+    - rgolangh
+    - ygalblum
+    - eliorerz
