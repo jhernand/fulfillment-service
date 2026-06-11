@@ -38,17 +38,21 @@ const (
 // A bare metal instance catalog item defines a curated hardware offering that references an underlying bare metal
 // instance template. Admins control which fields users can set, enforce defaults, and validate input via JSON Schema.
 type BareMetalInstanceCatalogItem struct {
-	state       protoimpl.MessageState `protogen:"hybrid.v1"`
-	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Metadata    *Metadata              `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Title       string                 `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
-	Description string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	state protoimpl.MessageState `protogen:"hybrid.v1"`
+	// Unique identifier of the catalog item.
+	Id       string    `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Metadata *Metadata `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	// Human friendly short description of the catalog item, suitable for displaying in one single line on a UI or CLI.
+	Title string `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	// Human friendly long description of the catalog item, using Markdown format.
+	Description string `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	// Identifier of the underlying bare metal instance template that this catalog item references.
 	Template string `protobuf:"bytes,5,opt,name=template,proto3" json:"template,omitempty"`
-	// Whether this catalog item is visible in the public API.
+	// Whether this catalog item is published and visible to tenants.
 	Published bool `protobuf:"varint,6,opt,name=published,proto3" json:"published,omitempty"`
 	// Tenant scope for this catalog item. An empty string means the item is global and visible to all tenants.
-	Tenant           string             `protobuf:"bytes,7,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	Tenant string `protobuf:"bytes,7,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// Definitions of the fields that users can or cannot set when creating a resource from this catalog item.
 	FieldDefinitions []*FieldDefinition `protobuf:"bytes,8,rep,name=field_definitions,json=fieldDefinitions,proto3" json:"field_definitions,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -181,16 +185,20 @@ func (x *BareMetalInstanceCatalogItem) ClearMetadata() {
 type BareMetalInstanceCatalogItem_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
-	Id          string
-	Metadata    *Metadata
-	Title       string
+	// Unique identifier of the catalog item.
+	Id       string
+	Metadata *Metadata
+	// Human friendly short description of the catalog item, suitable for displaying in one single line on a UI or CLI.
+	Title string
+	// Human friendly long description of the catalog item, using Markdown format.
 	Description string
 	// Identifier of the underlying bare metal instance template that this catalog item references.
 	Template string
-	// Whether this catalog item is visible in the public API.
+	// Whether this catalog item is published and visible to tenants.
 	Published bool
 	// Tenant scope for this catalog item. An empty string means the item is global and visible to all tenants.
-	Tenant           string
+	Tenant string
+	// Definitions of the fields that users can or cannot set when creating a resource from this catalog item.
 	FieldDefinitions []*FieldDefinition
 }
 

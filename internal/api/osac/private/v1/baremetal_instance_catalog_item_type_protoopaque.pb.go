@@ -180,16 +180,20 @@ func (x *BareMetalInstanceCatalogItem) ClearMetadata() {
 type BareMetalInstanceCatalogItem_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
-	Id          string
-	Metadata    *Metadata
-	Title       string
+	// Unique identifier of the catalog item.
+	Id       string
+	Metadata *Metadata
+	// Human friendly short description of the catalog item, suitable for displaying in one single line on a UI or CLI.
+	Title string
+	// Human friendly long description of the catalog item, using Markdown format.
 	Description string
 	// Identifier of the underlying bare metal instance template that this catalog item references.
 	Template string
-	// Whether this catalog item is visible in the public API.
+	// Whether this catalog item is published and visible to tenants.
 	Published bool
 	// Tenant scope for this catalog item. An empty string means the item is global and visible to all tenants.
-	Tenant           string
+	Tenant string
+	// Definitions of the fields that users can or cannot set when creating a resource from this catalog item.
 	FieldDefinitions []*FieldDefinition
 }
 
