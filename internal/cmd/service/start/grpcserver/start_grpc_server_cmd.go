@@ -43,6 +43,7 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/auth/jwe"
 	"github.com/osac-project/fulfillment-service/internal/console"
 	"github.com/osac-project/fulfillment-service/internal/database"
+	"github.com/osac-project/fulfillment-service/internal/database/dao"
 	hubscheme "github.com/osac-project/fulfillment-service/internal/kubernetes/scheme"
 	"github.com/osac-project/fulfillment-service/internal/logging"
 	"github.com/osac-project/fulfillment-service/internal/metrics"
@@ -232,6 +233,45 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 	// Calculate the user agent:
 	userAgent := fmt.Sprintf("%s/%s", grpcServerUserAgent, version.Get())
 
+	// Create the tenancy logic:
+	c.logger.InfoContext(
+		ctx,
+		"Creating tenancy logic",
+		slog.String("type", c.args.tenancyLogic),
+	)
+	var tenancyLogic auth.TenancyLogic
+	switch strings.ToLower(c.args.tenancyLogic) {
+	case "default":
+		tenancyLogic, err = auth.NewDefaultTenancyLogic().
+			SetLogger(c.logger).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create default tenancy logic: %w", err)
+		}
+	case "guest":
+		tenancyLogic, err = auth.NewGuestTenancyLogic().
+			SetLogger(c.logger).
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create guest tenancy logic: %w", err)
+		}
+	default:
+		return fmt.Errorf(
+			"unknown tenancy logic '%s', valid values are 'default' and 'guest'",
+			c.args.tenancyLogic,
+		)
+	}
+
+	// Prepare the transactions manager:
+	c.logger.InfoContext(ctx, "Creating transactions manager")
+	txManager, err := database.NewTxManager().
+		SetLogger(c.logger).
+		SetPool(dbPool).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create transactions manager: %w", err)
+	}
+
 	// Prepare the auth interceptor:
 	c.logger.InfoContext(
 		ctx,
@@ -268,10 +308,20 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 		if err != nil {
 			return fmt.Errorf("failed to create external auth client: %w", err)
 		}
+		// Create metadata fetcher for project authorization
+		metadataFetcher, err := dao.NewMetadataFetcher().
+			SetLogger(c.logger).
+			SetTable("projects").
+			Build()
+		if err != nil {
+			return fmt.Errorf("failed to create metadata fetcher: %w", err)
+		}
+
 		externalAuthInterceptor, err := auth.NewGrpcExternalAuthInterceptor().
 			SetLogger(c.logger).
 			SetGrpcClient(externalAuthClient).
 			AddPublicMethodRegex(publicMethodRegex).
+			SetMetadataFetcher(metadataFetcher).
 			Build()
 		if err != nil {
 			return fmt.Errorf("failed to create external auth interceptor: %w", err)
@@ -306,13 +356,6 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 
 	// Prepare the transactions interceptor:
 	c.logger.InfoContext(ctx, "Creating transactions interceptor")
-	txManager, err := database.NewTxManager().
-		SetLogger(c.logger).
-		SetPool(dbPool).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create transactions manager: %w", err)
-	}
 	txInterceptor, err := database.NewTxInterceptor().
 		SetLogger(c.logger).
 		SetManager(txManager).
@@ -379,35 +422,6 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create public attribution logic: %w", err)
-	}
-
-	// Create the tenancy logic:
-	c.logger.InfoContext(
-		ctx,
-		"Creating tenancy logic",
-		slog.String("type", c.args.tenancyLogic),
-	)
-	var tenancyLogic auth.TenancyLogic
-	switch strings.ToLower(c.args.tenancyLogic) {
-	case "default":
-		tenancyLogic, err = auth.NewDefaultTenancyLogic().
-			SetLogger(c.logger).
-			Build()
-		if err != nil {
-			return fmt.Errorf("failed to create default tenancy logic: %w", err)
-		}
-	case "guest":
-		tenancyLogic, err = auth.NewGuestTenancyLogic().
-			SetLogger(c.logger).
-			Build()
-		if err != nil {
-			return fmt.Errorf("failed to create guest tenancy logic: %w", err)
-		}
-	default:
-		return fmt.Errorf(
-			"unknown tenancy logic '%s', valid values are 'default' and 'guest'",
-			c.args.tenancyLogic,
-		)
 	}
 
 	// Create the private attribution logic:
