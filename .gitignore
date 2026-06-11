@@ -1,9 +1,9 @@
-
 *.log
 *.orig
 *.patch
 *.rej
 *.test
+.artifacts
 .idea
 .vscode
 /bin
@@ -14,4 +14,4 @@
 /osac
 /osac-dev
 __debug_bin*
-.artifacts
+__pycache__
