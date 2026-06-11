@@ -133,6 +133,9 @@ var _ = Describe("Reflection helper", func() {
 
 		It("Returns object types in singular", func() {
 			Expect(helper.Singulars()).To(ConsistOf(
+				"baremetalinstance",
+				"baremetalinstancecatalogitem",
+				"baremetalinstancetemplate",
 				"cluster",
 				"clustercatalogitem",
 				"clustertemplate",
@@ -157,6 +160,9 @@ var _ = Describe("Reflection helper", func() {
 
 		It("Returns object types in plural", func() {
 			Expect(helper.Plurals()).To(ConsistOf(
+				"baremetalinstances",
+				"baremetalinstancecatalogitems",
+				"baremetalinstancetemplates",
 				"clusters",
 				"clustercatalogitems",
 				"clustertemplates",
