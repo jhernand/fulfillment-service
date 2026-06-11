@@ -354,7 +354,7 @@ type BareMetalInstanceSpec struct {
 	// Used to trigger a restart of the physical machine. Change it to any value to trigger the restart.
 	// The value itself is not important; only the change matters.
 	// The controller compares this with `status.restart_trigger` and initiates a power cycle when they differ.
-	RestartTrigger string `protobuf:"bytes,5,opt,name=restart_trigger,json=restartTrigger,proto3" json:"restart_trigger,omitempty"`
+	RestartTrigger int64 `protobuf:"varint,5,opt,name=restart_trigger,json=restartTrigger,proto3" json:"restart_trigger,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -412,11 +412,11 @@ func (x *BareMetalInstanceSpec) GetRunStrategy() BareMetalInstanceRunStrategy {
 	return BareMetalInstanceRunStrategy_BARE_METAL_INSTANCE_RUN_STRATEGY_UNSPECIFIED
 }
 
-func (x *BareMetalInstanceSpec) GetRestartTrigger() string {
+func (x *BareMetalInstanceSpec) GetRestartTrigger() int64 {
 	if x != nil {
 		return x.RestartTrigger
 	}
-	return ""
+	return 0
 }
 
 func (x *BareMetalInstanceSpec) SetCatalogItem(v string) {
@@ -435,7 +435,7 @@ func (x *BareMetalInstanceSpec) SetRunStrategy(v BareMetalInstanceRunStrategy) {
 	x.RunStrategy = &v
 }
 
-func (x *BareMetalInstanceSpec) SetRestartTrigger(v string) {
+func (x *BareMetalInstanceSpec) SetRestartTrigger(v int64) {
 	x.RestartTrigger = v
 }
 
@@ -490,7 +490,7 @@ type BareMetalInstanceSpec_builder struct {
 	// Used to trigger a restart of the physical machine. Change it to any value to trigger the restart.
 	// The value itself is not important; only the change matters.
 	// The controller compares this with `status.restart_trigger` and initiates a power cycle when they differ.
-	RestartTrigger string
+	RestartTrigger int64
 }
 
 func (b0 BareMetalInstanceSpec_builder) Build() *BareMetalInstanceSpec {
@@ -514,7 +514,7 @@ type BareMetalInstanceStatus struct {
 	Conditions []*BareMetalInstanceCondition `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	// Echo of `spec.restart_trigger` after the controller has executed the requested restart.
 	// The controller sets this to match `spec.restart_trigger` once the power cycle is complete.
-	RestartTrigger string `protobuf:"bytes,3,opt,name=restart_trigger,json=restartTrigger,proto3" json:"restart_trigger,omitempty"`
+	RestartTrigger int64 `protobuf:"varint,3,opt,name=restart_trigger,json=restartTrigger,proto3" json:"restart_trigger,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -558,11 +558,11 @@ func (x *BareMetalInstanceStatus) GetConditions() []*BareMetalInstanceCondition 
 	return nil
 }
 
-func (x *BareMetalInstanceStatus) GetRestartTrigger() string {
+func (x *BareMetalInstanceStatus) GetRestartTrigger() int64 {
 	if x != nil {
 		return x.RestartTrigger
 	}
-	return ""
+	return 0
 }
 
 func (x *BareMetalInstanceStatus) SetState(v BareMetalInstanceState) {
@@ -573,7 +573,7 @@ func (x *BareMetalInstanceStatus) SetConditions(v []*BareMetalInstanceCondition)
 	x.Conditions = v
 }
 
-func (x *BareMetalInstanceStatus) SetRestartTrigger(v string) {
+func (x *BareMetalInstanceStatus) SetRestartTrigger(v int64) {
 	x.RestartTrigger = v
 }
 
@@ -586,7 +586,7 @@ type BareMetalInstanceStatus_builder struct {
 	Conditions []*BareMetalInstanceCondition
 	// Echo of `spec.restart_trigger` after the controller has executed the requested restart.
 	// The controller sets this to match `spec.restart_trigger` once the power cycle is complete.
-	RestartTrigger string
+	RestartTrigger int64
 }
 
 func (b0 BareMetalInstanceStatus_builder) Build() *BareMetalInstanceStatus {
@@ -788,7 +788,7 @@ var file_osac_public_v1_baremetal_instance_type_proto_rawDesc = string([]byte{
 	0x53, 0x74, 0x72, 0x61, 0x74, 0x65, 0x67, 0x79, 0x48, 0x02, 0x52, 0x0b, 0x72, 0x75, 0x6e, 0x53,
 	0x74, 0x72, 0x61, 0x74, 0x65, 0x67, 0x79, 0x88, 0x01, 0x01, 0x12, 0x27, 0x0a, 0x0f, 0x72, 0x65,
 	0x73, 0x74, 0x61, 0x72, 0x74, 0x5f, 0x74, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x18, 0x05, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x0e, 0x72, 0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x54, 0x72, 0x69, 0x67,
+	0x01, 0x28, 0x03, 0x52, 0x0e, 0x72, 0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x54, 0x72, 0x69, 0x67,
 	0x67, 0x65, 0x72, 0x42, 0x0a, 0x0a, 0x08, 0x5f, 0x73, 0x73, 0x68, 0x5f, 0x6b, 0x65, 0x79, 0x42,
 	0x0c, 0x0a, 0x0a, 0x5f, 0x75, 0x73, 0x65, 0x72, 0x5f, 0x64, 0x61, 0x74, 0x61, 0x42, 0x0f, 0x0a,
 	0x0d, 0x5f, 0x72, 0x75, 0x6e, 0x5f, 0x73, 0x74, 0x72, 0x61, 0x74, 0x65, 0x67, 0x79, 0x22, 0xcc,
@@ -803,7 +803,7 @@ var file_osac_public_v1_baremetal_instance_type_proto_rawDesc = string([]byte{
 	0x72, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x6c, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x43,
 	0x6f, 0x6e, 0x64, 0x69, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x0a, 0x63, 0x6f, 0x6e, 0x64, 0x69, 0x74,
 	0x69, 0x6f, 0x6e, 0x73, 0x12, 0x27, 0x0a, 0x0f, 0x72, 0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x5f,
-	0x74, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x72,
+	0x74, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0e, 0x72,
 	0x65, 0x73, 0x74, 0x61, 0x72, 0x74, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x22, 0xba, 0x02,
 	0x0a, 0x1a, 0x42, 0x61, 0x72, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x6c, 0x49, 0x6e, 0x73, 0x74, 0x61,
 	0x6e, 0x63, 0x65, 0x43, 0x6f, 0x6e, 0x64, 0x69, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x42, 0x0a, 0x04,

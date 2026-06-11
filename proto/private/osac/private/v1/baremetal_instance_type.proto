@@ -53,7 +53,7 @@ message BareMetalInstanceSpec {
   // Used to trigger a restart of the physical machine. Change it to any value to trigger the restart.
   // The value itself is not important; only the change matters.
   // The controller compares this with `status.restart_trigger` and initiates a power cycle when they differ.
-  string restart_trigger = 5;
+  int64 restart_trigger = 5;
 }
 
 // The status contains the details of the bare metal instance provided by the system.
@@ -66,7 +66,7 @@ message BareMetalInstanceStatus {
 
   // Echo of `spec.restart_trigger` after the controller has executed the requested restart.
   // The controller sets this to match `spec.restart_trigger` once the power cycle is complete.
-  string restart_trigger = 3;
+  int64 restart_trigger = 3;
 
   // Identifier of the hub that was selected for this bare metal instance.
   string hub = 4;
