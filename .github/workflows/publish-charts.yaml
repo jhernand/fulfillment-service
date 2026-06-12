@@ -41,9 +41,12 @@ jobs:
         # Get the git version:
         export git_version="$(git describe --tags)"
 
-        # Update the image reference in the chart:
+        # Resolve the image digest and update the chart:
         export app_version="${git_version}"
-        export app_image="${registry}/${{ github.repository }}:${app_version}"
+        export app_digest="$(skopeo inspect \
+          "docker://${registry}/${{ github.repository }}:${app_version}" \
+          --format '{{ .Digest }}'')"
+        export app_image="${registry}/${{ github.repository }}@${app_digest}"
         yq -i '.images.service = strenv(app_image)' charts/service/values.yaml
 
         # Package the chart:
