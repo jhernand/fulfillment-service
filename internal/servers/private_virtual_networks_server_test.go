@@ -1440,9 +1440,6 @@ var _ = Describe("Private virtual networks server", func() {
 			subnet := privatev1.Subnet_builder{
 				Metadata: privatev1.Metadata_builder{
 					Tenant: auth.SharedTenant,
-					Annotations: map[string]string{
-						"osac.io/owner-reference": vn.GetId(),
-					},
 				}.Build(),
 				Spec: privatev1.SubnetSpec_builder{
 					VirtualNetwork: vn.GetId(),
@@ -1469,9 +1466,6 @@ var _ = Describe("Private virtual networks server", func() {
 			sg := privatev1.SecurityGroup_builder{
 				Metadata: privatev1.Metadata_builder{
 					Tenant: auth.SharedTenant,
-					Annotations: map[string]string{
-						"osac.io/owner-reference": vn.GetId(),
-					},
 				}.Build(),
 				Spec: privatev1.SecurityGroupSpec_builder{
 					VirtualNetwork: vn.GetId(),
@@ -1498,9 +1492,6 @@ var _ = Describe("Private virtual networks server", func() {
 			subnet := privatev1.Subnet_builder{
 				Metadata: privatev1.Metadata_builder{
 					Tenant: auth.SharedTenant,
-					Annotations: map[string]string{
-						"osac.io/owner-reference": vn.GetId(),
-					},
 				}.Build(),
 				Spec: privatev1.SubnetSpec_builder{
 					VirtualNetwork: vn.GetId(),
@@ -1513,9 +1504,6 @@ var _ = Describe("Private virtual networks server", func() {
 			sg := privatev1.SecurityGroup_builder{
 				Metadata: privatev1.Metadata_builder{
 					Tenant: auth.SharedTenant,
-					Annotations: map[string]string{
-						"osac.io/owner-reference": vn.GetId(),
-					},
 				}.Build(),
 				Spec: privatev1.SecurityGroupSpec_builder{
 					VirtualNetwork: vn.GetId(),
@@ -1540,9 +1528,6 @@ var _ = Describe("Private virtual networks server", func() {
 			sg := privatev1.SecurityGroup_builder{
 				Metadata: privatev1.Metadata_builder{
 					Tenant: auth.SharedTenant,
-					Annotations: map[string]string{
-						"osac.io/owner-reference": vn.GetId(),
-					},
 				}.Build(),
 				Spec: privatev1.SecurityGroupSpec_builder{
 					VirtualNetwork: vn.GetId(),
@@ -1573,9 +1558,6 @@ var _ = Describe("Private virtual networks server", func() {
 				subnet := privatev1.Subnet_builder{
 					Metadata: privatev1.Metadata_builder{
 						Tenant: auth.SharedTenant,
-						Annotations: map[string]string{
-							"osac.io/owner-reference": vn.GetId(),
-						},
 					}.Build(),
 					Spec: privatev1.SubnetSpec_builder{
 						VirtualNetwork: vn.GetId(),

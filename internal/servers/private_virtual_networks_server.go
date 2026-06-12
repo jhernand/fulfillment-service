@@ -210,6 +210,8 @@ func (s *PrivateVirtualNetworksServer) Update(ctx context.Context,
 	return
 }
 
+// Delete removes a VirtualNetwork after verifying no child Subnets or SecurityGroups reference it.
+// Returns FailedPrecondition when references exist.
 func (s *PrivateVirtualNetworksServer) Delete(ctx context.Context,
 	request *privatev1.VirtualNetworksDeleteRequest) (response *privatev1.VirtualNetworksDeleteResponse, err error) {
 	if err = s.checkNoChildReferences(ctx, request.GetId()); err != nil {
@@ -220,7 +222,8 @@ func (s *PrivateVirtualNetworksServer) Delete(ctx context.Context,
 	return
 }
 
-// checkNoChildReferences verifies that no Subnets or SecurityGroups reference the given VirtualNetwork.
+// checkNoChildReferences returns nil when no Subnets or SecurityGroups reference virtualNetworkID.
+// Returns FailedPrecondition when child resources exist, or Internal when the reference query fails.
 func (s *PrivateVirtualNetworksServer) checkNoChildReferences(ctx context.Context, virtualNetworkID string) error {
 	if virtualNetworkID == "" {
 		return nil
