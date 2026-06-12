@@ -28,13 +28,13 @@ import (
 func Cmd() *cobra.Command {
 	runner := &runnerContext{}
 	result := &cobra.Command{
-		Use:     "instancetype",
-		Aliases: []string{string(proto.MessageName((*privatev1.InstanceType)(nil)))},
+		Use:                   "instancetype",
+		Aliases:               []string{string(proto.MessageName((*privatev1.InstanceType)(nil)))},
 		Short:                 shortHelp,
 		Long:                  longHelp,
 		DisableFlagsInUseLine: true,
 		Args:                  cobra.NoArgs,
-		RunE:    runner.run,
+		RunE:                  runner.run,
 	}
 	flags := result.Flags()
 	flags.StringVar(
