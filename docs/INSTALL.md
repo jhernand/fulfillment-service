@@ -792,6 +792,23 @@ spec:
     organizationsEnabled: true
 
     clientScopes:
+    - name: osac-api
+      description: OSAC API
+      protocol: openid-connect
+      attributes:
+        include.in.token.scope: "false"
+        display.on.consent.screen: "false"
+      protocolMappers:
+      - name: osac-api-aud
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        consentRequired: false
+        config:
+          id.token.claim: "false"
+          lightweight.claim: "false"
+          access.token.claim: "true"
+          introspection.token.claim: "true"
+          included.custom.audience: "osac-api"
     - name: username
       description: Username claim
       protocol: openid-connect
@@ -855,6 +872,7 @@ spec:
       - basic
       - username
       - groups
+      - osac-api
       redirectUris:
       - http://localhost
 
@@ -874,6 +892,7 @@ spec:
       - basic
       - username
       - groups
+      - osac-api
 
     - clientId: osac-controller
       name: OSAC controller
@@ -891,6 +910,7 @@ spec:
       - basic
       - username
       - groups
+      - osac-api
 
     users:
     - username: service-account-osac-admin

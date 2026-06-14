@@ -1056,6 +1056,12 @@ func (t *Tool) deployKeycloak(ctx context.Context) error {
 				"directAccessGrantsEnabled": false,
 				"protocol":                  "openid-connect",
 				"fullScopeAllowed":          true,
+				"defaultClientScopes": []string{
+					"basic",
+					"username",
+					"groups",
+					"osac-api",
+				},
 			},
 		)
 		users = append(
