@@ -123,6 +123,7 @@ func Cmd() *cobra.Command {
 		"",
 		tokenIssuerFlagHelp,
 	)
+	network.AddGrpcKeepaliveFlags(flags)
 	return command
 }
 
@@ -364,15 +365,21 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 		return fmt.Errorf("failed to create transactions interceptor: %w", err)
 	}
 
+	// Read gRPC keepalive configuration:
+	keepaliveConfig, err := network.GrpcKeepaliveConfigFromFlags(c.flags)
+	if err != nil {
+		return fmt.Errorf("failed to read gRPC keepalive configuration: %w", err)
+	}
+
 	// Create the gRPC server:
 	c.logger.InfoContext(ctx, "Creating gRPC server")
 	grpcServer := grpc.NewServer(
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    15 * time.Second,
-			Timeout: 10 * time.Second,
+			Time:    keepaliveConfig.Time,
+			Timeout: keepaliveConfig.Timeout,
 		}),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second,
+			MinTime:             keepaliveConfig.MinTime,
 			PermitWithoutStream: true,
 		}),
 		grpc.ChainUnaryInterceptor(
