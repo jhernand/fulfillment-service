@@ -120,6 +120,7 @@ create index bare_metal_instances_by_name on bare_metal_instances (name);
 create index bare_metal_instances_by_creator on bare_metal_instances (creator);
 create index bare_metal_instances_by_tenant on bare_metal_instances (tenant);
 create index bare_metal_instances_by_label on bare_metal_instances using gin (labels);
+create index bare_metal_instances_by_catalog_item on bare_metal_instances ((data->'spec'->>'catalog_item'));
 
 alter table bare_metal_instance_templates
   add constraint bare_metal_instance_templates_tenant_fk
