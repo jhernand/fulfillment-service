@@ -73,6 +73,42 @@ var _ = Describe("buildSpec", func() {
 	})
 })
 
+var _ = Describe("buildSpecFromCatalogItem", func() {
+	It("should populate attachments when network-attachment flags are set", func() {
+		c := &runnerContext{}
+		c.args.networkAttachments = []string{"n1", "subnet=n2,security-groups=g1"}
+		spec, err := c.buildSpecFromCatalogItem("cat-001")
+		Expect(err).NotTo(HaveOccurred())
+
+		want := publicv1.ComputeInstanceSpec_builder{
+			CatalogItem: "cat-001",
+			NetworkAttachments: []*publicv1.NetworkAttachment{
+				publicv1.NetworkAttachment_builder{Subnet: "n1"}.Build(),
+				publicv1.NetworkAttachment_builder{Subnet: "n2", SecurityGroups: []string{"g1"}}.Build(),
+			},
+		}.Build()
+		Expect(proto.Equal(spec, want)).To(BeTrue(), "spec should equal expected spec")
+	})
+
+	It("should return spec without attachments when no network flags are set", func() {
+		c := &runnerContext{}
+		spec, err := c.buildSpecFromCatalogItem("cat-002")
+		Expect(err).NotTo(HaveOccurred())
+
+		want := publicv1.ComputeInstanceSpec_builder{
+			CatalogItem: "cat-002",
+		}.Build()
+		Expect(proto.Equal(spec, want)).To(BeTrue(), "spec should equal expected spec")
+	})
+
+	It("should return error when network-attachment value is invalid", func() {
+		c := &runnerContext{}
+		c.args.networkAttachments = []string{"subnet=a,foo=bar"}
+		_, err := c.buildSpecFromCatalogItem("cat-003")
+		Expect(err).To(HaveOccurred())
+	})
+})
+
 var _ = Describe("Create computeinstance flag registration", func() {
 	It("should register --catalog-item flag", func() {
 		cmd := Cmd()
