@@ -14,7 +14,7 @@ language governing permissions and limitations under the License.
 package utils
 
 import (
-	"net"
+	"net/netip"
 
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -83,7 +83,7 @@ func validateClusterNetwork(network *privatev1.ClusterNetwork) error {
 		return nil
 	}
 	if network.HasPodCidr() {
-		if _, _, err := net.ParseCIDR(network.GetPodCidr()); err != nil {
+		if _, err := netip.ParsePrefix(network.GetPodCidr()); err != nil {
 			return grpcstatus.Errorf(
 				grpccodes.InvalidArgument,
 				"invalid pod_cidr %q: %v",
@@ -92,7 +92,7 @@ func validateClusterNetwork(network *privatev1.ClusterNetwork) error {
 		}
 	}
 	if network.HasServiceCidr() {
-		if _, _, err := net.ParseCIDR(network.GetServiceCidr()); err != nil {
+		if _, err := netip.ParsePrefix(network.GetServiceCidr()); err != nil {
 			return grpcstatus.Errorf(
 				grpccodes.InvalidArgument,
 				"invalid service_cidr %q: %v",

@@ -18,7 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -752,13 +752,13 @@ func validateNetworkCIDRs(spec *privatev1.ClusterSpec) error {
 	}
 	network := spec.GetNetwork()
 	if network.HasPodCidr() {
-		if _, _, err := net.ParseCIDR(network.GetPodCidr()); err != nil {
+		if _, err := netip.ParsePrefix(network.GetPodCidr()); err != nil {
 			return grpcstatus.Errorf(grpccodes.InvalidArgument,
 				"invalid pod_cidr format '%s': %v", network.GetPodCidr(), err)
 		}
 	}
 	if network.HasServiceCidr() {
-		if _, _, err := net.ParseCIDR(network.GetServiceCidr()); err != nil {
+		if _, err := netip.ParsePrefix(network.GetServiceCidr()); err != nil {
 			return grpcstatus.Errorf(grpccodes.InvalidArgument,
 				"invalid service_cidr format '%s': %v", network.GetServiceCidr(), err)
 		}
