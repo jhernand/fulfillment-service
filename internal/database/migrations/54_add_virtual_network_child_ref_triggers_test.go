@@ -74,18 +74,24 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 		err := tool.Migrate(ctx, 54)
 		Expect(err).ToNot(HaveOccurred())
 
-		for _, indexName := range []string{"subnets_by_virtual_network", "security_groups_by_virtual_network"} {
-			var count int
+		type idxExpectation struct {
+			name  string
+			table string
+		}
+		for _, tc := range []idxExpectation{
+			{name: "subnets_by_virtual_network", table: "subnets"},
+			{name: "security_groups_by_virtual_network", table: "security_groups"},
+		} {
+			var indexDef string
 			err = conn.QueryRow(ctx, `
-				select
-					count(*)
-				from
-					pg_indexes
-				where
-					indexname = $1
-			`, indexName).Scan(&count)
+				select indexdef
+				from pg_indexes
+				where indexname = $1
+				  and tablename = $2
+			`, tc.name, tc.table).Scan(&indexDef)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(count).To(Equal(1))
+			Expect(indexDef).To(ContainSubstring("(data -> 'spec'::text) ->> 'virtual_network'::text"))
+			Expect(indexDef).To(ContainSubstring("WHERE (deletion_timestamp = '1970-01-01 00:00:00+00'::timestamp with time zone)"))
 		}
 	})
 
@@ -287,6 +293,22 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 		`).Scan(&count)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(count).To(Equal(1))
+	})
+
+	It("Prevents creating a security group referencing a non-existent virtual network", func(ctx context.Context) {
+		err := tool.Migrate(ctx, 54)
+		Expect(err).ToNot(HaveOccurred())
+		insertTenant(ctx)
+
+		_, err = conn.Exec(ctx,
+			`insert into security_groups (id, tenant, data)
+			 values ('sg-ref-missing', 'test-tenant', $1::jsonb)`,
+			`{"spec":{"virtual_network":"no-such-vn"}}`)
+		Expect(err).To(HaveOccurred())
+		var pgErr *pgconn.PgError
+		Expect(errors.As(err, &pgErr)).To(BeTrue())
+		Expect(pgErr.Code).To(Equal("Z0002"))
+		Expect(pgErr.Message).To(ContainSubstring("no-such-vn"))
 	})
 
 	It("Prevents creating a security group referencing a soft-deleted virtual network", func(ctx context.Context) {
