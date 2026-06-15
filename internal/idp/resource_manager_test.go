@@ -143,46 +143,132 @@ var _ = Describe("ResourceManager", func() {
 		It("should create hierarchical viewers and managers groups", func() {
 			mockClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "test-org", GroupNameViewers, "/test-project/viewers").
-				Return(nil)
+				Return("viewers-group-id", nil)
 
 			mockClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "test-org", GroupNameManagers, "/test-project/managers").
-				Return(nil)
+				Return("managers-group-id", nil)
 
-			err := manager.CreateProjectGroups(ctx, "test-org", "test-project")
+			managersID, err := manager.CreateProjectGroups(ctx, "test-org", "test-project")
 			Expect(err).ToNot(HaveOccurred())
+			Expect(managersID).To(Equal("managers-group-id"))
 		})
 
 		It("should rollback viewers group when managers group creation fails", func() {
 			mockClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "test-org", GroupNameViewers, "/test-project/viewers").
-				Return(nil)
+				Return("viewers-group-id", nil)
 
 			mockClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "test-org", GroupNameManagers, "/test-project/managers").
-				Return(errors.New("keycloak error"))
-
-			mockClient.EXPECT().
-				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/viewers").
-				Return("viewers-group-id", nil)
+				Return("", errors.New("keycloak error"))
 
 			mockClient.EXPECT().
 				DeleteAuthorizationGroup(gomock.Any(), "test-org", "viewers-group-id").
 				Return(nil)
 
-			err := manager.CreateProjectGroups(ctx, "test-org", "test-project")
+			managersID, err := manager.CreateProjectGroups(ctx, "test-org", "test-project")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create managers group"))
+			Expect(managersID).To(BeEmpty())
 		})
 
 		It("should return error when viewers group creation fails", func() {
 			mockClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "test-org", GroupNameViewers, "/test-project/viewers").
-				Return(errors.New("keycloak error"))
+				Return("", errors.New("keycloak error"))
 
-			err := manager.CreateProjectGroups(ctx, "test-org", "test-project")
+			managersID, err := manager.CreateProjectGroups(ctx, "test-org", "test-project")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create viewers group"))
+			Expect(managersID).To(BeEmpty())
+		})
+	})
+
+	Describe("AddUserToProjectGroup", func() {
+		var manager *ResourceManager
+
+		BeforeEach(func() {
+			var err error
+			manager, err = NewResourceManager().
+				SetLogger(logger).
+				SetClient(mockClient).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should add user to managers group", func() {
+			mockClient.EXPECT().
+				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/managers").
+				Return("managers-group-id", nil)
+
+			mockClient.EXPECT().
+				AddUserToGroup(gomock.Any(), "test-org", "user-123", "managers-group-id").
+				Return(nil)
+
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "test-project", "user-123", GroupNameManagers)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should add user to viewers group", func() {
+			mockClient.EXPECT().
+				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/viewers").
+				Return("viewers-group-id", nil)
+
+			mockClient.EXPECT().
+				AddUserToGroup(gomock.Any(), "test-org", "user-456", "viewers-group-id").
+				Return(nil)
+
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "test-project", "user-456", GroupNameViewers)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should return error when tenant is empty", func() {
+			err := manager.AddUserToProjectGroup(ctx, "", "test-project", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("tenant is required"))
+		})
+
+		It("should return error when project name is empty", func() {
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name is required"))
+		})
+
+		It("should return error when username is empty", func() {
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "test-project", "", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("username is required"))
+		})
+
+		It("should return error for invalid group type", func() {
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "test-project", "user-123", "invalid-group")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid group type"))
+		})
+
+		It("should return error when group lookup fails", func() {
+			mockClient.EXPECT().
+				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/managers").
+				Return("", errors.New("group not found"))
+
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "test-project", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to get group ID"))
+		})
+
+		It("should return error when adding user to group fails", func() {
+			mockClient.EXPECT().
+				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/managers").
+				Return("managers-group-id", nil)
+
+			mockClient.EXPECT().
+				AddUserToGroup(gomock.Any(), "test-org", "user-123", "managers-group-id").
+				Return(errors.New("keycloak error"))
+
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "test-project", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to add user to group"))
 		})
 	})
 })

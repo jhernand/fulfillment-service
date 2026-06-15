@@ -125,51 +125,113 @@ func (m *ResourceManager) getGroupIDByPath(ctx context.Context, organizationName
 // CreateProjectGroups creates Keycloak organization groups for a project.
 // Creates hierarchical groups: /{project-name}/viewers and /{project-name}/managers
 // These groups are used by Authorino OPA policies for authorization.
-func (m *ResourceManager) CreateProjectGroups(ctx context.Context, tenant, projectName string) error {
+// Returns the managers group ID for immediate use (avoids timing issues with group lookup).
+func (m *ResourceManager) CreateProjectGroups(ctx context.Context, tenant, projectName string) (string, error) {
+	if tenant == "" {
+		return "", fmt.Errorf("tenant is required")
+	}
+	if projectName == "" {
+		return "", fmt.Errorf("project name is required")
+	}
+
 	m.logger.DebugContext(ctx, "Creating project groups",
 		slog.String("tenant", tenant),
 		slog.String("project_name", projectName),
 	)
 
 	viewersGroupPath := fmt.Sprintf("/%s/%s", projectName, GroupNameViewers)
-	err := m.client.CreateAuthorizationGroup(ctx, tenant, GroupNameViewers, viewersGroupPath)
+	viewersGroupID, err := m.client.CreateAuthorizationGroup(ctx, tenant, GroupNameViewers, viewersGroupPath)
 	if err != nil {
-		return fmt.Errorf("failed to create viewers group: %w", err)
+		return "", fmt.Errorf("failed to create viewers group: %w", err)
 	}
 
 	m.logger.InfoContext(ctx, "Created project viewers group",
 		slog.String("group_path", viewersGroupPath),
+		slog.String("group_id", viewersGroupID),
 		slog.String("project_name", projectName),
 		slog.String("tenant", tenant),
 	)
 
 	managersGroupPath := fmt.Sprintf("/%s/%s", projectName, GroupNameManagers)
-	err = m.client.CreateAuthorizationGroup(ctx, tenant, GroupNameManagers, managersGroupPath)
+	managersGroupID, err := m.client.CreateAuthorizationGroup(ctx, tenant, GroupNameManagers, managersGroupPath)
 	if err != nil {
 		// Clean up viewers group on failure
-		viewersGroupID, getErr := m.getGroupIDByPath(ctx, tenant, viewersGroupPath)
-		if getErr != nil {
-			m.logger.ErrorContext(ctx, "Failed to get viewers group ID during rollback",
-				slog.String("group_path", viewersGroupPath),
-				slog.Any("get_error", getErr),
+		if cleanupErr := m.client.DeleteAuthorizationGroup(ctx, tenant, viewersGroupID); cleanupErr != nil {
+			m.logger.ErrorContext(ctx, "Failed to cleanup viewers group during rollback",
+				slog.String("group_id", viewersGroupID),
+				slog.Any("cleanup_error", cleanupErr),
 			)
-			return fmt.Errorf("failed to create managers group: %w (rollback also failed to lookup viewers group: %w)", err, getErr)
+			return "", fmt.Errorf("failed to create managers group: %w (rollback also failed: %w)", err, cleanupErr)
 		}
-		if viewersGroupID != "" {
-			if cleanupErr := m.client.DeleteAuthorizationGroup(ctx, tenant, viewersGroupID); cleanupErr != nil {
-				m.logger.ErrorContext(ctx, "Failed to cleanup viewers group during rollback",
-					slog.String("group_id", viewersGroupID),
-					slog.Any("cleanup_error", cleanupErr),
-				)
-				return fmt.Errorf("failed to create managers group: %w (rollback also failed: %w)", err, cleanupErr)
-			}
-		}
-		return fmt.Errorf("failed to create managers group: %w", err)
+		return "", fmt.Errorf("failed to create managers group: %w", err)
 	}
 
 	m.logger.InfoContext(ctx, "Created project managers group",
 		slog.String("group_path", managersGroupPath),
+		slog.String("group_id", managersGroupID),
 		slog.String("project_name", projectName),
+		slog.String("tenant", tenant),
+	)
+
+	return managersGroupID, nil
+}
+
+// AddUserToProjectGroup adds a user to a project group (viewers or managers).
+func (m *ResourceManager) AddUserToProjectGroup(ctx context.Context, tenant, projectName, username, groupType string) error {
+	if tenant == "" {
+		return fmt.Errorf("tenant is required")
+	}
+	if projectName == "" {
+		return fmt.Errorf("project name is required")
+	}
+	if username == "" {
+		return fmt.Errorf("username is required")
+	}
+	if groupType != GroupNameViewers && groupType != GroupNameManagers {
+		return fmt.Errorf("invalid group type %q, must be %q or %q", groupType, GroupNameViewers, GroupNameManagers)
+	}
+
+	groupPath := fmt.Sprintf("/%s/%s", projectName, groupType)
+	groupID, err := m.getGroupIDByPath(ctx, tenant, groupPath)
+	if err != nil {
+		return fmt.Errorf("failed to get group ID for %s: %w", groupPath, err)
+	}
+
+	if err = m.client.AddUserToGroup(ctx, tenant, username, groupID); err != nil {
+		return fmt.Errorf("failed to add user to group %s: %w", groupPath, err)
+	}
+
+	m.logger.InfoContext(ctx, "Added user to project group",
+		slog.String("group_path", groupPath),
+		slog.String("group_type", groupType),
+		slog.String("!username", username),
+		slog.String("project_name", projectName),
+		slog.String("tenant", tenant),
+	)
+
+	return nil
+}
+
+// AddUserToGroupByID adds a user to a group using the group ID directly.
+// This avoids timing issues with group lookup for recently created groups.
+func (m *ResourceManager) AddUserToGroupByID(ctx context.Context, tenant, username, groupID string) error {
+	if tenant == "" {
+		return fmt.Errorf("tenant is required")
+	}
+	if username == "" {
+		return fmt.Errorf("username is required")
+	}
+	if groupID == "" {
+		return fmt.Errorf("group ID is required")
+	}
+
+	if err := m.client.AddUserToGroup(ctx, tenant, username, groupID); err != nil {
+		return fmt.Errorf("failed to add user to group: %w", err)
+	}
+
+	m.logger.InfoContext(ctx, "Added user to group",
+		slog.String("group_id", groupID),
+		slog.String("!username", username),
 		slog.String("tenant", tenant),
 	)
 

@@ -1931,8 +1931,9 @@ var _ = Describe("Keycloak Client", func() {
 
 				client = createTestClient(server.URL)
 
-				err := client.CreateAuthorizationGroup(ctx, "acme-corp", "viewers", "/web-app/viewers")
+				groupID, err := client.CreateAuthorizationGroup(ctx, "acme-corp", "viewers", "/web-app/viewers")
 				Expect(err).ToNot(HaveOccurred())
+				Expect(groupID).To(Equal(createdGroups["viewers"]))
 				Expect(createdGroups).To(HaveKey("web-app"))
 				Expect(createdGroups).To(HaveKey("viewers"))
 			})
@@ -1953,9 +1954,10 @@ var _ = Describe("Keycloak Client", func() {
 
 				client = createTestClient(server.URL)
 
-				err := client.CreateAuthorizationGroup(ctx, "nonexistent-org", "viewers", "/web-app/viewers")
+				groupID, err := client.CreateAuthorizationGroup(ctx, "nonexistent-org", "viewers", "/web-app/viewers")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get organization"))
+				Expect(groupID).To(BeEmpty())
 			})
 
 			It("should handle 409 conflict by looking up existing group", func() {
@@ -2017,8 +2019,9 @@ var _ = Describe("Keycloak Client", func() {
 
 				client = createTestClient(server.URL)
 
-				err := client.CreateAuthorizationGroup(ctx, "acme-corp", "viewers", "/web-app/viewers")
+				groupID, err := client.CreateAuthorizationGroup(ctx, "acme-corp", "viewers", "/web-app/viewers")
 				Expect(err).ToNot(HaveOccurred())
+				Expect(groupID).To(Equal(createdGroups["viewers"]))
 				Expect(createdGroups).To(HaveKey("viewers"))
 			})
 		})

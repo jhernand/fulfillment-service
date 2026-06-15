@@ -281,6 +281,8 @@ func (r *UpdateRequest[O]) translateError(ctx context.Context, id, name, tenant 
 				fields = append(fields, "metadata.name")
 			case "tenant":
 				fields = append(fields, "metadata.tenant")
+			case "creator":
+				fields = append(fields, "metadata.creator")
 			default:
 				r.dao.logger.WarnContext(
 					ctx,

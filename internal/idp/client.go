@@ -83,11 +83,14 @@ type Client interface {
 	// CreateAuthorizationGroup creates a Keycloak organization group for authorization purposes.
 	// Organization groups are scoped to a specific organization and support hierarchical paths.
 	// Recommended path format: "/{project-name}/{viewers|managers}" for top-level projects.
-	CreateAuthorizationGroup(ctx context.Context, organizationName, groupName, groupPath string) error
+	// Returns the created group ID.
+	CreateAuthorizationGroup(ctx context.Context, organizationName, groupName, groupPath string) (string, error)
 	// DeleteAuthorizationGroup deletes a Keycloak organization group by ID.
 	DeleteAuthorizationGroup(ctx context.Context, organizationName, groupID string) error
 	// GetGroupIDByPath gets a Keycloak organization group ID by its path.
 	GetGroupIDByPath(ctx context.Context, organizationName, groupPath string) (string, error)
+	// AddUserToGroup adds a user to an organization group by group ID.
+	AddUserToGroup(ctx context.Context, organizationName, username, groupID string) error
 
 	// Identity Provider operations
 	// CreateIdentityProvider creates a new external identity provider at the realm level.
