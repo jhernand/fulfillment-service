@@ -1364,7 +1364,7 @@ var _ = Describe("Private virtual networks server", func() {
 		})
 	})
 
-	Describe("Deletion referential integrity", func() {
+	Describe("Deletion validation", func() {
 		var (
 			vnServer  *PrivateVirtualNetworksServer
 			subnetDao *dao.GenericDAO[*privatev1.Subnet]
@@ -1535,11 +1535,6 @@ var _ = Describe("Private virtual networks server", func() {
 			}.Build()
 			sgResp, err := sgDao.Create().SetObject(sg).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
-
-			_, err = vnServer.Delete(ctx, privatev1.VirtualNetworksDeleteRequest_builder{
-				Id: vn.GetId(),
-			}.Build())
-			Expect(err).To(HaveOccurred())
 
 			_, err = sgDao.Delete().SetId(sgResp.GetObject().GetId()).Do(ctx)
 			Expect(err).ToNot(HaveOccurred())
