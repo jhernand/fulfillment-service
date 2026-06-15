@@ -375,21 +375,18 @@ Keycloak, this means the `realm-management` client roles: `manage-realm`, `manag
 `view-realm`, `view-users`). You can reuse the same credentials as `auth.controllerCredentials`
 if the service account has both API access and IDP management permissions.
 
-### 7. Trusted vs Advertised Token Issuers
+### 7. Trusted Token Issuers
 
-The fulfillment service maintains two separate lists of token issuers:
+The fulfillment service maintains a single list of trusted token issuers, configured via the
+`--grpc-authn-trusted-token-issuers` server flag. This same list is used in two places:
 
-1. **Trusted Token Issuers**: These are the advertised trusted issuers. This list is configured in:
-   - Authorino AuthConfig (for HTTP/gRPC gateway authentication)
-   - Server command-line flag `--grpc-authn-trusted-token-issuers` (for direct gRPC authentication)
+1. **Server-side authentication**: The server validates that incoming JWT tokens were issued by one
+   of the trusted issuers. The Authorino AuthConfig also references this issuer URL for gateway
+   authentication.
 
-2. **Advertised Token Issuers**: These are the issuers that the service advertises to clients
-   (primarily for CLI usage). This allows clients to discover which issuers they can use without
-   explicitly specifying them. The advertised issuers are returned via the Capabilities API and may
-   or may not be the same as the trusted issuers.
-
-   The advertised issuers are configured via the
-   `--grpc-authn-trusted-token-issuers` flag
+2. **Client discovery**: The Capabilities API (`Capabilities/Get`) returns the trusted issuers list
+   in the `authn.trusted_token_issuers` field. Clients like `osac login` use this to auto-select
+   which OAuth issuer to authenticate against, without requiring the user to specify one explicitly.
 
 ## User and Group Mapping
 
