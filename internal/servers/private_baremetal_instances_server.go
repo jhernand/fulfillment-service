@@ -136,10 +136,10 @@ func (s *PrivateBareMetalInstancesServer) Get(ctx context.Context,
 
 func (s *PrivateBareMetalInstancesServer) Create(ctx context.Context,
 	request *privatev1.BareMetalInstancesCreateRequest) (response *privatev1.BareMetalInstancesCreateResponse, err error) {
-	if err = s.validateSpec(request.GetObject()); err != nil {
+	if err = s.validateAndApplyCatalogItem(ctx, request.GetObject()); err != nil {
 		return
 	}
-	if err = s.validateAndApplyCatalogItem(ctx, request.GetObject()); err != nil {
+	if err = s.validateSpec(request.GetObject()); err != nil {
 		return
 	}
 	err = s.generic.Create(ctx, request, &response)
