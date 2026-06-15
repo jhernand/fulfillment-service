@@ -23,6 +23,7 @@ import (
 
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/cluster"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/computeinstance"
+	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/networkclass"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/publicip"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/publicipattachment"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/securitygroup"
@@ -38,6 +39,7 @@ var _ = Describe("Describe command", func() {
 		},
 		Entry("cluster", cluster.Cmd, "clusters"),
 		Entry("computeinstance", computeinstance.Cmd, "computeinstances"),
+		Entry("networkclass", networkclass.Cmd, "networkclasses"),
 		Entry("publicip", publicip.Cmd, "publicips"),
 		Entry("publicipattachment", publicipattachment.Cmd, "publicipattachments"),
 		Entry("virtualnetwork", virtualnetwork.Cmd, "virtualnetworks"),
@@ -55,7 +57,7 @@ var _ = Describe("Describe command", func() {
 				subcommandNames = append(subcommandNames, subcmd.Name())
 			}
 
-			Expect(subcommandNames).To(ContainElements("cluster", "computeinstance", "publicip", "publicipattachment", "virtualnetwork", "subnet", "securitygroup"))
+			Expect(subcommandNames).To(ContainElements("cluster", "computeinstance", "networkclass", "publicip", "publicipattachment", "virtualnetwork", "subnet", "securitygroup"))
 		})
 	})
 
