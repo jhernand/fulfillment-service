@@ -196,6 +196,15 @@ spec:
               "/osac.public.v1.Clusters/Update",
               "/osac.public.v1.ClusterCatalogItems/Get",
               "/osac.public.v1.ClusterCatalogItems/List",
+              "/osac.public.v1.BareMetalInstanceCatalogItems/Get",
+              "/osac.public.v1.BareMetalInstanceCatalogItems/List",
+              "/osac.public.v1.BareMetalInstanceTemplates/Get",
+              "/osac.public.v1.BareMetalInstanceTemplates/List",
+              "/osac.public.v1.BareMetalInstances/Create",
+              "/osac.public.v1.BareMetalInstances/Delete",
+              "/osac.public.v1.BareMetalInstances/Get",
+              "/osac.public.v1.BareMetalInstances/List",
+              "/osac.public.v1.BareMetalInstances/Update",
               "/osac.public.v1.ComputeInstanceTemplates/Get",
               "/osac.public.v1.ComputeInstanceTemplates/List",
               "/osac.public.v1.ComputeInstances/Create",
@@ -245,6 +254,17 @@ spec:
               "/osac.public.v1.Roles/List",
               "/osac.public.v1.RoleBindings/Get",
               "/osac.public.v1.RoleBindings/List",
+            }
+          }
+
+          # Tenant admins can create and manage tenant-scoped bare metal catalog items.
+          # The application layer (generic server) enforces that the tenant field is set from caller identity.
+          allow if {
+            is_tenant_admin
+            grpc_method in {
+              "/osac.public.v1.BareMetalInstanceCatalogItems/Create",
+              "/osac.public.v1.BareMetalInstanceCatalogItems/Update",
+              "/osac.public.v1.BareMetalInstanceCatalogItems/Delete",
             }
           }
 
