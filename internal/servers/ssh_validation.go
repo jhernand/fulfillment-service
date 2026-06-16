@@ -11,33 +11,22 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package main
+package servers
 
 import (
-	"errors"
 	"fmt"
-	"os"
 
-	"github.com/osac-project/fulfillment-service/internal/cmd/cli"
-	"github.com/osac-project/fulfillment-service/internal/exit"
+	"golang.org/x/crypto/ssh"
 )
 
-func main() {
-	err := run()
-	exitErr, ok := errors.AsType[exit.Error](err)
-	if ok {
-		os.Exit(exitErr.Code())
-	}
+// validateOpenSSHPublicKey checks that the provided string is a valid OpenSSH public key.
+func validateOpenSSHPublicKey(key string) error {
+	_, _, _, rest, err := ssh.ParseAuthorizedKey([]byte(key))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("invalid OpenSSH public key: %w", err)
 	}
-}
-
-func run() error {
-	root, err := cli.Root()
-	if err != nil {
-		return err
+	if len(rest) > 0 {
+		return fmt.Errorf("invalid OpenSSH public key: unexpected trailing content")
 	}
-	return root.Execute()
+	return nil
 }

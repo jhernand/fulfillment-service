@@ -18,7 +18,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
-	"net"
+	"net/netip"
 	"sort"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -236,13 +236,13 @@ func validateUpdate(newPool *privatev1.PublicIPPool, existing *privatev1.PublicI
 
 // validatePoolCIDRFormat validates CIDR string is parseable and belongs to the specified IP family
 func validatePoolCIDRFormat(cidrStr string, ipFamily privatev1.IPFamily, idx int) error {
-	_, network, err := net.ParseCIDR(cidrStr)
+	prefix, err := netip.ParsePrefix(cidrStr)
 	if err != nil {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument,
 			"invalid CIDR format in field 'spec.cidrs[%d]': '%s': %v", idx, cidrStr, err)
 	}
 
-	isIPv4 := network.IP.To4() != nil
+	isIPv4 := prefix.Addr().Is4()
 	switch ipFamily {
 	case privatev1.IPFamily_IP_FAMILY_IPV4:
 		if !isIPv4 {
@@ -335,12 +335,13 @@ func calculatePoolCapacity(cidrs []string, ipFamily privatev1.IPFamily) int64 {
 
 // calculateCIDRCapacity returns the number of usable IP addresses for a single CIDR
 func calculateCIDRCapacity(cidrStr string, ipFamily privatev1.IPFamily) int64 {
-	_, network, err := net.ParseCIDR(cidrStr)
+	prefix, err := netip.ParsePrefix(cidrStr)
 	if err != nil {
 		return 0
 	}
-	ones, bits := network.Mask.Size()
-	if ones == 0 && bits == 0 {
+	bits := prefix.Addr().BitLen()
+	ones := prefix.Bits()
+	if ones < 0 {
 		return 0
 	}
 	hostBits := bits - ones
