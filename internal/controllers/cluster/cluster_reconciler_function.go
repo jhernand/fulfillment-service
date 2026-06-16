@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package cluster
 
+//go:generate mockgen -source=../../api/osac/private/v1/clusters_service_grpc.pb.go -destination=clusters_client_mock.go -package=cluster ClustersClient
+
 import (
 	"context"
 	"errors"
@@ -23,6 +25,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
@@ -125,6 +128,43 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if cluster.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
+		// OSAC-455 Fix: Persist hub BEFORE creating CR to prevent orphaning
+		// Use shared helper to ensure hub selection is persisted before creating Kubernetes CR
+		helper := controllers.NewHubPersistenceHelper(r.logger)
+		if helper.ShouldPersistHub(
+			func() string { return cluster.GetStatus().GetHub() },
+			func() bool { return cluster.GetStatus().GetState() == privatev1.ClusterState_CLUSTER_STATE_PROGRESSING },
+		) {
+			err = helper.SelectAndPersistHub(
+				ctx,
+				cluster.GetId(),
+				"cluster",
+				func() string { return cluster.GetStatus().GetHub() },
+				func(ctx context.Context) (string, error) {
+					// Call selectHub to get the hub ID and populate task fields
+					err := t.selectHub(ctx)
+					if err != nil {
+						return "", err
+					}
+					return t.hubId, nil
+				},
+				func(hubID string) {
+					cluster.GetStatus().SetHub(hubID)
+				},
+				func(ctx context.Context) error {
+					_, err := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+						Object:     cluster,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return err
+				},
+			)
+			if err != nil {
+				return err // Stop here if persistence fails - no CR will be created
+			}
+		}
+
+		// Now proceed with CR creation (hub is already in database)
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -169,28 +209,26 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
-	// Select the hub, and if no hubs are available, update the condition to inform the user that creation is
-	// pending. Note that we don't want to disclose the existence of hubs to the user, as that is a internal
-	// implementation detail, so keep the message generic enough to not reveal that information.
-	err := t.selectHub(ctx)
-	if err != nil {
-		t.r.logger.ErrorContext(
-			ctx,
-			"Failed to select hub",
-			slog.String("error", err.Error()),
-		)
-		t.updateCondition(
-			privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
-			privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
-			"ResourcesUnavailable",
-			"The cluster cannot be created because there are no resources available to fulfill the "+
-				"request.",
-		)
-		return nil
+	// Hub should already be selected and persisted by run() for new clusters.
+	// This is a safety check in case selectHub wasn't called (e.g., in tests or edge cases).
+	if t.hubId == "" {
+		err := t.selectHub(ctx)
+		if err != nil {
+			t.r.logger.ErrorContext(
+				ctx,
+				"Failed to select hub",
+				slog.String("error", err.Error()),
+			)
+			t.updateCondition(
+				privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
+				privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
+				"ResourcesUnavailable",
+				"The cluster cannot be created because there are no resources available to fulfill the "+
+					"request.",
+			)
+			return nil
+		}
 	}
-
-	// Save the selected hub in the private data of the cluster:
-	t.cluster.GetStatus().SetHub(t.hubId)
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)
