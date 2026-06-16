@@ -15,6 +15,7 @@ package baremetalinstance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,6 +40,9 @@ import (
 )
 
 const objectPrefix = "bmi-"
+
+// defaultHostType is a placeholder until host type is modeled in the template proto.
+const defaultHostType = "default"
 
 const userDataSecretSuffix = "-user-data"
 
@@ -438,7 +442,24 @@ func (t *task) buildSpec(ctx context.Context) (bmfov1alpha1.BareMetalInstanceSpe
 	}
 
 	spec := bmfov1alpha1.BareMetalInstanceSpec{
+		HostType:   defaultHostType,
 		TemplateID: catalogItemResp.GetObject().GetTemplate(),
+	}
+
+	params := map[string]string{}
+	if t.bareMetalInstance.GetSpec().HasSshKey() {
+		params["sshKey"] = t.bareMetalInstance.GetSpec().GetSshKey()
+	}
+	if t.userDataSecretName != "" {
+		params["userDataSecret"] = t.userDataSecretName
+	}
+	if len(params) > 0 {
+		paramsJSON, err := json.Marshal(params)
+		if err != nil {
+			return bmfov1alpha1.BareMetalInstanceSpec{}, fmt.Errorf(
+				"failed to marshal template parameters: %w", err)
+		}
+		spec.TemplateParameters = string(paramsJSON)
 	}
 
 	if t.bareMetalInstance.GetSpec().HasRunStrategy() {

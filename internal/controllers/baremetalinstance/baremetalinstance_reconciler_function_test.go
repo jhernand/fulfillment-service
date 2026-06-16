@@ -15,6 +15,7 @@ package baremetalinstance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 
@@ -124,6 +125,7 @@ var _ = Describe("buildSpec", func() {
 		spec, err := t.buildSpec(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(spec.TemplateID).To(Equal(templateID))
+		Expect(spec.HostType).To(Equal("default"))
 	})
 
 	It("should map run_strategy ALWAYS to PoweredOn=true", func() {
@@ -191,6 +193,80 @@ var _ = Describe("buildSpec", func() {
 		spec, err := t.buildSpec(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(spec.PoweredOn).To(BeNil())
+	})
+
+	It("should include sshKey and userDataSecret in templateParameters", func() {
+		catalogItemsClient := defaultFakeCatalogItemsClient()
+
+		t := &task{
+			r: &function{
+				logger:                              logger,
+				bareMetalInstanceCatalogItemsClient: catalogItemsClient,
+			},
+			bareMetalInstance: privatev1.BareMetalInstance_builder{
+				Id: "bmi-test",
+				Spec: privatev1.BareMetalInstanceSpec_builder{
+					CatalogItem: "catalog-1",
+					SshKey:      new("ssh-ed25519 AAAA... test@example.com"),
+				}.Build(),
+			}.Build(),
+			userDataSecretName: "bmi-test-user-data",
+		}
+
+		spec, err := t.buildSpec(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		var params map[string]string
+		Expect(json.Unmarshal([]byte(spec.TemplateParameters), &params)).To(Succeed())
+		Expect(params["sshKey"]).To(Equal("ssh-ed25519 AAAA... test@example.com"))
+		Expect(params["userDataSecret"]).To(Equal("bmi-test-user-data"))
+	})
+
+	It("should include only sshKey when no user data", func() {
+		catalogItemsClient := defaultFakeCatalogItemsClient()
+
+		t := &task{
+			r: &function{
+				logger:                              logger,
+				bareMetalInstanceCatalogItemsClient: catalogItemsClient,
+			},
+			bareMetalInstance: privatev1.BareMetalInstance_builder{
+				Id: "bmi-test",
+				Spec: privatev1.BareMetalInstanceSpec_builder{
+					CatalogItem: "catalog-1",
+					SshKey:      new("ssh-ed25519 AAAA... test@example.com"),
+				}.Build(),
+			}.Build(),
+		}
+
+		spec, err := t.buildSpec(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		var params map[string]string
+		Expect(json.Unmarshal([]byte(spec.TemplateParameters), &params)).To(Succeed())
+		Expect(params).To(HaveKey("sshKey"))
+		Expect(params).ToNot(HaveKey("userDataSecret"))
+	})
+
+	It("should leave templateParameters empty when no ssh_key or user_data", func() {
+		catalogItemsClient := defaultFakeCatalogItemsClient()
+
+		t := &task{
+			r: &function{
+				logger:                              logger,
+				bareMetalInstanceCatalogItemsClient: catalogItemsClient,
+			},
+			bareMetalInstance: privatev1.BareMetalInstance_builder{
+				Id: "bmi-test",
+				Spec: privatev1.BareMetalInstanceSpec_builder{
+					CatalogItem: "catalog-1",
+				}.Build(),
+			}.Build(),
+		}
+
+		spec, err := t.buildSpec(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(spec.TemplateParameters).To(BeEmpty())
 	})
 
 	It("should return error when catalog item fetch fails", func() {
@@ -432,7 +508,9 @@ var _ = Describe("ensureUserDataSecret", func() {
 		}, secret)
 		Expect(err).ToNot(HaveOccurred())
 
-		stringData, _, _ := unstructured.NestedMap(secret.Object, "stringData")
+		stringData, found, err := unstructured.NestedMap(secret.Object, "stringData")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(found).To(BeTrue())
 		Expect(stringData[userDataSecretKey]).To(Equal("#cloud-config\npackages:\n  - vim"))
 
 		Expect(secret.GetLabels()[labels.BareMetalInstanceUuid]).To(Equal(bmiID))
