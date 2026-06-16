@@ -662,6 +662,48 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 	}
 	privatev1.RegisterComputeInstancesServer(grpcServer, privateComputeInstancesServer)
 
+	// Create the bare metal instance templates server:
+	c.logger.InfoContext(ctx, "Creating bare metal instance templates server")
+	bareMetalInstanceTemplatesServer, err := servers.NewBareMetalInstanceTemplatesServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(publicAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create bare metal instance templates server: %w", err)
+	}
+	publicv1.RegisterBareMetalInstanceTemplatesServer(grpcServer, bareMetalInstanceTemplatesServer)
+
+	// Create the bare metal instance catalog items server:
+	c.logger.InfoContext(ctx, "Creating bare metal instance catalog items server")
+	bareMetalInstanceCatalogItemsServer, err := servers.NewBareMetalInstanceCatalogItemsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(publicAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create bare metal instance catalog items server: %w", err)
+	}
+	publicv1.RegisterBareMetalInstanceCatalogItemsServer(grpcServer, bareMetalInstanceCatalogItemsServer)
+
+	// Create the bare metal instances server:
+	c.logger.InfoContext(ctx, "Creating bare metal instances server")
+	bareMetalInstancesServer, err := servers.NewBareMetalInstancesServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(publicAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create bare metal instances server: %w", err)
+	}
+	publicv1.RegisterBareMetalInstancesServer(grpcServer, bareMetalInstancesServer)
+
 	// Create the private bare metal instance templates server:
 	c.logger.InfoContext(ctx, "Creating private bare metal instance templates server")
 	privateBareMetalInstanceTemplatesServer, err := servers.NewPrivateBareMetalInstanceTemplatesServer().
