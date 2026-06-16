@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"gopkg.in/yaml.v3"
 
+	"github.com/osac-project/fulfillment-service/internal/cmd/cli/create/baremetalinstance"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/create/cluster"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/create/computeinstance"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/create/hub"
@@ -51,6 +52,7 @@ func Cmd() *cobra.Command {
 		Long:                  longHelp,
 		RunE:                  runner.run,
 	}
+	result.AddCommand(baremetalinstance.Cmd())
 	result.AddCommand(cluster.Cmd())
 	result.AddCommand(computeinstance.Cmd())
 	result.AddCommand(hub.Cmd())
