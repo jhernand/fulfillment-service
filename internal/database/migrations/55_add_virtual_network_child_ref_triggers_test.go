@@ -33,7 +33,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	}
 
 	It("Creates the 'check_virtual_network_not_in_use' function", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 
 		var count int
@@ -51,7 +51,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Adds a delete trigger to the virtual_networks table", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 
 		var count int
@@ -71,7 +71,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Creates indexes for child virtual_network lookups", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 
 		type idxExpectation struct {
@@ -96,7 +96,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Prevents soft-deleting a virtual network referenced by a subnet", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
@@ -122,7 +122,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Prevents soft-deleting a virtual network referenced by a security group", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
@@ -148,7 +148,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Reports the count of referencing subnets", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
@@ -176,7 +176,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Allows soft-deleting a virtual network with no child references", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
@@ -191,7 +191,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Allows soft-deleting a virtual network when child subnets are already deleted", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
@@ -216,7 +216,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Creates the subnet virtual_network insert trigger", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 
 		var count int
@@ -236,7 +236,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Prevents creating a subnet referencing a non-existent virtual network", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
@@ -252,7 +252,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Prevents creating a subnet referencing a soft-deleted virtual network", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
@@ -276,7 +276,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Creates the security group virtual_network insert trigger", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 
 		var count int
@@ -296,7 +296,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Prevents creating a security group referencing a non-existent virtual network", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
@@ -312,7 +312,7 @@ var _ = DescribeMigration("Add virtual network child ref triggers", func() {
 	})
 
 	It("Prevents creating a security group referencing a soft-deleted virtual network", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 54)
+		err := tool.Migrate(ctx, 55)
 		Expect(err).ToNot(HaveOccurred())
 		insertTenant(ctx)
 
