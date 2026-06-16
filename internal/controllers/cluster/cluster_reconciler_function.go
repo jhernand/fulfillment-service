@@ -128,8 +128,7 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if cluster.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455 Fix: Persist hub BEFORE creating CR to prevent orphaning
-		// Use shared helper to ensure hub selection is persisted before creating Kubernetes CR
+		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
 		helper := controllers.NewHubPersistenceHelper(r.logger)
 		if helper.ShouldPersistHub(
 			func() string { return cluster.GetStatus().GetHub() },
@@ -141,7 +140,6 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 				"cluster",
 				func() string { return cluster.GetStatus().GetHub() },
 				func(ctx context.Context) (string, error) {
-					// Call selectHub to get the hub ID and populate task fields
 					err := t.selectHub(ctx)
 					if err != nil {
 						return "", err
@@ -160,11 +158,10 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 				},
 			)
 			if err != nil {
-				return err // Stop here if persistence fails - no CR will be created
+				return err
 			}
 		}
 
-		// Now proceed with CR creation (hub is already in database)
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -209,8 +206,7 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
-	// Hub should already be selected and persisted by run() for new clusters.
-	// This is a safety check in case selectHub wasn't called (e.g., in tests or edge cases).
+	// Safety net: hub normally selected and persisted by run() before this point.
 	if t.hubId == "" {
 		err := t.selectHub(ctx)
 		if err != nil {

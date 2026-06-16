@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package computeinstance
 
+//go:generate mockgen -source=../../api/osac/private/v1/compute_instances_service_grpc.pb.go -destination=compute_instances_client_mock.go -package=computeinstance ComputeInstancesClient
+
 import (
 	"context"
 	"errors"
@@ -24,6 +26,7 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/computeinstancespec"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -134,6 +137,45 @@ func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeIn
 	if computeInstance.HasMetadata() && computeInstance.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
+		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
+		helper := controllers.NewHubPersistenceHelper(r.logger)
+		if helper.ShouldPersistHub(
+			func() string { return computeInstance.GetStatus().GetHub() },
+			func() bool {
+				state := computeInstance.GetStatus().GetState()
+				return state == privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_UNSPECIFIED ||
+					state == privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_STARTING
+			},
+		) {
+			err = helper.SelectAndPersistHub(
+				ctx,
+				computeInstance.GetId(),
+				"computeinstance",
+				func() string { return computeInstance.GetStatus().GetHub() },
+				func(ctx context.Context) (string, error) {
+					err := t.selectHub(ctx)
+					if err != nil {
+						return "", err
+					}
+					return t.hubId, nil
+				},
+				func(hubID string) {
+					computeInstance.GetStatus().SetHub(hubID)
+				},
+				func(ctx context.Context) error {
+					_, err := r.computeInstancesClient.Update(ctx, privatev1.ComputeInstancesUpdateRequest_builder{
+						Object:     computeInstance,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return err
+				},
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Now proceed with CR creation (hub is already in database)
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -167,13 +209,12 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Select the hub:
-	if err := t.selectHub(ctx); err != nil {
-		return err
+	// Safety net: hub normally selected and persisted by run() before this point.
+	if t.hubId == "" {
+		if err := t.selectHub(ctx); err != nil {
+			return err
+		}
 	}
-
-	// Save the selected hub in the private data of the compute instance:
-	t.computeInstance.GetStatus().SetHub(t.hubId)
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)

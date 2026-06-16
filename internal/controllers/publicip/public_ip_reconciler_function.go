@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package publicip
 
+//go:generate mockgen -source=../../api/osac/private/v1/public_ips_service_grpc.pb.go -destination=public_ips_client_mock.go -package=publicip PublicIPsClient
+
 import (
 	"context"
 	"errors"
@@ -22,6 +24,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -122,6 +125,44 @@ func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error 
 	if publicIP.HasMetadata() && publicIP.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
+		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
+		helper := controllers.NewHubPersistenceHelper(r.logger)
+		if helper.ShouldPersistHub(
+			func() string { return publicIP.GetStatus().GetHub() },
+			func() bool {
+				state := publicIP.GetStatus().GetState()
+				return state == privatev1.PublicIPState_PUBLIC_IP_STATE_UNSPECIFIED ||
+					state == privatev1.PublicIPState_PUBLIC_IP_STATE_PENDING
+			},
+		) {
+			err = helper.SelectAndPersistHub(
+				ctx,
+				publicIP.GetId(),
+				"publicip",
+				func() string { return publicIP.GetStatus().GetHub() },
+				func(ctx context.Context) (string, error) {
+					err := t.selectHub(ctx)
+					if err != nil {
+						return "", err
+					}
+					return t.hubId, nil
+				},
+				func(hubID string) {
+					publicIP.GetStatus().SetHub(hubID)
+				},
+				func(ctx context.Context) error {
+					_, err := r.publicIPsClient.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
+						Object:     publicIP,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return err
+				},
+			)
+			if err != nil {
+				return err
+			}
+		}
+
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -155,13 +196,12 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Select the hub from the parent pool:
-	if err := t.selectHub(ctx); err != nil {
-		return err
+	// Safety net: hub normally selected and persisted by run() before this point.
+	if t.hubId == "" {
+		if err := t.selectHub(ctx); err != nil {
+			return err
+		}
 	}
-
-	// Save the selected hub in the status of the public IP:
-	t.publicIP.GetStatus().SetHub(t.hubId)
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)

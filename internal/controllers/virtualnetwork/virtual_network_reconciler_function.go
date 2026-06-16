@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package virtualnetwork
 
+//go:generate mockgen -source=../../api/osac/private/v1/virtual_networks_service_grpc.pb.go -destination=virtual_networks_client_mock.go -package=virtualnetwork VirtualNetworksClient
+
 import (
 	"context"
 	"errors"
@@ -23,6 +25,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -123,6 +126,44 @@ func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNet
 	if virtualNetwork.HasMetadata() && virtualNetwork.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
+		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
+		helper := controllers.NewHubPersistenceHelper(r.logger)
+		if helper.ShouldPersistHub(
+			func() string { return virtualNetwork.GetStatus().GetHub() },
+			func() bool {
+				state := virtualNetwork.GetStatus().GetState()
+				return state == privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_UNSPECIFIED ||
+					state == privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_PENDING
+			},
+		) {
+			err = helper.SelectAndPersistHub(
+				ctx,
+				virtualNetwork.GetId(),
+				"virtualnetwork",
+				func() string { return virtualNetwork.GetStatus().GetHub() },
+				func(ctx context.Context) (string, error) {
+					err := t.selectHub(ctx)
+					if err != nil {
+						return "", err
+					}
+					return t.hubId, nil
+				},
+				func(hubID string) {
+					virtualNetwork.GetStatus().SetHub(hubID)
+				},
+				func(ctx context.Context) error {
+					_, err := r.virtualNetworksClient.Update(ctx, privatev1.VirtualNetworksUpdateRequest_builder{
+						Object:     virtualNetwork,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return err
+				},
+			)
+			if err != nil {
+				return err
+			}
+		}
+
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -156,9 +197,11 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Select the hub:
-	if err := t.selectHub(ctx); err != nil {
-		return err
+	// Safety net: hub normally selected and persisted by run() before this point.
+	if t.hubId == "" {
+		if err := t.selectHub(ctx); err != nil {
+			return err
+		}
 	}
 
 	// Get the K8S object:

@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package publicippool
 
+//go:generate mockgen -source=../../api/osac/private/v1/public_ip_pools_service_grpc.pb.go -destination=public_ip_pools_client_mock.go -package=publicippool PublicIPPoolsClient
+
 import (
 	"context"
 	"errors"
@@ -23,6 +25,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -131,6 +134,44 @@ func (r *function) run(ctx context.Context, publicIPPool *privatev1.PublicIPPool
 	if publicIPPool.HasMetadata() && publicIPPool.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
+		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
+		helper := controllers.NewHubPersistenceHelper(r.logger)
+		if helper.ShouldPersistHub(
+			func() string { return publicIPPool.GetStatus().GetHub() },
+			func() bool {
+				state := publicIPPool.GetStatus().GetState()
+				return state == privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_UNSPECIFIED ||
+					state == privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_PENDING
+			},
+		) {
+			err = helper.SelectAndPersistHub(
+				ctx,
+				publicIPPool.GetId(),
+				"publicippool",
+				func() string { return publicIPPool.GetStatus().GetHub() },
+				func(ctx context.Context) (string, error) {
+					err := t.selectHub(ctx)
+					if err != nil {
+						return "", err
+					}
+					return t.hubId, nil
+				},
+				func(hubID string) {
+					publicIPPool.GetStatus().SetHub(hubID)
+				},
+				func(ctx context.Context) error {
+					_, err := r.publicIPPoolsClient.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
+						Object:     publicIPPool,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return err
+				},
+			)
+			if err != nil {
+				return err
+			}
+		}
+
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -161,11 +202,12 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	if err := t.selectHub(ctx); err != nil {
-		return err
+	// Safety net: hub normally selected and persisted by run() before this point.
+	if t.hubId == "" {
+		if err := t.selectHub(ctx); err != nil {
+			return err
+		}
 	}
-
-	t.publicIPPool.GetStatus().SetHub(t.hubId)
 
 	existingObject, err := t.getKubeObject(ctx)
 	if err != nil {

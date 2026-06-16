@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package subnet
 
+//go:generate mockgen -source=../../api/osac/private/v1/subnets_service_grpc.pb.go -destination=subnets_client_mock.go -package=subnet SubnetsClient
+
 import (
 	"context"
 	"errors"
@@ -23,6 +25,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -123,6 +126,44 @@ func (r *function) run(ctx context.Context, subnet *privatev1.Subnet) error {
 	if subnet.HasMetadata() && subnet.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
+		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
+		helper := controllers.NewHubPersistenceHelper(r.logger)
+		if helper.ShouldPersistHub(
+			func() string { return subnet.GetStatus().GetHub() },
+			func() bool {
+				state := subnet.GetStatus().GetState()
+				return state == privatev1.SubnetState_SUBNET_STATE_UNSPECIFIED ||
+					state == privatev1.SubnetState_SUBNET_STATE_PENDING
+			},
+		) {
+			err = helper.SelectAndPersistHub(
+				ctx,
+				subnet.GetId(),
+				"subnet",
+				func() string { return subnet.GetStatus().GetHub() },
+				func(ctx context.Context) (string, error) {
+					err := t.selectHub(ctx)
+					if err != nil {
+						return "", err
+					}
+					return t.hubId, nil
+				},
+				func(hubID string) {
+					subnet.GetStatus().SetHub(hubID)
+				},
+				func(ctx context.Context) error {
+					_, err := r.subnetsClient.Update(ctx, privatev1.SubnetsUpdateRequest_builder{
+						Object:     subnet,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return err
+				},
+			)
+			if err != nil {
+				return err
+			}
+		}
+
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -156,13 +197,12 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Select the hub:
-	if err := t.selectHub(ctx); err != nil {
-		return err
+	// Safety net: hub normally selected and persisted by run() before this point.
+	if t.hubId == "" {
+		if err := t.selectHub(ctx); err != nil {
+			return err
+		}
 	}
-
-	// Save the selected hub in the private data of the subnet:
-	t.subnet.GetStatus().SetHub(t.hubId)
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)

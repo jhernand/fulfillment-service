@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 	osacv1alpha1 "github.com/osac-project/osac-operator/api/v1alpha1"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
@@ -565,5 +566,292 @@ var _ = Describe("removeFinalizer", func() {
 		task.removeFinalizer()
 
 		Expect(task.virtualNetwork.HasMetadata()).To(BeFalse())
+	})
+})
+
+var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
+	const (
+		virtualNetworkID = "osac-455-vn"
+		tenantName       = "test-tenant"
+		hubID            = "test-hub-123"
+		hubNamespace     = "hub-123-ns"
+	)
+
+	var (
+		ctx  context.Context
+		ctrl *gomock.Controller
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
+	})
+
+	It("persists hub selection before creating VirtualNetwork CR", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
+			AnyTimes()
+
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+		hubsClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.HubsListResponse{
+				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
+			}, nil)
+
+		hubPersisted := false
+		vnClient := NewMockVirtualNetworksClient(ctrl)
+
+		vnClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.VirtualNetworksUpdateRequest, opts ...grpc.CallOption) (*privatev1.VirtualNetworksUpdateResponse, error) {
+				hubPersisted = true
+				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
+				return &privatev1.VirtualNetworksUpdateResponse{Object: req.GetObject()}, nil
+			}).Times(1)
+
+		vnClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.VirtualNetworksUpdateRequest, opts ...grpc.CallOption) (*privatev1.VirtualNetworksUpdateResponse, error) {
+				Expect(req.GetObject().GetStatus().GetHub()).To(Equal(hubID))
+				return &privatev1.VirtualNetworksUpdateResponse{Object: req.GetObject()}, nil
+			}).Times(1)
+
+		vn := privatev1.VirtualNetwork_builder{
+			Id: virtualNetworkID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.VirtualNetworkSpec_builder{
+				Region:       "us-east-1",
+				NetworkClass: "cudn-net",
+			}.Build(),
+			Status: privatev1.VirtualNetworkStatus_builder{
+				State: privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_PENDING,
+				Hub:   "",
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:                logger,
+			hubCache:              hubCache,
+			virtualNetworksClient: vnClient,
+			hubsClient:            hubsClient,
+			maskCalculator:        nil,
+		}
+
+		err := f.run(ctx, vn)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hubPersisted).To(BeTrue())
+
+		list := &osacv1alpha1.VirtualNetworkList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+	})
+
+	It("does not create CR if hub persistence fails", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
+			AnyTimes()
+
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+		hubsClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.HubsListResponse{
+				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
+			}, nil)
+
+		vnClient := NewMockVirtualNetworksClient(ctrl)
+		vnClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, errors.New("database connection failed"))
+
+		vn := privatev1.VirtualNetwork_builder{
+			Id: virtualNetworkID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.VirtualNetworkSpec_builder{
+				Region:       "us-east-1",
+				NetworkClass: "cudn-net",
+			}.Build(),
+			Status: privatev1.VirtualNetworkStatus_builder{
+				State: privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_PENDING,
+				Hub:   "",
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:                logger,
+			hubCache:              hubCache,
+			virtualNetworksClient: vnClient,
+			hubsClient:            hubsClient,
+			maskCalculator:        nil,
+		}
+
+		err := f.run(ctx, vn)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("failed to persist hub selection"))
+
+		list := &osacv1alpha1.VirtualNetworkList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(0))
+	})
+
+	It("skips hub selection if already set", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
+			AnyTimes()
+
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+
+		vnClient := NewMockVirtualNetworksClient(ctrl)
+		vnClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.VirtualNetworksUpdateRequest, opts ...grpc.CallOption) (*privatev1.VirtualNetworksUpdateResponse, error) {
+				Expect(req.GetUpdateMask().GetPaths()).ToNot(ContainElement("status.hub"))
+				return &privatev1.VirtualNetworksUpdateResponse{Object: req.GetObject()}, nil
+			}).AnyTimes()
+
+		vn := privatev1.VirtualNetwork_builder{
+			Id: virtualNetworkID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.VirtualNetworkSpec_builder{
+				Region:       "us-east-1",
+				NetworkClass: "cudn-net",
+			}.Build(),
+			Status: privatev1.VirtualNetworkStatus_builder{
+				State: privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_PENDING,
+				Hub:   hubID,
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:                logger,
+			hubCache:              hubCache,
+			virtualNetworksClient: vnClient,
+			hubsClient:            hubsClient,
+			maskCalculator:        nil,
+		}
+
+		err := f.run(ctx, vn)
+		Expect(err).ToNot(HaveOccurred())
+
+		list := &osacv1alpha1.VirtualNetworkList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
+	})
+
+	It("recovers from crash by using persisted hub", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
+			AnyTimes()
+
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+		hubsClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.HubsListResponse{
+				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
+			}, nil)
+
+		vnClient := NewMockVirtualNetworksClient(ctrl)
+
+		vnClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.VirtualNetworksUpdateRequest, opts ...grpc.CallOption) (*privatev1.VirtualNetworksUpdateResponse, error) {
+				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
+				return &privatev1.VirtualNetworksUpdateResponse{Object: req.GetObject()}, nil
+			})
+
+		vnClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, errors.New("simulated crash"))
+
+		vn := privatev1.VirtualNetwork_builder{
+			Id: virtualNetworkID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.VirtualNetworkSpec_builder{
+				Region:       "us-east-1",
+				NetworkClass: "cudn-net",
+			}.Build(),
+			Status: privatev1.VirtualNetworkStatus_builder{
+				State: privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_PENDING,
+				Hub:   "",
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:                logger,
+			hubCache:              hubCache,
+			virtualNetworksClient: vnClient,
+			hubsClient:            hubsClient,
+			maskCalculator:        nil,
+		}
+
+		err := f.run(ctx, vn)
+		Expect(err).To(HaveOccurred())
+
+		// CR was created before the crash on final update
+		list := &osacv1alpha1.VirtualNetworkList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+
+		// Second reconcile: hub already set, should use same hub (no duplicate)
+		vn.GetStatus().SetHub(hubID)
+		vnClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&privatev1.VirtualNetworksUpdateResponse{Object: vn}, nil).
+			AnyTimes()
+
+		err = f.run(ctx, vn)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Still only 1 CR — no duplicate created
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
 	})
 })
