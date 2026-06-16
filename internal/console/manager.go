@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 )
@@ -45,6 +44,7 @@ type session struct {
 	user        string
 	clientID    string
 	startedAt   time.Time
+	ctx         context.Context
 	cancel      context.CancelFunc
 }
 
@@ -52,7 +52,7 @@ type session struct {
 func NewManager() *ManagerBuilder {
 	return &ManagerBuilder{
 		backends:       make(map[string]Backend),
-		sessionTimeout: defaultSessionTimeout(),
+		sessionTimeout: DefaultSessionTimeout,
 	}
 }
 
@@ -148,6 +148,7 @@ func (m *Manager) Connect(ctx context.Context, target Target, user, clientID str
 		user:        user,
 		clientID:    clientID,
 		startedAt:   time.Now(),
+		ctx:         sessionCtx,
 		cancel:      sessionCancel,
 	}
 	m.sessions[sessionKey] = s
@@ -174,9 +175,7 @@ func (m *Manager) Connect(ctx context.Context, target Target, user, clientID str
 		Conn: &managedConnection{
 			ReadWriteCloser: conn,
 			manager:         m,
-			sessionKey:      sessionKey,
 			session:         s,
-			cancel:          sessionCancel,
 		},
 		SessionCtx: sessionCtx,
 	}, nil
@@ -216,32 +215,26 @@ func (m *Manager) removeSession(key string, owner *session) {
 // managedConnection wraps an io.ReadWriteCloser and removes the session on close.
 type managedConnection struct {
 	io.ReadWriteCloser
-	manager    *Manager
-	sessionKey string
-	session    *session
-	cancel     context.CancelFunc
-	closeOnce  sync.Once
+	manager   *Manager
+	session   *session
+	closeOnce sync.Once
 }
 
 func (c *managedConnection) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
-		c.manager.logger.Info("Closing console session",
-			slog.String("resource", c.sessionKey),
-		)
+		attrs := []any{
+			slog.String("resource", c.session.resourceKey),
+			slog.String("user", c.session.user),
+			slog.Duration("duration", time.Since(c.session.startedAt)),
+		}
+		if ctxErr := c.session.ctx.Err(); ctxErr != nil {
+			attrs = append(attrs, slog.String("reason", ctxErr.Error()))
+		}
+		c.manager.logger.Info("Closing console session", attrs...)
 		err = c.ReadWriteCloser.Close()
-		c.manager.removeSession(c.sessionKey, c.session)
-		c.cancel()
+		c.manager.removeSession(c.session.resourceKey, c.session)
+		c.session.cancel()
 	})
 	return err
-}
-
-func defaultSessionTimeout() time.Duration {
-	if v := os.Getenv("OSAC_CONSOLE_SESSION_TIMEOUT"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err == nil {
-			return d
-		}
-	}
-	return 30 * time.Minute
 }

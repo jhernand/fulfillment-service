@@ -21,22 +21,25 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
+	"net/http"
+	"time"
 
-	"golang.org/x/net/websocket"
+	"github.com/coder/websocket"
 )
 
 // KubeVirtBackendBuilder builds a KubeVirtBackend.
 type KubeVirtBackendBuilder struct {
-	logger *slog.Logger
-	caPool *x509.CertPool
+	logger     *slog.Logger
+	caPool     *x509.CertPool
+	pingConfig PingConfig
 }
 
 // kubeVirtBackend connects to compute instance consoles via pre-computed
 // WebSocket URIs embedded in encrypted console tickets.
 type kubeVirtBackend struct {
-	logger *slog.Logger
-	caPool *x509.CertPool
+	logger     *slog.Logger
+	caPool     *x509.CertPool
+	pingConfig PingConfig
 }
 
 // NewKubeVirtBackend creates a new builder for the KubeVirt backend.
@@ -55,61 +58,81 @@ func (b *KubeVirtBackendBuilder) SetCAPool(value *x509.CertPool) *KubeVirtBacken
 	return b
 }
 
+// SetPingConfig sets the WebSocket ping configuration for backend connections.
+func (b *KubeVirtBackendBuilder) SetPingConfig(value PingConfig) *KubeVirtBackendBuilder {
+	b.pingConfig = value
+	return b
+}
+
 func (b *KubeVirtBackendBuilder) Build() (Backend, error) {
 	if b.logger == nil {
 		return nil, errors.New("logger is mandatory")
 	}
+	if b.pingConfig.PingInterval < 0 {
+		return nil, fmt.Errorf(
+			"ping interval must be non-negative, got %s",
+			b.pingConfig.PingInterval,
+		)
+	}
+	if b.pingConfig.PingInterval > 0 && b.pingConfig.PongTimeout <= 0 {
+		return nil, fmt.Errorf(
+			"pong timeout must be positive, got %s",
+			b.pingConfig.PongTimeout,
+		)
+	}
 	return &kubeVirtBackend{
-		logger: b.logger,
-		caPool: b.caPool,
+		logger:     b.logger,
+		caPool:     b.caPool,
+		pingConfig: b.pingConfig,
 	}, nil
 }
 
 // Connect dials the pre-computed WebSocket URI from the target, using the
-// backend's CA pool for TLS verification.
+// backend's CA pool for TLS verification. The returned connection wraps the
+// WebSocket in a net.Conn via websocket.NetConn for bidirectional io.Copy.
+// A background goroutine sends periodic WebSocket pings to detect silent
+// connection death from intermediate network devices (NAT, firewalls).
 func (b *kubeVirtBackend) Connect(ctx context.Context, target Target) (io.ReadWriteCloser, error) {
 	b.logger.InfoContext(ctx, "Connecting to console",
 		slog.String("uri", target.BackendURI),
 	)
 
-	parsed, err := url.Parse(target.BackendURI)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse backend URI %q: %w", target.BackendURI, err)
-	}
-
-	originScheme := "https"
-	if parsed.Scheme == "ws" {
-		originScheme = "http"
-	}
-	origin := fmt.Sprintf("%s://%s", originScheme, parsed.Host)
-
-	wsConfig, err := websocket.NewConfig(target.BackendURI, origin)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create websocket config: %w", err)
-	}
+	dialOpts := &websocket.DialOptions{}
 
 	if target.BackendToken != "" {
-		wsConfig.Header.Set("Authorization", "Bearer "+target.BackendToken)
-	}
-
-	if parsed.Scheme == "wss" {
-		tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13}
-		if b.caPool != nil {
-			tlsConfig.RootCAs = b.caPool
+		dialOpts.HTTPHeader = http.Header{
+			"Authorization": []string{"Bearer " + target.BackendToken},
 		}
-		wsConfig.TlsConfig = tlsConfig
 	}
 
-	conn, err := wsConfig.DialContext(ctx)
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13}
+	if b.caPool != nil {
+		tlsConfig.RootCAs = b.caPool
+	}
+	dialOpts.HTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig:     tlsConfig,
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+	}
+
+	wsLogger := b.logger.With(slog.String("component", "backend_ws"))
+	dialOpts.OnPingReceived = PingReceivedHandler(wsLogger, ctx)
+	dialOpts.OnPongReceived = PongReceivedHandler(wsLogger, ctx)
+
+	conn, _, err := websocket.Dial(ctx, target.BackendURI, dialOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to console: %w", err)
 	}
-
-	conn.PayloadType = websocket.BinaryFrame
 
 	b.logger.InfoContext(ctx, "Connected to console",
 		slog.String("uri", target.BackendURI),
 	)
 
-	return conn, nil
+	// Start a background ping goroutine that keeps the WebSocket alive across
+	// NAT gateways and firewalls. Runs until the context is cancelled (session
+	// end, eviction, or timeout).
+	StartPing(ctx, conn, wsLogger, b.pingConfig)
+
+	return websocket.NetConn(ctx, conn, websocket.MessageBinary), nil
 }
