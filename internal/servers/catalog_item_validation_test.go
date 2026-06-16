@@ -37,8 +37,9 @@ var _ = Describe("applyFieldDefinitions", func() {
 	})
 
 	It("accepts editable field with no default when user provides value", func() {
+		pullSecret := "my-secret"
 		spec := &privatev1.ClusterSpec{
-			PullSecret: strPtr("my-secret"),
+			PullSecret: &pullSecret,
 		}
 		fieldDefs := []*privatev1.FieldDefinition{{
 			Path:     "pull_secret",
@@ -64,8 +65,9 @@ var _ = Describe("applyFieldDefinitions", func() {
 	})
 
 	It("overrides user value with default for non-editable field", func() {
+		userValue := "user-value"
 		spec := &privatev1.ClusterSpec{
-			PullSecret: strPtr("user-value"),
+			PullSecret: &userValue,
 		}
 		defaultVal, err := structpb.NewValue("admin-value")
 		Expect(err).ToNot(HaveOccurred())
@@ -80,17 +82,42 @@ var _ = Describe("applyFieldDefinitions", func() {
 	})
 
 	It("returns no error for empty field definitions", func() {
+		pullSecret := "my-secret"
 		spec := &privatev1.ClusterSpec{
-			PullSecret: strPtr("my-secret"),
+			PullSecret: &pullSecret,
 		}
 		err := applyFieldDefinitions(spec, nil)
 		Expect(err).ToNot(HaveOccurred())
 	})
-})
 
-func strPtr(s string) *string {
-	return &s
-}
+	It("rejects when any required field is missing among multiple fields", func() {
+		sshKey := "my-ssh-key"
+		spec := &privatev1.ClusterSpec{
+			SshPublicKey: &sshKey,
+		}
+		defaultRelease, err := structpb.NewValue("4.16")
+		Expect(err).ToNot(HaveOccurred())
+		fieldDefs := []*privatev1.FieldDefinition{
+			{
+				Path:     "release_image",
+				Editable: true,
+				Default:  defaultRelease,
+			},
+			{
+				Path:     "pull_secret",
+				Editable: true,
+			},
+			{
+				Path:     "ssh_public_key",
+				Editable: true,
+			},
+		}
+		err = applyFieldDefinitions(spec, fieldDefs)
+		Expect(err).To(HaveOccurred())
+		Expect(status.Code(err)).To(Equal(codes.InvalidArgument))
+		Expect(err.Error()).To(ContainSubstring("pull_secret"))
+	})
+})
 
 var _ = Describe("addPublishedFilter", func() {
 	var server *ClusterCatalogItemsServer
