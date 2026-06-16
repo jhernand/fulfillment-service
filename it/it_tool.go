@@ -2098,7 +2098,9 @@ func (t *Tool) registerHub(ctx context.Context) error {
 	// Create the hub:
 	_, err = hubsClient.Create(ctx, privatev1.HubsCreateRequest_builder{
 		Object: privatev1.Hub_builder{
-			Id: hubId,
+			Metadata: privatev1.Metadata_builder{
+				Name: hubName,
+			}.Build(),
 			Spec: privatev1.HubSpec_builder{
 				Kubeconfig: hubKcBytes,
 				Namespace:  hubNamespace,
@@ -2280,7 +2282,7 @@ const (
 )
 
 // Name and namespace of the hub:
-const hubId = "local"
+const hubName = "local"
 const hubNamespace = "osac-operator-system"
 
 // Image details:
