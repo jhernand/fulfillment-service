@@ -465,9 +465,9 @@ func (t *task) buildSpec(ctx context.Context) (bmfov1alpha1.BareMetalInstanceSpe
 	if t.bareMetalInstance.GetSpec().HasRunStrategy() {
 		switch t.bareMetalInstance.GetSpec().GetRunStrategy() {
 		case privatev1.BareMetalInstanceRunStrategy_BARE_METAL_INSTANCE_RUN_STRATEGY_ALWAYS:
-			spec.PoweredOn = new(true)
+			spec.RunStrategy = bmfov1alpha1.RunStrategyAlways
 		case privatev1.BareMetalInstanceRunStrategy_BARE_METAL_INSTANCE_RUN_STRATEGY_HALTED:
-			spec.PoweredOn = new(false)
+			spec.RunStrategy = bmfov1alpha1.RunStrategyHalted
 		}
 	}
 

@@ -128,7 +128,7 @@ var _ = Describe("buildSpec", func() {
 		Expect(spec.HostType).To(Equal("default"))
 	})
 
-	It("should map run_strategy ALWAYS to PoweredOn=true", func() {
+	It("should map run_strategy ALWAYS to RunStrategy Always", func() {
 		catalogItemsClient := defaultFakeCatalogItemsClient()
 
 		t := &task{
@@ -147,11 +147,10 @@ var _ = Describe("buildSpec", func() {
 
 		spec, err := t.buildSpec(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.PoweredOn).ToNot(BeNil())
-		Expect(*spec.PoweredOn).To(BeTrue())
+		Expect(spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyAlways))
 	})
 
-	It("should map run_strategy HALTED to PoweredOn=false", func() {
+	It("should map run_strategy HALTED to RunStrategy Halted", func() {
 		catalogItemsClient := defaultFakeCatalogItemsClient()
 
 		t := &task{
@@ -170,11 +169,10 @@ var _ = Describe("buildSpec", func() {
 
 		spec, err := t.buildSpec(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.PoweredOn).ToNot(BeNil())
-		Expect(*spec.PoweredOn).To(BeFalse())
+		Expect(spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyHalted))
 	})
 
-	It("should leave PoweredOn nil when run_strategy is not set", func() {
+	It("should leave RunStrategy empty when run_strategy is not set", func() {
 		catalogItemsClient := defaultFakeCatalogItemsClient()
 
 		t := &task{
@@ -192,7 +190,7 @@ var _ = Describe("buildSpec", func() {
 
 		spec, err := t.buildSpec(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.PoweredOn).To(BeNil())
+		Expect(spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyUnspecified))
 	})
 
 	It("should include sshKey and userDataSecret in templateParameters", func() {

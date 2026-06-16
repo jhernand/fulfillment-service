@@ -273,8 +273,8 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
-github.com/osac-project/bare-metal-fulfillment-operator v0.0.0-20260612134528-39096111045d h1:GFKP1jL2sh9q3pVXSXdhgEek3WM3y9Wl367j6yWzaMg=
-github.com/osac-project/bare-metal-fulfillment-operator v0.0.0-20260612134528-39096111045d/go.mod h1:GMjIvWxyDFiQMwzW5M/69HBoGtCbWWe28BtjrPnHC2w=
+github.com/osac-project/bare-metal-fulfillment-operator v0.0.0-20260616184921-2cde1e5a2e25 h1:cIezabM6LcR+uONnyiAnUf43aLB76AWhLQieux0H5Wc=
+github.com/osac-project/bare-metal-fulfillment-operator v0.0.0-20260616184921-2cde1e5a2e25/go.mod h1:GMjIvWxyDFiQMwzW5M/69HBoGtCbWWe28BtjrPnHC2w=
 github.com/osac-project/osac-operator/api v0.0.3 h1:6zBZDwGpc3pgZoA4Fd/gt6w02wNHp4xk1pJb6VgIEwQ=
 github.com/osac-project/osac-operator/api v0.0.3/go.mod h1:JBz/wSWPT4NhksjXZs2QUjulga+KTUdW5UJX0kB22aA=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=

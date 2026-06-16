@@ -23,7 +23,7 @@ require (
 	github.com/mattn/go-isatty v0.0.22
 	github.com/neilotoole/jsoncolor v0.9.1
 	github.com/open-policy-agent/opa v1.17.0
-	github.com/osac-project/bare-metal-fulfillment-operator v0.0.0-20260612134528-39096111045d
+	github.com/osac-project/bare-metal-fulfillment-operator v0.0.0-20260616184921-2cde1e5a2e25
 	github.com/osac-project/osac-operator/api v0.0.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
@@ -31,6 +31,7 @@ require (
 	github.com/zalando/go-keyring v0.2.8
 	go.uber.org/mock v0.6.0
 	go.yaml.in/yaml/v2 v2.4.4
+	golang.org/x/crypto v0.52.0
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93
 	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.43.0
@@ -123,7 +124,6 @@ require (
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
