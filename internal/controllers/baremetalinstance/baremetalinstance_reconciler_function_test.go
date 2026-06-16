@@ -222,6 +222,7 @@ var _ = Describe("buildSpec", func() {
 
 	It("should include only sshKey when no user data", func() {
 		catalogItemsClient := defaultFakeCatalogItemsClient()
+		sshKey := "ssh-ed25519 AAAA... test@example.com"
 
 		t := &task{
 			r: &function{
@@ -232,7 +233,7 @@ var _ = Describe("buildSpec", func() {
 				Id: "bmi-test",
 				Spec: privatev1.BareMetalInstanceSpec_builder{
 					CatalogItem: "catalog-1",
-					SshKey:      new("ssh-ed25519 AAAA... test@example.com"),
+					SshKey:      new(sshKey),
 				}.Build(),
 			}.Build(),
 		}
@@ -243,6 +244,7 @@ var _ = Describe("buildSpec", func() {
 		var params map[string]string
 		Expect(json.Unmarshal([]byte(spec.TemplateParameters), &params)).To(Succeed())
 		Expect(params).To(HaveKey("sshKey"))
+		Expect(params["sshKey"]).To(Equal(sshKey))
 		Expect(params).ToNot(HaveKey("userDataSecret"))
 	})
 
