@@ -356,8 +356,6 @@ func (t *task) selectHub(ctx context.Context) error {
 	}
 	t.hubNamespace = hubEntry.Namespace
 	t.hubClient = hubEntry.Client
-	// Save the selected hub in the private data of the virtual network:
-	t.virtualNetwork.GetStatus().SetHub(t.hubId)
 	return nil
 }
 

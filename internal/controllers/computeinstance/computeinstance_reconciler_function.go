@@ -175,7 +175,6 @@ func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeIn
 			}
 		}
 
-		// Now proceed with CR creation (hub is already in database)
 		err = t.update(ctx)
 	}
 	if err != nil {
