@@ -137,8 +137,18 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 			SetObjectId(cluster.GetId()).
 			SetStatus(cluster.GetStatus()).
 			SetSelectHub(func(ctx context.Context) (string, error) {
-				selectErr := t.selectHub(ctx)
-				return t.hubId, selectErr
+				if selectErr := t.selectHub(ctx); selectErr != nil {
+					t.setDefaults()
+					t.updateCondition(
+						privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
+						privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
+						"ResourcesUnavailable",
+						"The cluster cannot be created because there are no resources available to "+
+							"fulfill the request.",
+					)
+					return "", selectErr
+				}
+				return t.hubId, nil
 			}).
 			SetPersistHub(func(ctx context.Context) error {
 				_, persistErr := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
@@ -151,11 +161,17 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 		if buildErr != nil {
 			return buildErr
 		}
-		if runErr := helper.Run(ctx); runErr != nil {
+		runErr := helper.Run(ctx)
+		switch {
+		case runErr != nil && cluster.GetStatus().GetHub() != "":
+			// Hub was selected but persistence failed — retry.
 			return runErr
+		case runErr != nil:
+			// Hub selection failed — condition already set in callback,
+			// fall through to persist the condition via maskCalculator.
+		default:
+			err = t.update(ctx)
 		}
-
-		err = t.update(ctx)
 	}
 	if err != nil {
 		return err
@@ -199,8 +215,7 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
-	// Hub should already be selected and persisted by run() for new clusters.
-	// This is a safety check in case selectHub wasn't called (e.g., in tests or edge cases).
+	// Safety net: hub normally selected and persisted by run() before this point.
 	if t.hubId == "" {
 		err := t.selectHub(ctx)
 		if err != nil {
