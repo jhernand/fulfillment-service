@@ -141,27 +141,27 @@ func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeIn
 		if !computeInstance.HasStatus() {
 			computeInstance.SetStatus(&privatev1.ComputeInstanceStatus{})
 		}
-		helper, err := controllers.NewHubPersistenceHelper().
+		helper, buildErr := controllers.NewHubPersistenceHelper().
 			SetLogger(r.logger).
 			SetObjectId(computeInstance.GetId()).
 			SetStatus(computeInstance.GetStatus()).
 			SetSelectHub(func(ctx context.Context) (string, error) {
-				err := t.selectHub(ctx)
-				return t.hubId, err
+				selectErr := t.selectHub(ctx)
+				return t.hubId, selectErr
 			}).
 			SetPersistHub(func(ctx context.Context) error {
-				_, err := r.computeInstancesClient.Update(ctx, privatev1.ComputeInstancesUpdateRequest_builder{
+				_, persistErr := r.computeInstancesClient.Update(ctx, privatev1.ComputeInstancesUpdateRequest_builder{
 					Object:     computeInstance,
 					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
 				}.Build())
-				return err
+				return persistErr
 			}).
 			Build()
-		if err != nil {
-			return err
+		if buildErr != nil {
+			return buildErr
 		}
-		if err := helper.Run(ctx); err != nil {
-			return err
+		if runErr := helper.Run(ctx); runErr != nil {
+			return runErr
 		}
 
 		err = t.update(ctx)

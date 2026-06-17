@@ -132,27 +132,27 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 		if !cluster.HasStatus() {
 			cluster.SetStatus(&privatev1.ClusterStatus{})
 		}
-		helper, err := controllers.NewHubPersistenceHelper().
+		helper, buildErr := controllers.NewHubPersistenceHelper().
 			SetLogger(r.logger).
 			SetObjectId(cluster.GetId()).
 			SetStatus(cluster.GetStatus()).
 			SetSelectHub(func(ctx context.Context) (string, error) {
-				err := t.selectHub(ctx)
-				return t.hubId, err
+				selectErr := t.selectHub(ctx)
+				return t.hubId, selectErr
 			}).
 			SetPersistHub(func(ctx context.Context) error {
-				_, err := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				_, persistErr := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
 					Object:     cluster,
 					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
 				}.Build())
-				return err
+				return persistErr
 			}).
 			Build()
-		if err != nil {
-			return err
+		if buildErr != nil {
+			return buildErr
 		}
-		if err := helper.Run(ctx); err != nil {
-			return err
+		if runErr := helper.Run(ctx); runErr != nil {
+			return runErr
 		}
 
 		err = t.update(ctx)

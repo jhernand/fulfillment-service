@@ -130,27 +130,27 @@ func (r *function) run(ctx context.Context, subnet *privatev1.Subnet) error {
 		if !subnet.HasStatus() {
 			subnet.SetStatus(&privatev1.SubnetStatus{})
 		}
-		helper, err := controllers.NewHubPersistenceHelper().
+		helper, buildErr := controllers.NewHubPersistenceHelper().
 			SetLogger(r.logger).
 			SetObjectId(subnet.GetId()).
 			SetStatus(subnet.GetStatus()).
 			SetSelectHub(func(ctx context.Context) (string, error) {
-				err := t.selectHub(ctx)
-				return t.hubId, err
+				selectErr := t.selectHub(ctx)
+				return t.hubId, selectErr
 			}).
 			SetPersistHub(func(ctx context.Context) error {
-				_, err := r.subnetsClient.Update(ctx, privatev1.SubnetsUpdateRequest_builder{
+				_, persistErr := r.subnetsClient.Update(ctx, privatev1.SubnetsUpdateRequest_builder{
 					Object:     subnet,
 					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
 				}.Build())
-				return err
+				return persistErr
 			}).
 			Build()
-		if err != nil {
-			return err
+		if buildErr != nil {
+			return buildErr
 		}
-		if err := helper.Run(ctx); err != nil {
-			return err
+		if runErr := helper.Run(ctx); runErr != nil {
+			return runErr
 		}
 
 		err = t.update(ctx)

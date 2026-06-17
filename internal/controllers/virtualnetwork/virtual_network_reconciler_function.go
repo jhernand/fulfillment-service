@@ -130,27 +130,27 @@ func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNet
 		if !virtualNetwork.HasStatus() {
 			virtualNetwork.SetStatus(&privatev1.VirtualNetworkStatus{})
 		}
-		helper, err := controllers.NewHubPersistenceHelper().
+		helper, buildErr := controllers.NewHubPersistenceHelper().
 			SetLogger(r.logger).
 			SetObjectId(virtualNetwork.GetId()).
 			SetStatus(virtualNetwork.GetStatus()).
 			SetSelectHub(func(ctx context.Context) (string, error) {
-				err := t.selectHub(ctx)
-				return t.hubId, err
+				selectErr := t.selectHub(ctx)
+				return t.hubId, selectErr
 			}).
 			SetPersistHub(func(ctx context.Context) error {
-				_, err := r.virtualNetworksClient.Update(ctx, privatev1.VirtualNetworksUpdateRequest_builder{
+				_, persistErr := r.virtualNetworksClient.Update(ctx, privatev1.VirtualNetworksUpdateRequest_builder{
 					Object:     virtualNetwork,
 					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
 				}.Build())
-				return err
+				return persistErr
 			}).
 			Build()
-		if err != nil {
-			return err
+		if buildErr != nil {
+			return buildErr
 		}
-		if err := helper.Run(ctx); err != nil {
-			return err
+		if runErr := helper.Run(ctx); runErr != nil {
+			return runErr
 		}
 
 		err = t.update(ctx)

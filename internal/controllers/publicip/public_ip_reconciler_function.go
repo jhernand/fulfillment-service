@@ -129,27 +129,27 @@ func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error 
 		if !publicIP.HasStatus() {
 			publicIP.SetStatus(&privatev1.PublicIPStatus{})
 		}
-		helper, err := controllers.NewHubPersistenceHelper().
+		helper, buildErr := controllers.NewHubPersistenceHelper().
 			SetLogger(r.logger).
 			SetObjectId(publicIP.GetId()).
 			SetStatus(publicIP.GetStatus()).
 			SetSelectHub(func(ctx context.Context) (string, error) {
-				err := t.selectHub(ctx)
-				return t.hubId, err
+				selectErr := t.selectHub(ctx)
+				return t.hubId, selectErr
 			}).
 			SetPersistHub(func(ctx context.Context) error {
-				_, err := r.publicIPsClient.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
+				_, persistErr := r.publicIPsClient.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
 					Object:     publicIP,
 					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
 				}.Build())
-				return err
+				return persistErr
 			}).
 			Build()
-		if err != nil {
-			return err
+		if buildErr != nil {
+			return buildErr
 		}
-		if err := helper.Run(ctx); err != nil {
-			return err
+		if runErr := helper.Run(ctx); runErr != nil {
+			return runErr
 		}
 
 		err = t.update(ctx)
