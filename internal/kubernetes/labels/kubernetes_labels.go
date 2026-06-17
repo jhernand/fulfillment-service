@@ -47,3 +47,6 @@ var PublicIPUuid = fmt.Sprintf("%s/%s", group, "publicip-uuid")
 
 // PublicIPAttachmentUuid is the label where the fulfillment API will write the identifier of the public IP attachment.
 var PublicIPAttachmentUuid = fmt.Sprintf("%s/%s", group, "publicipattachment-uuid")
+
+// BareMetalInstanceUuid is the label where the fulfillment API will write the identifier of the bare metal instance.
+var BareMetalInstanceUuid = fmt.Sprintf("%s/%s", group, "baremetalinstance-uuid")

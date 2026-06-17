@@ -41,6 +41,7 @@ import (
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/controllers"
+	"github.com/osac-project/fulfillment-service/internal/controllers/baremetalinstance"
 	"github.com/osac-project/fulfillment-service/internal/controllers/cluster"
 	"github.com/osac-project/fulfillment-service/internal/controllers/computeinstance"
 	"github.com/osac-project/fulfillment-service/internal/controllers/organization"
@@ -444,6 +445,43 @@ func (r *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 			r.logger.InfoContext(
 				ctx,
 				"Compute instance reconciler failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
+
+	// Create the bare metal instance reconciler:
+	r.logger.InfoContext(ctx, "Creating bare metal instance reconciler")
+	bareMetalInstanceReconcilerFunction, err := baremetalinstance.NewFunction().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create bare metal instance reconciler function: %w", err)
+	}
+	bareMetalInstanceReconciler, err := controllers.NewReconciler[*privatev1.BareMetalInstance]().
+		SetLogger(r.logger).
+		SetName("bare_metal_instance").
+		SetClient(r.client).
+		SetFunction(bareMetalInstanceReconcilerFunction).
+		SetEventFilter("has(event.bare_metal_instance) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create bare metal instance reconciler: %w", err)
+	}
+
+	// Start the bare metal instance reconciler:
+	r.logger.InfoContext(ctx, "Starting bare metal instance reconciler")
+	go func() {
+		err := bareMetalInstanceReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			r.logger.InfoContext(ctx, "Bare metal instance reconciler finished")
+		} else {
+			r.logger.InfoContext(
+				ctx,
+				"Bare metal instance reconciler failed",
 				slog.Any("error", err),
 			)
 		}
