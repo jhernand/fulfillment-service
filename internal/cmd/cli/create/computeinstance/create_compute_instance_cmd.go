@@ -869,6 +869,9 @@ func (c *runnerContext) buildSpecFromCatalogItem(catalogItemID string) (*publicv
 	if c.args.userData != "" {
 		spec.UserData = new(c.args.userData)
 	}
+	if err := c.applyNetworkingFlags(&spec); err != nil {
+		return nil, err
+	}
 	return spec.Build(), nil
 }
 
