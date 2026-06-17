@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/netip"
 
 	"github.com/prometheus/client_golang/prometheus"
 	grpccodes "google.golang.org/grpc/codes"
@@ -234,18 +233,12 @@ func (s *PrivateVirtualNetworksServer) validateVirtualNetwork(ctx context.Contex
 		return
 	}
 
-	// VN-VAL-01: Validate IPv4 CIDR format
-	if spec.GetIpv4Cidr() != "" {
-		if err = validateCIDR(spec.GetIpv4Cidr(), "IPv4"); err != nil {
-			return
-		}
-	}
-
-	// VN-VAL-02: Validate IPv6 CIDR format
-	if spec.GetIpv6Cidr() != "" {
-		if err = validateCIDR(spec.GetIpv6Cidr(), "IPv6"); err != nil {
-			return
-		}
+	// VN-VAL-01, VN-VAL-02: Validate and canonicalize CIDRs
+	if err = canonicalizeDualStackCIDRs(
+		spec.GetIpv4Cidr, spec.SetIpv4Cidr,
+		spec.GetIpv6Cidr, spec.SetIpv6Cidr,
+	); err != nil {
+		return
 	}
 
 	// VN-VAL-04, VN-VAL-05, VN-VAL-06: Validate NetworkClass
@@ -259,28 +252,6 @@ func (s *PrivateVirtualNetworksServer) validateVirtualNetwork(ctx context.Contex
 	}
 
 	return
-}
-
-// validateCIDR validates a CIDR string and checks if it matches the expected IP version.
-func validateCIDR(cidrStr string, ipVersion string) error {
-	prefix, err := netip.ParsePrefix(cidrStr)
-	if err != nil {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"invalid %s CIDR format '%s': %v", ipVersion, cidrStr, err)
-	}
-
-	// Validate IP version matches field name
-	isIPv4 := prefix.Addr().Is4()
-	if ipVersion == "IPv4" && !isIPv4 {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'ipv4_cidr' contains IPv6 address: %s", cidrStr)
-	}
-	if ipVersion == "IPv6" && isIPv4 {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'ipv6_cidr' contains IPv4 address: %s", cidrStr)
-	}
-
-	return nil
 }
 
 // validateImmutableFields validates that immutable fields have not been changed.
@@ -306,28 +277,32 @@ func validateImmutableFields(newVN *privatev1.VirtualNetwork, existingVN *privat
 			existingSpec.GetNetworkClass(), newSpec.GetNetworkClass())
 	}
 
-	// VN-VAL-11: Preserve and check immutable ipv4_cidr field.
-	// If the request omits ipv4_cidr (HasIpv4Cidr() false), copy the existing value to prevent
+	// VN-VAL-11, VN-VAL-12: Preserve and check immutable CIDR fields.
+	// If the request omits a CIDR (Has*Cidr() false), copy the existing value to prevent
 	// erasure — the private API has no Merge() step to preserve absent optional fields.
-	if existingSpec.HasIpv4Cidr() && !newSpec.HasIpv4Cidr() {
-		newSpec.SetIpv4Cidr(existingSpec.GetIpv4Cidr())
-	}
-	if newSpec.HasIpv4Cidr() && newSpec.GetIpv4Cidr() != existingSpec.GetIpv4Cidr() {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'spec.ipv4_cidr' is immutable and cannot be changed from '%s' to '%s'",
-			existingSpec.GetIpv4Cidr(), newSpec.GetIpv4Cidr())
-	}
-
-	// VN-VAL-12: Preserve and check immutable ipv6_cidr field.
-	// If the request omits ipv6_cidr (HasIpv6Cidr() false), copy the existing value to prevent
-	// erasure — the private API has no Merge() step to preserve absent optional fields.
-	if existingSpec.HasIpv6Cidr() && !newSpec.HasIpv6Cidr() {
-		newSpec.SetIpv6Cidr(existingSpec.GetIpv6Cidr())
-	}
-	if newSpec.HasIpv6Cidr() && newSpec.GetIpv6Cidr() != existingSpec.GetIpv6Cidr() {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'spec.ipv6_cidr' is immutable and cannot be changed from '%s' to '%s'",
-			existingSpec.GetIpv6Cidr(), newSpec.GetIpv6Cidr())
+	for _, field := range []immutableCIDRField{
+		{
+			fieldName:       "spec.ipv4_cidr",
+			ipVersion:       cidrIPv4,
+			existingHasCIDR: existingSpec.HasIpv4Cidr,
+			existingCIDR:    existingSpec.GetIpv4Cidr,
+			newHasCIDR:      newSpec.HasIpv4Cidr,
+			newCIDR:         newSpec.GetIpv4Cidr,
+			setNewCIDR:      newSpec.SetIpv4Cidr,
+		},
+		{
+			fieldName:       "spec.ipv6_cidr",
+			ipVersion:       cidrIPv6,
+			existingHasCIDR: existingSpec.HasIpv6Cidr,
+			existingCIDR:    existingSpec.GetIpv6Cidr,
+			newHasCIDR:      newSpec.HasIpv6Cidr,
+			newCIDR:         newSpec.GetIpv6Cidr,
+			setNewCIDR:      newSpec.SetIpv6Cidr,
+		},
+	} {
+		if err := field.preserveAndValidate(); err != nil {
+			return err
+		}
 	}
 
 	return nil

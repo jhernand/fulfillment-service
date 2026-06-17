@@ -339,20 +339,12 @@ func validateSecurityRule(rule *privatev1.SecurityRule, ruleType string, index i
 			"%s rule at index %d: at least one of ipv4_cidr or ipv6_cidr must be provided", ruleType, index)
 	}
 
-	// Validate IPv4 CIDR format if present
-	if rule.GetIpv4Cidr() != "" {
-		if err := validateCIDR(rule.GetIpv4Cidr(), "IPv4"); err != nil {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
-				"%s rule at index %d: invalid IPv4 CIDR: %v", ruleType, index, err)
-		}
-	}
-
-	// Validate IPv6 CIDR format if present
-	if rule.GetIpv6Cidr() != "" {
-		if err := validateCIDR(rule.GetIpv6Cidr(), "IPv6"); err != nil {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
-				"%s rule at index %d: invalid IPv6 CIDR: %v", ruleType, index, err)
-		}
+	if err := canonicalizeDualStackCIDRs(
+		rule.GetIpv4Cidr, rule.SetIpv4Cidr,
+		rule.GetIpv6Cidr, rule.SetIpv6Cidr,
+	); err != nil {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument,
+			"%s rule at index %d: %v", ruleType, index, err)
 	}
 
 	return nil

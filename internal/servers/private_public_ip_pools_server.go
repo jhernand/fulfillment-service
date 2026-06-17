@@ -195,13 +195,17 @@ func (s *PrivatePublicIPPoolsServer) validateCreate(ctx context.Context,
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'spec.cidrs' is required")
 	}
 
+	canonicalCIDRs := make([]string, len(cidrs))
 	for i, cidr := range cidrs {
-		if err := validatePoolCIDRFormat(cidr, spec.GetIpFamily(), i); err != nil {
+		canonical, err := validatePoolCIDRFormat(cidr, spec.GetIpFamily(), i)
+		if err != nil {
 			return err
 		}
+		canonicalCIDRs[i] = canonical
 	}
+	spec.SetCidrs(canonicalCIDRs)
 
-	if err := validateNoCIDRSelfOverlap(cidrs); err != nil {
+	if err := validateNoCIDRSelfOverlap(canonicalCIDRs); err != nil {
 		return err
 	}
 
@@ -234,11 +238,12 @@ func validateUpdate(newPool *privatev1.PublicIPPool, existing *privatev1.PublicI
 	return nil
 }
 
-// validatePoolCIDRFormat validates CIDR string is parseable and belongs to the specified IP family
-func validatePoolCIDRFormat(cidrStr string, ipFamily privatev1.IPFamily, idx int) error {
+// validatePoolCIDRFormat validates CIDR string is parseable, belongs to the specified IP family,
+// and returns the canonical CIDR notation.
+func validatePoolCIDRFormat(cidrStr string, ipFamily privatev1.IPFamily, idx int) (string, error) {
 	prefix, err := netip.ParsePrefix(cidrStr)
 	if err != nil {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
+		return "", grpcstatus.Errorf(grpccodes.InvalidArgument,
 			"invalid CIDR format in field 'spec.cidrs[%d]': '%s': %v", idx, cidrStr, err)
 	}
 
@@ -246,17 +251,17 @@ func validatePoolCIDRFormat(cidrStr string, ipFamily privatev1.IPFamily, idx int
 	switch ipFamily {
 	case privatev1.IPFamily_IP_FAMILY_IPV4:
 		if !isIPv4 {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
+			return "", grpcstatus.Errorf(grpccodes.InvalidArgument,
 				"field 'spec.cidrs[%d]' contains IPv6 address but pool ip_family is IPv4: %s", idx, cidrStr)
 		}
 	case privatev1.IPFamily_IP_FAMILY_IPV6:
 		if isIPv4 {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
+			return "", grpcstatus.Errorf(grpccodes.InvalidArgument,
 				"field 'spec.cidrs[%d]' contains IPv4 address but pool ip_family is IPv6: %s", idx, cidrStr)
 		}
 	}
 
-	return nil
+	return prefix.Masked().String(), nil
 }
 
 // validateNoCIDRSelfOverlap checks that no two CIDRs within the same pool overlap each other.

@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -600,11 +599,6 @@ func (s *PrivateClustersServer) validateAndTransformCluster(ctx context.Context,
 	)
 	cluster.GetSpec().SetTemplateParameters(actualClusterParameters)
 
-	// Validate network CIDRs if provided:
-	if err = validateNetworkCIDRs(cluster.GetSpec()); err != nil {
-		return err
-	}
-
 	// Make sure that the template and the host types of the node sets are referenced by their identifiers, as
 	// that is what we want to save to the database.
 	cluster.GetSpec().SetTemplate(template.GetId())
@@ -743,27 +737,6 @@ func mergeNodeSetsWithTemplate(
 		}.Build()
 	}
 	cluster.GetSpec().SetNodeSets(actualNodeSets)
-}
-
-// validateNetworkCIDRs validates pod and service CIDR formats if provided.
-func validateNetworkCIDRs(spec *privatev1.ClusterSpec) error {
-	if !spec.HasNetwork() {
-		return nil
-	}
-	network := spec.GetNetwork()
-	if network.HasPodCidr() {
-		if _, err := netip.ParsePrefix(network.GetPodCidr()); err != nil {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
-				"invalid pod_cidr format '%s': %v", network.GetPodCidr(), err)
-		}
-	}
-	if network.HasServiceCidr() {
-		if _, err := netip.ParsePrefix(network.GetServiceCidr()); err != nil {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
-				"invalid service_cidr format '%s': %v", network.GetServiceCidr(), err)
-		}
-	}
-	return nil
 }
 
 func (s *PrivateClustersServer) validateAndTransformCatalogItem(ctx context.Context, cluster *privatev1.Cluster) error {

@@ -276,6 +276,86 @@ var _ = Describe("Private virtual networks server", func() {
 			})
 		})
 
+		Context("CIDR canonicalization", func() {
+			It("canonicalizes non-canonical IPv4 and IPv6 CIDRs on Create", func() {
+				nc := createNetworkClass(ctx, privatev1.NetworkClassState_NETWORK_CLASS_STATE_READY)
+
+				ipv4VN := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Ipv4Cidr:     new("10.0.1.5/24"),
+						NetworkClass: nc.GetId(),
+						Region:       "us-west-1",
+					}.Build(),
+				}.Build()
+				_, err := server.validateVirtualNetwork(ctx, ipv4VN, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ipv4VN.GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+
+				ipv6VN := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Ipv6Cidr:     new("2001:db8::1/32"),
+						NetworkClass: nc.GetId(),
+						Region:       "us-west-1",
+					}.Build(),
+				}.Build()
+				_, err = server.validateVirtualNetwork(ctx, ipv6VN, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ipv6VN.GetSpec().GetIpv6Cidr()).To(Equal("2001:db8::/32"))
+			})
+
+			It("stores canonical IPv4 CIDR on Create round-trip", func() {
+				nc := createNetworkClass(ctx, privatev1.NetworkClassState_NETWORK_CLASS_STATE_READY)
+
+				createResponse, err := server.Create(ctx, privatev1.VirtualNetworksCreateRequest_builder{
+					Object: privatev1.VirtualNetwork_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.VirtualNetworkSpec_builder{
+							Ipv4Cidr:     new("10.0.1.5/24"),
+							NetworkClass: nc.GetId(),
+							Region:       "us-west-1",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(createResponse.GetObject().GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+			})
+
+			It("canonicalizes on Update including preserved legacy CIDR when omitted", func() {
+				nc := createNetworkClass(ctx, privatev1.NetworkClassState_NETWORK_CLASS_STATE_READY)
+
+				existing := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Region:       "us-west-1",
+						NetworkClass: nc.GetId(),
+						Ipv4Cidr:     new("10.0.1.5/24"),
+					}.Build(),
+				}.Build()
+
+				equivalentRewrite := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Region:       "us-west-1",
+						NetworkClass: nc.GetId(),
+						Ipv4Cidr:     new("10.0.1.0/24"),
+					}.Build(),
+				}.Build()
+				_, err := server.validateVirtualNetwork(ctx, equivalentRewrite, existing)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(equivalentRewrite.GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+
+				omittedField := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Region:       "us-west-1",
+						NetworkClass: nc.GetId(),
+					}.Build(),
+				}.Build()
+				_, err = server.validateVirtualNetwork(ctx, omittedField, existing)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(omittedField.GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+			})
+		})
+
 		Context("VN-VAL-03: At least one CIDR required", func() {
 			It("rejects empty IPv4 and IPv6 CIDRs", func() {
 				vn := privatev1.VirtualNetwork_builder{

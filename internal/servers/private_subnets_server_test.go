@@ -308,6 +308,95 @@ var _ = Describe("Private subnets server", func() {
 			})
 		})
 
+		Context("CIDR canonicalization", func() {
+			It("canonicalizes non-canonical IPv4 and IPv6 CIDRs on Create", func() {
+				vn4 := createVirtualNetwork(ctx, "10.0.0.0/16", "")
+				subnet4 := privatev1.Subnet_builder{
+					Spec: privatev1.SubnetSpec_builder{
+						Ipv4Cidr:       new("10.0.1.5/24"),
+						VirtualNetwork: vn4.GetId(),
+					}.Build(),
+				}.Build()
+				err := server.validateSubnet(ctx, subnet4, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(subnet4.GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+
+				vn6 := createVirtualNetwork(ctx, "", "2001:db8::/32")
+				subnet6 := privatev1.Subnet_builder{
+					Spec: privatev1.SubnetSpec_builder{
+						Ipv6Cidr:       new("2001:db8:1::1/64"),
+						VirtualNetwork: vn6.GetId(),
+					}.Build(),
+				}.Build()
+				err = server.validateSubnet(ctx, subnet6, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(subnet6.GetSpec().GetIpv6Cidr()).To(Equal("2001:db8:1::/64"))
+			})
+
+			It("accepts non-canonical subnet CIDR within legacy non-canonical parent", func() {
+				vn := createVirtualNetwork(ctx, "10.0.0.5/16", "")
+
+				subnet := privatev1.Subnet_builder{
+					Spec: privatev1.SubnetSpec_builder{
+						Ipv4Cidr:       new("10.0.1.5/24"),
+						VirtualNetwork: vn.GetId(),
+					}.Build(),
+				}.Build()
+
+				err := server.validateSubnet(ctx, subnet, nil)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(subnet.GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+			})
+
+			It("canonicalizes on Update including preserved legacy CIDR when omitted", func() {
+				const fakeVNID = "vn-fake-id"
+
+				existing := privatev1.Subnet_builder{
+					Spec: privatev1.SubnetSpec_builder{
+						Ipv4Cidr:       new("10.0.1.5/24"),
+						VirtualNetwork: fakeVNID,
+					}.Build(),
+				}.Build()
+
+				equivalentRewrite := privatev1.Subnet_builder{
+					Spec: privatev1.SubnetSpec_builder{
+						Ipv4Cidr:       new("10.0.1.0/24"),
+						VirtualNetwork: fakeVNID,
+					}.Build(),
+				}.Build()
+				err := server.validateSubnet(ctx, equivalentRewrite, existing)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(equivalentRewrite.GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+
+				omittedField := privatev1.Subnet_builder{
+					Spec: privatev1.SubnetSpec_builder{
+						VirtualNetwork: fakeVNID,
+					}.Build(),
+				}.Build()
+				err = server.validateSubnet(ctx, omittedField, existing)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(omittedField.GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+			})
+
+			It("stores canonical IPv4 CIDR on Create round-trip", func() {
+				vn := createVirtualNetwork(ctx, "10.0.0.0/16", "")
+
+				createResponse, err := server.Create(ctx, privatev1.SubnetsCreateRequest_builder{
+					Object: privatev1.Subnet_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.SubnetSpec_builder{
+							Ipv4Cidr:       new("10.0.1.5/24"),
+							VirtualNetwork: vn.GetId(),
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(createResponse.GetObject().GetSpec().GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+			})
+		})
+
 		Context("SUB-VAL-03: At least one CIDR required", func() {
 			It("rejects both IPv4 and IPv6 CIDRs empty", func() {
 				vn := createVirtualNetwork(ctx, "10.0.0.0/16", "2001:db8::/32")
