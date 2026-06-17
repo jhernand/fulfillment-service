@@ -90,6 +90,10 @@ type Client interface {
 	GetGroupIDByPath(ctx context.Context, organizationName, groupPath string) (string, error)
 
 	// Identity Provider operations
+	// CreateIdentityProvider creates a new external identity provider at the realm level.
+	// The IdP is created but not yet assigned to any organization.
+	CreateIdentityProvider(ctx context.Context, idp *IdentityProvider) (*IdentityProvider, error)
+
 	// GetIdentityProvider retrieves an external identity provider configuration by alias at the realm level.
 	// This returns the IdP without verifying organization assignment.
 	GetIdentityProvider(ctx context.Context, alias string) (*IdentityProvider, error)

@@ -238,6 +238,10 @@ func (m *mockClient) DeleteAuthorizationResource(ctx context.Context, resourceID
 }
 
 // Identity Provider stub methods
+func (m *mockClient) CreateIdentityProvider(ctx context.Context, idp *IdentityProvider) (*IdentityProvider, error) {
+	return idp, nil
+}
+
 func (m *mockClient) GetIdentityProvider(ctx context.Context, alias string) (*IdentityProvider, error) {
 	return nil, nil
 }

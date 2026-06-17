@@ -125,6 +125,21 @@ func (mr *MockClientMockRecorder) CreateAuthorizationResource(ctx, resource any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAuthorizationResource", reflect.TypeOf((*MockClient)(nil).CreateAuthorizationResource), ctx, resource)
 }
 
+// CreateIdentityProvider mocks base method.
+func (m *MockClient) CreateIdentityProvider(ctx context.Context, idp *IdentityProvider) (*IdentityProvider, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateIdentityProvider", ctx, idp)
+	ret0, _ := ret[0].(*IdentityProvider)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateIdentityProvider indicates an expected call of CreateIdentityProvider.
+func (mr *MockClientMockRecorder) CreateIdentityProvider(ctx, idp any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateIdentityProvider", reflect.TypeOf((*MockClient)(nil).CreateIdentityProvider), ctx, idp)
+}
+
 // CreateOrganization mocks base method.
 func (m *MockClient) CreateOrganization(ctx context.Context, org *Organization) (*Organization, error) {
 	m.ctrl.T.Helper()

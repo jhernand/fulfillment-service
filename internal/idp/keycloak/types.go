@@ -264,12 +264,26 @@ func fromKeycloakAuthorizationResource(kcResource *keycloakAuthorizationResource
 // keycloakIdentityProvider represents an external identity provider configuration in Keycloak.
 // Identity providers are configured at the realm level and can be linked to specific organizations.
 type keycloakIdentityProvider struct {
-	Alias       string            `json:"alias,omitempty"`
+	Alias       string            `json:"alias"`
 	DisplayName string            `json:"displayName,omitempty"`
 	InternalID  string            `json:"internalId,omitempty"`
-	ProviderID  string            `json:"providerId,omitempty"` // "ldap", "oidc", "saml", etc.
-	Enabled     bool              `json:"enabled,omitempty"`
+	ProviderID  string            `json:"providerId"`
+	Enabled     bool              `json:"enabled"`
 	Config      map[string]string `json:"config,omitempty"` // Provider-specific configuration
+}
+
+func toKeycloakIdentityProvider(idpProvider *idp.IdentityProvider) *keycloakIdentityProvider {
+	if idpProvider == nil {
+		return nil
+	}
+
+	return &keycloakIdentityProvider{
+		Alias:       idpProvider.Alias,
+		DisplayName: idpProvider.DisplayName,
+		ProviderID:  idpProvider.Type,
+		Enabled:     idpProvider.Enabled,
+		Config:      idpProvider.Config,
+	}
 }
 
 func fromKeycloakIdentityProvider(kcIdp *keycloakIdentityProvider) *idp.IdentityProvider {
