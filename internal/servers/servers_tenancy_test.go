@@ -19,6 +19,7 @@ import (
 	"go.uber.org/mock/gomock"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
@@ -50,6 +51,7 @@ var _ = Describe("Tenancy logic", func() {
 			Expect(err).ToNot(HaveOccurred())
 		}
 		createTenant("my-tenant")
+		createTenant("your-tenant")
 	})
 
 	It("Returns tenant in metadata when object is created", func() {
@@ -240,6 +242,232 @@ var _ = Describe("Tenancy logic", func() {
 		Expect(cluster).ToNot(BeNil())
 		tenant := cluster.GetMetadata().GetTenant()
 		Expect(tenant).To(Equal("my-tenant"))
+	})
+
+	It("Respects explicitly specified tenant over default", func() {
+		// Create a tenancy logic where the default tenant differs from the one the user will specify:
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant", "your-tenant"), nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenant(gomock.Any()).
+			Return("your-tenant", nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant", "your-tenant"), nil).
+			AnyTimes()
+
+		// Create the template using the DAO:
+		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
+			SetLogger(logger).
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		_, err = templatesDao.Create().
+			SetObject(
+				privatev1.ClusterTemplate_builder{
+					Id:          "my-template",
+					Title:       "My template",
+					Description: "My template",
+					Metadata: privatev1.Metadata_builder{
+						Tenant: "my-tenant",
+					}.Build(),
+				}.Build(),
+			).
+			Do(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create the clusters server:
+		clustersServer, err := NewClustersServer().
+			SetLogger(logger).
+			SetAttributionLogic(attribution).
+			SetTenancyLogic(tenancy).
+			SetScheme(testScheme).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create a cluster explicitly specifying 'my-tenant', while the default is 'your-tenant':
+		response, err := clustersServer.Create(ctx, publicv1.ClustersCreateRequest_builder{
+			Object: publicv1.Cluster_builder{
+				Metadata: publicv1.Metadata_builder{
+					Tenant: "my-tenant",
+				}.Build(),
+				Spec: publicv1.ClusterSpec_builder{
+					Template: "my-template",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify that the cluster uses the explicitly specified tenant, not the default:
+		cluster := response.GetObject()
+		Expect(cluster).ToNot(BeNil())
+		tenant := cluster.GetMetadata().GetTenant()
+		Expect(tenant).To(Equal("my-tenant"))
+	})
+
+	It("Preserves tenant during update when not explicitly specified", func() {
+		// Create a tenancy logic where the default tenant differs from the one used to create the object,
+		// so that we can verify the original tenant is truly preserved rather than re-defaulted:
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant", "your-tenant"), nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenant(gomock.Any()).
+			Return("your-tenant", nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant", "your-tenant"), nil).
+			AnyTimes()
+
+		// Create the template using the DAO:
+		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
+			SetLogger(logger).
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		_, err = templatesDao.Create().
+			SetObject(
+				privatev1.ClusterTemplate_builder{
+					Id:          "my-template",
+					Title:       "My template",
+					Description: "My template",
+					Metadata: privatev1.Metadata_builder{
+						Tenant: "my-tenant",
+					}.Build(),
+				}.Build(),
+			).
+			Do(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create the clusters server:
+		clustersServer, err := NewClustersServer().
+			SetLogger(logger).
+			SetAttributionLogic(attribution).
+			SetTenancyLogic(tenancy).
+			SetScheme(testScheme).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create a cluster with tenant "my-tenant":
+		createResponse, err := clustersServer.Create(ctx, publicv1.ClustersCreateRequest_builder{
+			Object: publicv1.Cluster_builder{
+				Metadata: publicv1.Metadata_builder{
+					Tenant: "my-tenant",
+				}.Build(),
+				Spec: publicv1.ClusterSpec_builder{
+					Template: "my-template",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		created := createResponse.GetObject()
+		Expect(created.GetMetadata().GetTenant()).To(Equal("my-tenant"))
+
+		// Update the cluster changing only the spec, without touching the tenant:
+		updateResponse, err := clustersServer.Update(ctx, publicv1.ClustersUpdateRequest_builder{
+			Object: publicv1.Cluster_builder{
+				Id: created.GetId(),
+				Spec: publicv1.ClusterSpec_builder{
+					Template: "my-template",
+				}.Build(),
+			}.Build(),
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{
+					"spec",
+				},
+			},
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		updated := updateResponse.GetObject()
+		Expect(updated.GetMetadata().GetTenant()).To(Equal("my-tenant"))
+
+		// Fetch the cluster again to confirm the tenant was persisted correctly:
+		getResponse, err := clustersServer.Get(ctx, publicv1.ClustersGetRequest_builder{
+			Id: created.GetId(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		fetched := getResponse.GetObject()
+		Expect(fetched.GetMetadata().GetTenant()).To(Equal("my-tenant"))
+	})
+
+	It("Respects explicitly specified tenant during update", func() {
+		// Create a tenancy logic where both tenants are assignable, with "my-tenant" as default:
+		tenancy := auth.NewMockTenancyLogic(ctrl)
+		tenancy.EXPECT().DetermineAssignableTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant", "your-tenant"), nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineDefaultTenant(gomock.Any()).
+			Return("my-tenant", nil).
+			AnyTimes()
+		tenancy.EXPECT().DetermineVisibleTenants(gomock.Any()).
+			Return(collections.NewSet("my-tenant", "your-tenant"), nil).
+			AnyTimes()
+
+		// Create the template using the DAO:
+		templatesDao, err := dao.NewGenericDAO[*privatev1.ClusterTemplate]().
+			SetLogger(logger).
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+		_, err = templatesDao.Create().
+			SetObject(
+				privatev1.ClusterTemplate_builder{
+					Id:          "my-template",
+					Title:       "My template",
+					Description: "My template",
+					Metadata: privatev1.Metadata_builder{
+						Tenant: "my-tenant",
+					}.Build(),
+				}.Build(),
+			).
+			Do(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create the clusters server:
+		clustersServer, err := NewClustersServer().
+			SetLogger(logger).
+			SetAttributionLogic(attribution).
+			SetTenancyLogic(tenancy).
+			SetScheme(testScheme).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create a cluster with the default tenant 'my-tenant':
+		createResponse, err := clustersServer.Create(ctx, publicv1.ClustersCreateRequest_builder{
+			Object: publicv1.Cluster_builder{
+				Spec: publicv1.ClusterSpec_builder{
+					Template: "my-template",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		created := createResponse.GetObject()
+		Expect(created.GetMetadata().GetTenant()).To(Equal("my-tenant"))
+
+		// Update the cluster explicitly setting tenant to 'your-tenant':
+		updateResponse, err := clustersServer.Update(ctx, publicv1.ClustersUpdateRequest_builder{
+			Object: publicv1.Cluster_builder{
+				Id: created.GetId(),
+				Metadata: publicv1.Metadata_builder{
+					Tenant: "your-tenant",
+				}.Build(),
+			}.Build(),
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{"metadata.tenant"},
+			},
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		updated := updateResponse.GetObject()
+		Expect(updated.GetMetadata().GetTenant()).To(Equal("your-tenant"))
+
+		// Fetch the cluster to confirm the new tenant was persisted:
+		getResponse, err := clustersServer.Get(ctx, publicv1.ClustersGetRequest_builder{
+			Id: created.GetId(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		fetched := getResponse.GetObject()
+		Expect(fetched.GetMetadata().GetTenant()).To(Equal("your-tenant"))
 	})
 
 	It("Rejects object creation when assigned tenant is invisible to the user", func() {
