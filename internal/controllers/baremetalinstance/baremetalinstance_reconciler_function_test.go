@@ -601,6 +601,288 @@ var _ = Describe("ensureUserDataSecret", func() {
 	})
 })
 
+func findProtoCondition(bmi *privatev1.BareMetalInstance, condType privatev1.BareMetalInstanceConditionType) *privatev1.BareMetalInstanceCondition {
+	for _, c := range bmi.GetStatus().GetConditions() {
+		if c.GetType() == condType {
+			return c
+		}
+	}
+	return nil
+}
+
+var _ = Describe("syncStatus", func() {
+	newTask := func(specRestartTrigger int64) *task {
+		return &task{
+			r: &function{logger: logger},
+			bareMetalInstance: privatev1.BareMetalInstance_builder{
+				Id: "bmi-sync-test",
+				Spec: privatev1.BareMetalInstanceSpec_builder{
+					RestartTrigger: specRestartTrigger,
+				}.Build(),
+				Status: privatev1.BareMetalInstanceStatus_builder{
+					State: privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING,
+				}.Build(),
+			}.Build(),
+		}
+	}
+
+	It("should not change state when object is nil", func() {
+		t := newTask(0)
+		t.syncStatus(nil)
+		Expect(t.bareMetalInstance.GetStatus().GetState()).To(
+			Equal(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING))
+	})
+
+	It("should not change state when phase is empty", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{}
+		t.syncStatus(object)
+		Expect(t.bareMetalInstance.GetStatus().GetState()).To(
+			Equal(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING))
+	})
+
+	It("should map Allocating phase to PROVISIONING state", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Phase: bmfov1alpha1.BareMetalInstancePhaseAllocating,
+			},
+		}
+		t.syncStatus(object)
+		Expect(t.bareMetalInstance.GetStatus().GetState()).To(
+			Equal(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING))
+	})
+
+	It("should map Progressing phase to PROVISIONING state", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Phase: bmfov1alpha1.BareMetalInstancePhaseProgressing,
+			},
+		}
+		t.syncStatus(object)
+		Expect(t.bareMetalInstance.GetStatus().GetState()).To(
+			Equal(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING))
+	})
+
+	It("should map Ready phase to RUNNING state", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Phase: bmfov1alpha1.BareMetalInstancePhaseReady,
+			},
+		}
+		t.syncStatus(object)
+		Expect(t.bareMetalInstance.GetStatus().GetState()).To(
+			Equal(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_RUNNING))
+	})
+
+	It("should map Failed phase to FAILED state", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Phase: bmfov1alpha1.BareMetalInstancePhaseFailed,
+			},
+		}
+		t.syncStatus(object)
+		Expect(t.bareMetalInstance.GetStatus().GetState()).To(
+			Equal(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_FAILED))
+	})
+
+	It("should map Deleting phase to DELETING state", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Phase: bmfov1alpha1.BareMetalInstancePhaseDeleting,
+			},
+		}
+		t.syncStatus(object)
+		Expect(t.bareMetalInstance.GetStatus().GetState()).To(
+			Equal(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_DELETING))
+	})
+
+	It("should map Allocated condition to PROVISIONED", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(bmfov1alpha1.HostConditionAllocated),
+						Status:  metav1.ConditionTrue,
+						Reason:  "HostAllocated",
+						Message: "Host was allocated",
+					},
+				},
+			},
+		}
+		t.syncStatus(object)
+		cond := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_PROVISIONED)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+		Expect(cond.GetReason()).To(Equal("HostAllocated"))
+		Expect(cond.GetMessage()).To(Equal("Host was allocated"))
+	})
+
+	It("should map ProvisionTemplateComplete condition to CONFIGURATION_APPLIED", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(bmfov1alpha1.HostConditionProvisionTemplateComplete),
+						Status:  metav1.ConditionTrue,
+						Reason:  "Complete",
+						Message: "Provision template completed",
+					},
+				},
+			},
+		}
+		t.syncStatus(object)
+		cond := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_CONFIGURATION_APPLIED)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+	})
+
+	It("should map Available condition to READY", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(bmfov1alpha1.HostConditionAvailable),
+						Status:  metav1.ConditionTrue,
+						Reason:  "HostAvailable",
+						Message: "Host is available",
+					},
+				},
+			},
+		}
+		t.syncStatus(object)
+		cond := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_READY)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+	})
+
+	It("should set RESTART_IN_PROGRESS when PowerSynced is False with Progressing reason", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(bmfov1alpha1.HostConditionPowerSynced),
+						Status:  metav1.ConditionFalse,
+						Reason:  bmfov1alpha1.HostConditionReasonProgressing,
+						Message: "Power cycle in progress",
+					},
+				},
+			},
+		}
+		t.syncStatus(object)
+		cond := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+	})
+
+	It("should set RESTART_FAILED when PowerSynced is False with IronicAPIFailure reason", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(bmfov1alpha1.HostConditionPowerSynced),
+						Status:  metav1.ConditionFalse,
+						Reason:  bmfov1alpha1.HostConditionReasonIronicAPIFailure,
+						Message: "Ironic API call failed",
+					},
+				},
+			},
+		}
+		t.syncStatus(object)
+		cond := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+	})
+
+	It("should clear restart conditions and sync restart trigger when PowerSynced is True", func() {
+		t := newTask(42)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(bmfov1alpha1.HostConditionPowerSynced),
+						Status:  metav1.ConditionTrue,
+						Reason:  bmfov1alpha1.HostConditionReasonPowerOn,
+						Message: "Power on complete",
+					},
+				},
+			},
+		}
+		t.syncStatus(object)
+
+		inProgress := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS)
+		Expect(inProgress).ToNot(BeNil())
+		Expect(inProgress.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_FALSE))
+
+		failed := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED)
+		Expect(failed).ToNot(BeNil())
+		Expect(failed.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_FALSE))
+
+		Expect(t.bareMetalInstance.GetStatus().GetRestartTrigger()).To(Equal(int64(42)))
+	})
+
+	It("should map multiple conditions in a single call", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Phase: bmfov1alpha1.BareMetalInstancePhaseReady,
+				Conditions: []metav1.Condition{
+					{
+						Type:   string(bmfov1alpha1.HostConditionAllocated),
+						Status: metav1.ConditionTrue,
+						Reason: "HostAllocated",
+					},
+					{
+						Type:   string(bmfov1alpha1.HostConditionProvisionTemplateComplete),
+						Status: metav1.ConditionTrue,
+						Reason: "Complete",
+					},
+					{
+						Type:   string(bmfov1alpha1.HostConditionAvailable),
+						Status: metav1.ConditionTrue,
+						Reason: "HostAvailable",
+					},
+				},
+			},
+		}
+		t.syncStatus(object)
+
+		Expect(t.bareMetalInstance.GetStatus().GetState()).To(
+			Equal(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_RUNNING))
+
+		provisioned := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_PROVISIONED)
+		Expect(provisioned).ToNot(BeNil())
+		Expect(provisioned.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+
+		configApplied := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_CONFIGURATION_APPLIED)
+		Expect(configApplied).ToNot(BeNil())
+		Expect(configApplied.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+
+		ready := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_READY)
+		Expect(ready).ToNot(BeNil())
+		Expect(ready.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+	})
+})
+
 func defaultFakeCatalogItemsClient() *fakeCatalogItemsClient {
 	return &fakeCatalogItemsClient{
 		getResponse: privatev1.BareMetalInstanceCatalogItemsGetResponse_builder{
