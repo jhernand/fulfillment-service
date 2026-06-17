@@ -58,7 +58,7 @@ type IdentityProvidersClient interface {
 	List(ctx context.Context, in *IdentityProvidersListRequest, opts ...grpc.CallOption) (*IdentityProvidersListResponse, error)
 	// Lists all identity providers available.
 	ListAvailable(ctx context.Context, in *IdentityProvidersListAvailableRequest, opts ...grpc.CallOption) (*IdentityProvidersListAvailableResponse, error)
-	// Retrieves an identity provider by name.
+	// Retrieves an identity provider by ID.
 	Get(ctx context.Context, in *IdentityProvidersGetRequest, opts ...grpc.CallOption) (*IdentityProvidersGetResponse, error)
 	// Updates an existing identity provider.
 	Update(ctx context.Context, in *IdentityProvidersUpdateRequest, opts ...grpc.CallOption) (*IdentityProvidersUpdateResponse, error)
@@ -176,7 +176,7 @@ type IdentityProvidersServer interface {
 	List(context.Context, *IdentityProvidersListRequest) (*IdentityProvidersListResponse, error)
 	// Lists all identity providers available.
 	ListAvailable(context.Context, *IdentityProvidersListAvailableRequest) (*IdentityProvidersListAvailableResponse, error)
-	// Retrieves an identity provider by name.
+	// Retrieves an identity provider by ID.
 	Get(context.Context, *IdentityProvidersGetRequest) (*IdentityProvidersGetResponse, error)
 	// Updates an existing identity provider.
 	Update(context.Context, *IdentityProvidersUpdateRequest) (*IdentityProvidersUpdateResponse, error)

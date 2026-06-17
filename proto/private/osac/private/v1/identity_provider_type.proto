@@ -23,9 +23,8 @@ import "osac/private/v1/metadata_type.proto";
 // Identity providers enable users to authenticate using their existing corporate credentials
 // (LDAP, Active Directory, OIDC, SAML, etc.).
 message IdentityProvider {
-  // Unique name identifier for this IdP. Immutable after creation.
-  // Must be URL-safe and unique
-  string name = 1;
+  // Unique identifier for this IdP. Immutable after creation.
+  string id = 1;
 
   // Metadata contains common object metadata.
   Metadata metadata = 2;

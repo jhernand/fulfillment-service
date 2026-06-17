@@ -39,6 +39,7 @@ const (
 	IdentityProviders_Delete_FullMethodName   = "/osac.private.v1.IdentityProviders/Delete"
 	IdentityProviders_Assign_FullMethodName   = "/osac.private.v1.IdentityProviders/Assign"
 	IdentityProviders_Unassign_FullMethodName = "/osac.private.v1.IdentityProviders/Unassign"
+	IdentityProviders_Signal_FullMethodName   = "/osac.private.v1.IdentityProviders/Signal"
 )
 
 // IdentityProvidersClient is the client API for IdentityProviders service.
@@ -62,6 +63,8 @@ type IdentityProvidersClient interface {
 	Assign(ctx context.Context, in *IdentityProvidersAssignRequest, opts ...grpc.CallOption) (*IdentityProvidersAssignResponse, error)
 	// Unassigns an identity provider from a tenant.
 	Unassign(ctx context.Context, in *IdentityProvidersUnassignRequest, opts ...grpc.CallOption) (*IdentityProvidersUnassignResponse, error)
+	// Indicates that something changed in the object or the system that may require reconciling the object.
+	Signal(ctx context.Context, in *IdentityProvidersSignalRequest, opts ...grpc.CallOption) (*IdentityProvidersSignalResponse, error)
 }
 
 type identityProvidersClient struct {
@@ -142,6 +145,16 @@ func (c *identityProvidersClient) Unassign(ctx context.Context, in *IdentityProv
 	return out, nil
 }
 
+func (c *identityProvidersClient) Signal(ctx context.Context, in *IdentityProvidersSignalRequest, opts ...grpc.CallOption) (*IdentityProvidersSignalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IdentityProvidersSignalResponse)
+	err := c.cc.Invoke(ctx, IdentityProviders_Signal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IdentityProvidersServer is the server API for IdentityProviders service.
 // All implementations must embed UnimplementedIdentityProvidersServer
 // for forward compatibility.
@@ -163,6 +176,8 @@ type IdentityProvidersServer interface {
 	Assign(context.Context, *IdentityProvidersAssignRequest) (*IdentityProvidersAssignResponse, error)
 	// Unassigns an identity provider from a tenant.
 	Unassign(context.Context, *IdentityProvidersUnassignRequest) (*IdentityProvidersUnassignResponse, error)
+	// Indicates that something changed in the object or the system that may require reconciling the object.
+	Signal(context.Context, *IdentityProvidersSignalRequest) (*IdentityProvidersSignalResponse, error)
 	mustEmbedUnimplementedIdentityProvidersServer()
 }
 
@@ -193,6 +208,9 @@ func (UnimplementedIdentityProvidersServer) Assign(context.Context, *IdentityPro
 }
 func (UnimplementedIdentityProvidersServer) Unassign(context.Context, *IdentityProvidersUnassignRequest) (*IdentityProvidersUnassignResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Unassign not implemented")
+}
+func (UnimplementedIdentityProvidersServer) Signal(context.Context, *IdentityProvidersSignalRequest) (*IdentityProvidersSignalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Signal not implemented")
 }
 func (UnimplementedIdentityProvidersServer) mustEmbedUnimplementedIdentityProvidersServer() {}
 func (UnimplementedIdentityProvidersServer) testEmbeddedByValue()                           {}
@@ -341,6 +359,24 @@ func _IdentityProviders_Unassign_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityProviders_Signal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IdentityProvidersSignalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityProvidersServer).Signal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityProviders_Signal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityProvidersServer).Signal(ctx, req.(*IdentityProvidersSignalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IdentityProviders_ServiceDesc is the grpc.ServiceDesc for IdentityProviders service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -375,6 +411,10 @@ var IdentityProviders_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Unassign",
 			Handler:    _IdentityProviders_Unassign_Handler,
+		},
+		{
+			MethodName: "Signal",
+			Handler:    _IdentityProviders_Signal_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
