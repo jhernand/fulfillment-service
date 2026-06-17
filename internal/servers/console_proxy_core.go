@@ -23,6 +23,13 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/console"
 )
 
+// ticketOpener abstracts the ticket-opening operation so that tests can inject
+// stubs without requiring real JWE key material. *console.TicketOpener satisfies
+// this interface.
+type ticketOpener interface {
+	Open(ctx context.Context, tokenString string) (*console.Ticket, error)
+}
+
 // ConsoleProxyCoreBuilder contains the data and logic needed to create a console proxy core. Don't create instances
 // of this type directly, use the NewConsoleProxyCore function instead.
 type ConsoleProxyCoreBuilder struct {
@@ -36,7 +43,7 @@ type ConsoleProxyCoreBuilder struct {
 // and passes it here along with an io.ReadWriteCloser for the client side.
 type ConsoleProxyCore struct {
 	logger  *slog.Logger
-	opener  *console.TicketOpener
+	opener  ticketOpener
 	manager *console.Manager
 }
 
@@ -142,13 +149,13 @@ func (c *ConsoleProxyCore) Relay(ctx context.Context, client, backend io.ReadWri
 
 	// Backend -> client.
 	go func() {
-		_, err := io.Copy(client, backend)
+		_, err := io.CopyBuffer(client, backend, make([]byte, 64*1024))
 		errCh <- err
 	}()
 
 	// Client -> backend.
 	go func() {
-		_, err := io.Copy(backend, client)
+		_, err := io.CopyBuffer(backend, client, make([]byte, 64*1024))
 		errCh <- err
 	}()
 

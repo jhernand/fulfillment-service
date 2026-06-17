@@ -14,6 +14,8 @@ language governing permissions and limitations under the License.
 package console
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -26,6 +28,30 @@ var _ = Describe("KubeVirt Backend", func() {
 				Build()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("logger"))
+		})
+
+		It("should fail with negative ping interval", func() {
+			_, err := NewKubeVirtBackend().
+				SetLogger(logger).
+				SetPingConfig(PingConfig{
+					PingInterval: -1 * time.Second,
+					PongTimeout:  10 * time.Second,
+				}).
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("ping interval"))
+		})
+
+		It("should fail with non-positive pong timeout", func() {
+			_, err := NewKubeVirtBackend().
+				SetLogger(logger).
+				SetPingConfig(PingConfig{
+					PingInterval: 15 * time.Second,
+					PongTimeout:  0,
+				}).
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("pong timeout"))
 		})
 
 		It("should build successfully with all dependencies", func() {

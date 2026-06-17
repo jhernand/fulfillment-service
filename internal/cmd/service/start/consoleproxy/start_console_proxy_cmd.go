@@ -61,6 +61,10 @@ func Cmd() *cobra.Command {
 	network.AddListenerFlags(flags, consoleListenerName, defaultConsoleAddress)
 	network.AddListenerFlags(flags, network.MetricsListenerName, network.DefaultMetricsAddress)
 	network.AddCorsFlags(flags, consoleListenerName)
+	console.AddPingFlags(flags, "client")
+	console.AddPingFlags(flags, "backend")
+	console.AddSessionTimeoutFlag(flags)
+	network.AddGrpcKeepaliveFlags(flags)
 	flags.StringSliceVar(
 		&runner.args.caFiles,
 		"ca-file",
@@ -159,11 +163,30 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	// Wrap the token opener for console-specific ticket claim extraction:
 	opener := console.NewTicketOpener(tokenOpener)
 
+	// Read console configuration from flags:
+	clientPingConfig, err := console.PingConfigFromFlags(c.flags, "client")
+	if err != nil {
+		return fmt.Errorf("failed to read client ping configuration: %w", err)
+	}
+	backendPingConfig, err := console.PingConfigFromFlags(c.flags, "backend")
+	if err != nil {
+		return fmt.Errorf("failed to read backend ping configuration: %w", err)
+	}
+	sessionTimeout, err := console.SessionTimeoutFromFlags(c.flags)
+	if err != nil {
+		return fmt.Errorf("failed to read session timeout: %w", err)
+	}
+	keepaliveConfig, err := network.GrpcKeepaliveConfigFromFlags(c.flags)
+	if err != nil {
+		return fmt.Errorf("failed to read gRPC keepalive configuration: %w", err)
+	}
+
 	// Create the KubeVirt backend. The proxy dials pre-computed URIs from the
 	// encrypted ticket using the CA pool for TLS.
 	kvBackend, err := console.NewKubeVirtBackend().
 		SetLogger(c.logger).
 		SetCAPool(caPool).
+		SetPingConfig(backendPingConfig).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create kubevirt backend: %w", err)
@@ -172,6 +195,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	// Create the console manager:
 	consoleManager, err := console.NewManager().
 		SetLogger(c.logger).
+		SetSessionTimeout(sessionTimeout).
 		AddBackend(console.ResourceTypeComputeInstance, kvBackend).
 		Build()
 	if err != nil {
@@ -221,11 +245,11 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	c.logger.InfoContext(ctx, "Creating gRPC server")
 	grpcServer := grpc.NewServer(
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    15 * time.Second,
-			Timeout: 10 * time.Second,
+			Time:    keepaliveConfig.Time,
+			Timeout: keepaliveConfig.Timeout,
 		}),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             10 * time.Second,
+			MinTime:             keepaliveConfig.MinTime,
 			PermitWithoutStream: true,
 		}),
 		grpc.ChainUnaryInterceptor(
@@ -290,7 +314,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 
 	// Create the WebSocket console handler:
 	c.logger.InfoContext(ctx, "Creating console WebSocket handler")
-	wsHandler := servers.NewConsoleProxyWSHandler(core, allowedOrigins)
+	wsHandler := servers.NewConsoleProxyWSHandler(core, allowedOrigins, clientPingConfig)
 
 	// Create the console HTTP mux and middleware chain:
 	consoleMux := http.NewServeMux()

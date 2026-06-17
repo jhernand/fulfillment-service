@@ -36,7 +36,23 @@ var _ = Describe("Private compute instances server", func() {
 	BeforeEach(func() {
 		var err error
 
-		// Create a default test subnet for tests that don't explicitly create one:
+		// Create a default test virtual network and subnet for tests that don't explicitly create one:
+		vnDao, err := dao.NewGenericDAO[*privatev1.VirtualNetwork]().
+			SetLogger(logger).
+			SetTenancyLogic(tenancy).
+			Build()
+		Expect(err).ToNot(HaveOccurred())
+
+		vn := privatev1.VirtualNetwork_builder{
+			Id: "test-vnet",
+			Metadata: privatev1.Metadata_builder{
+				Tenant: auth.SharedTenant,
+			}.Build(),
+		}.Build()
+
+		_, err = vnDao.Create().SetObject(vn).Do(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
 		subnetsDao, err := dao.NewGenericDAO[*privatev1.Subnet]().
 			SetLogger(logger).
 			SetTenancyLogic(tenancy).
