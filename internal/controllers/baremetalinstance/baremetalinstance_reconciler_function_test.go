@@ -837,6 +837,31 @@ var _ = Describe("syncStatus", func() {
 		Expect(t.bareMetalInstance.GetStatus().GetRestartTrigger()).To(Equal(int64(42)))
 	})
 
+	It("should not set restart conditions when PowerSynced is False with unhandled reason", func() {
+		t := newTask(0)
+		object := &bmfov1alpha1.BareMetalInstance{
+			Status: bmfov1alpha1.BareMetalInstanceStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(bmfov1alpha1.HostConditionPowerSynced),
+						Status:  metav1.ConditionFalse,
+						Reason:  "UnknownReason",
+						Message: "Something unexpected",
+					},
+				},
+			},
+		}
+		t.syncStatus(object)
+
+		inProgress := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS)
+		Expect(inProgress).To(BeNil())
+
+		failed := findProtoCondition(t.bareMetalInstance,
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED)
+		Expect(failed).To(BeNil())
+	})
+
 	It("should map multiple conditions in a single call", func() {
 		t := newTask(0)
 		object := &bmfov1alpha1.BareMetalInstance{
@@ -880,6 +905,23 @@ var _ = Describe("syncStatus", func() {
 			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_READY)
 		Expect(ready).ToNot(BeNil())
 		Expect(ready.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+	})
+})
+
+var _ = Describe("mapConditionStatus", func() {
+	It("should map ConditionTrue to CONDITION_STATUS_TRUE", func() {
+		Expect(mapConditionStatus(metav1.ConditionTrue)).To(
+			Equal(privatev1.ConditionStatus_CONDITION_STATUS_TRUE))
+	})
+
+	It("should map ConditionFalse to CONDITION_STATUS_FALSE", func() {
+		Expect(mapConditionStatus(metav1.ConditionFalse)).To(
+			Equal(privatev1.ConditionStatus_CONDITION_STATUS_FALSE))
+	})
+
+	It("should map ConditionUnknown to CONDITION_STATUS_UNSPECIFIED", func() {
+		Expect(mapConditionStatus(metav1.ConditionUnknown)).To(
+			Equal(privatev1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED))
 	})
 })
 
