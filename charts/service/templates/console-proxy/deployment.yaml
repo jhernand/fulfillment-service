@@ -30,7 +30,6 @@ spec:
       labels:
         app: fulfillment-console-proxy
     spec:
-      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
