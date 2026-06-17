@@ -117,6 +117,9 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNetwork) error {
+	if !virtualNetwork.HasStatus() {
+		virtualNetwork.SetStatus(&privatev1.VirtualNetworkStatus{})
+	}
 	oldVirtualNetwork := proto.Clone(virtualNetwork).(*privatev1.VirtualNetwork)
 	t := task{
 		r:              r,
@@ -126,31 +129,30 @@ func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNet
 	if virtualNetwork.HasMetadata() && virtualNetwork.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object
-		if !virtualNetwork.HasStatus() {
-			virtualNetwork.SetStatus(&privatev1.VirtualNetworkStatus{})
-		}
-		helper, buildErr := controllers.NewHubPersistenceHelper().
-			SetLogger(r.logger).
-			SetObjectId(virtualNetwork.GetId()).
-			SetStatus(virtualNetwork.GetStatus()).
-			SetSelectHub(func(ctx context.Context) (string, error) {
-				selectErr := t.selectHub(ctx)
-				return t.hubId, selectErr
-			}).
-			SetPersistHub(func(ctx context.Context) error {
-				_, persistErr := r.virtualNetworksClient.Update(ctx, privatev1.VirtualNetworksUpdateRequest_builder{
-					Object:     virtualNetwork,
-					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-				}.Build())
-				return persistErr
-			}).
-			Build()
-		if buildErr != nil {
-			return buildErr
-		}
-		if runErr := helper.Run(ctx); runErr != nil {
-			return runErr
+		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		if virtualNetwork.GetStatus().GetHub() == "" {
+			helper, buildErr := controllers.NewHubPersistenceHelper().
+				SetLogger(r.logger).
+				SetObjectId(virtualNetwork.GetId()).
+				SetStatus(virtualNetwork.GetStatus()).
+				SetSelectHub(func(ctx context.Context) (string, error) {
+					selectErr := t.selectHub(ctx)
+					return t.hubId, selectErr
+				}).
+				SetPersistHub(func(ctx context.Context) error {
+					_, persistErr := r.virtualNetworksClient.Update(ctx, privatev1.VirtualNetworksUpdateRequest_builder{
+						Object:     virtualNetwork,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return persistErr
+				}).
+				Build()
+			if buildErr != nil {
+				return buildErr
+			}
+			if runErr := helper.Run(ctx); runErr != nil {
+				return runErr
+			}
 		}
 
 		err = t.update(ctx)

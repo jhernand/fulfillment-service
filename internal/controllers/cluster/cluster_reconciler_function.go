@@ -119,6 +119,10 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
+	// Initialize status before clone so maskCalculator doesn't treat it as a change.
+	if !cluster.HasStatus() {
+		cluster.SetStatus(&privatev1.ClusterStatus{})
+	}
 	oldCluster := proto.Clone(cluster).(*privatev1.Cluster)
 	t := task{
 		r:       r,
@@ -128,50 +132,48 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if cluster.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object
-		if !cluster.HasStatus() {
-			cluster.SetStatus(&privatev1.ClusterStatus{})
+		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		if cluster.GetStatus().GetHub() == "" {
+			helper, buildErr := controllers.NewHubPersistenceHelper().
+				SetLogger(r.logger).
+				SetObjectId(cluster.GetId()).
+				SetStatus(cluster.GetStatus()).
+				SetSelectHub(func(ctx context.Context) (string, error) {
+					if selectErr := t.selectHub(ctx); selectErr != nil {
+						t.setDefaults()
+						t.updateCondition(
+							privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
+							privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
+							"ResourcesUnavailable",
+							"The cluster cannot be created because there are no resources available to "+
+								"fulfill the request.",
+						)
+						return "", selectErr
+					}
+					return t.hubId, nil
+				}).
+				SetPersistHub(func(ctx context.Context) error {
+					_, persistErr := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+						Object:     cluster,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return persistErr
+				}).
+				Build()
+			if buildErr != nil {
+				return buildErr
+			}
+			runErr := helper.Run(ctx)
+			switch {
+			case runErr != nil && cluster.GetStatus().GetHub() != "":
+				return runErr
+			case runErr != nil:
+				// Hub selection failed — condition set in callback,
+				// fall through to persist via maskCalculator.
+			}
 		}
-		helper, buildErr := controllers.NewHubPersistenceHelper().
-			SetLogger(r.logger).
-			SetObjectId(cluster.GetId()).
-			SetStatus(cluster.GetStatus()).
-			SetSelectHub(func(ctx context.Context) (string, error) {
-				if selectErr := t.selectHub(ctx); selectErr != nil {
-					t.setDefaults()
-					t.updateCondition(
-						privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
-						privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
-						"ResourcesUnavailable",
-						"The cluster cannot be created because there are no resources available to "+
-							"fulfill the request.",
-					)
-					return "", selectErr
-				}
-				return t.hubId, nil
-			}).
-			SetPersistHub(func(ctx context.Context) error {
-				_, persistErr := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-					Object:     cluster,
-					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-				}.Build())
-				return persistErr
-			}).
-			Build()
-		if buildErr != nil {
-			return buildErr
-		}
-		runErr := helper.Run(ctx)
-		switch {
-		case runErr != nil && cluster.GetStatus().GetHub() != "":
-			// Hub was selected but persistence failed — retry.
-			return runErr
-		case runErr != nil:
-			// Hub selection failed — condition already set in callback,
-			// fall through to persist the condition via maskCalculator.
-		default:
-			err = t.update(ctx)
-		}
+
+		err = t.update(ctx)
 	}
 	if err != nil {
 		return err

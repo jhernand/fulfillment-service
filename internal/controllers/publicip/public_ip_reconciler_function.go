@@ -116,6 +116,9 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error {
+	if !publicIP.HasStatus() {
+		publicIP.SetStatus(&privatev1.PublicIPStatus{})
+	}
 	oldPublicIP := proto.Clone(publicIP).(*privatev1.PublicIP)
 	t := task{
 		r:        r,
@@ -125,31 +128,30 @@ func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error 
 	if publicIP.HasMetadata() && publicIP.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object
-		if !publicIP.HasStatus() {
-			publicIP.SetStatus(&privatev1.PublicIPStatus{})
-		}
-		helper, buildErr := controllers.NewHubPersistenceHelper().
-			SetLogger(r.logger).
-			SetObjectId(publicIP.GetId()).
-			SetStatus(publicIP.GetStatus()).
-			SetSelectHub(func(ctx context.Context) (string, error) {
-				selectErr := t.selectHub(ctx)
-				return t.hubId, selectErr
-			}).
-			SetPersistHub(func(ctx context.Context) error {
-				_, persistErr := r.publicIPsClient.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
-					Object:     publicIP,
-					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-				}.Build())
-				return persistErr
-			}).
-			Build()
-		if buildErr != nil {
-			return buildErr
-		}
-		if runErr := helper.Run(ctx); runErr != nil {
-			return runErr
+		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		if publicIP.GetStatus().GetHub() == "" {
+			helper, buildErr := controllers.NewHubPersistenceHelper().
+				SetLogger(r.logger).
+				SetObjectId(publicIP.GetId()).
+				SetStatus(publicIP.GetStatus()).
+				SetSelectHub(func(ctx context.Context) (string, error) {
+					selectErr := t.selectHub(ctx)
+					return t.hubId, selectErr
+				}).
+				SetPersistHub(func(ctx context.Context) error {
+					_, persistErr := r.publicIPsClient.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
+						Object:     publicIP,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return persistErr
+				}).
+				Build()
+			if buildErr != nil {
+				return buildErr
+			}
+			if runErr := helper.Run(ctx); runErr != nil {
+				return runErr
+			}
 		}
 
 		err = t.update(ctx)

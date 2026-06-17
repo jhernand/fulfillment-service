@@ -125,6 +125,9 @@ func (b *FunctionBuilder) Build() (controllers.ReconcilerFunction[*privatev1.Pub
 }
 
 func (r *function) run(ctx context.Context, publicIPPool *privatev1.PublicIPPool) error {
+	if !publicIPPool.HasStatus() {
+		publicIPPool.SetStatus(&privatev1.PublicIPPoolStatus{})
+	}
 	oldPool := proto.Clone(publicIPPool).(*privatev1.PublicIPPool)
 	t := task{
 		r:            r,
@@ -134,31 +137,30 @@ func (r *function) run(ctx context.Context, publicIPPool *privatev1.PublicIPPool
 	if publicIPPool.HasMetadata() && publicIPPool.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object
-		if !publicIPPool.HasStatus() {
-			publicIPPool.SetStatus(&privatev1.PublicIPPoolStatus{})
-		}
-		helper, buildErr := controllers.NewHubPersistenceHelper().
-			SetLogger(r.logger).
-			SetObjectId(publicIPPool.GetId()).
-			SetStatus(publicIPPool.GetStatus()).
-			SetSelectHub(func(ctx context.Context) (string, error) {
-				selectErr := t.selectHub(ctx)
-				return t.hubId, selectErr
-			}).
-			SetPersistHub(func(ctx context.Context) error {
-				_, persistErr := r.publicIPPoolsClient.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
-					Object:     publicIPPool,
-					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-				}.Build())
-				return persistErr
-			}).
-			Build()
-		if buildErr != nil {
-			return buildErr
-		}
-		if runErr := helper.Run(ctx); runErr != nil {
-			return runErr
+		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		if publicIPPool.GetStatus().GetHub() == "" {
+			helper, buildErr := controllers.NewHubPersistenceHelper().
+				SetLogger(r.logger).
+				SetObjectId(publicIPPool.GetId()).
+				SetStatus(publicIPPool.GetStatus()).
+				SetSelectHub(func(ctx context.Context) (string, error) {
+					selectErr := t.selectHub(ctx)
+					return t.hubId, selectErr
+				}).
+				SetPersistHub(func(ctx context.Context) error {
+					_, persistErr := r.publicIPPoolsClient.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
+						Object:     publicIPPool,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return persistErr
+				}).
+				Build()
+			if buildErr != nil {
+				return buildErr
+			}
+			if runErr := helper.Run(ctx); runErr != nil {
+				return runErr
+			}
 		}
 
 		err = t.update(ctx)

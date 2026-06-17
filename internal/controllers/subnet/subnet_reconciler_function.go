@@ -117,6 +117,10 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, subnet *privatev1.Subnet) error {
+	// Initialize status before clone so maskCalculator doesn't treat it as a change.
+	if !subnet.HasStatus() {
+		subnet.SetStatus(&privatev1.SubnetStatus{})
+	}
 	oldSubnet := proto.Clone(subnet).(*privatev1.Subnet)
 	t := task{
 		r:      r,
@@ -126,31 +130,30 @@ func (r *function) run(ctx context.Context, subnet *privatev1.Subnet) error {
 	if subnet.HasMetadata() && subnet.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object
-		if !subnet.HasStatus() {
-			subnet.SetStatus(&privatev1.SubnetStatus{})
-		}
-		helper, buildErr := controllers.NewHubPersistenceHelper().
-			SetLogger(r.logger).
-			SetObjectId(subnet.GetId()).
-			SetStatus(subnet.GetStatus()).
-			SetSelectHub(func(ctx context.Context) (string, error) {
-				selectErr := t.selectHub(ctx)
-				return t.hubId, selectErr
-			}).
-			SetPersistHub(func(ctx context.Context) error {
-				_, persistErr := r.subnetsClient.Update(ctx, privatev1.SubnetsUpdateRequest_builder{
-					Object:     subnet,
-					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-				}.Build())
-				return persistErr
-			}).
-			Build()
-		if buildErr != nil {
-			return buildErr
-		}
-		if runErr := helper.Run(ctx); runErr != nil {
-			return runErr
+		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		if subnet.GetStatus().GetHub() == "" {
+			helper, buildErr := controllers.NewHubPersistenceHelper().
+				SetLogger(r.logger).
+				SetObjectId(subnet.GetId()).
+				SetStatus(subnet.GetStatus()).
+				SetSelectHub(func(ctx context.Context) (string, error) {
+					selectErr := t.selectHub(ctx)
+					return t.hubId, selectErr
+				}).
+				SetPersistHub(func(ctx context.Context) error {
+					_, persistErr := r.subnetsClient.Update(ctx, privatev1.SubnetsUpdateRequest_builder{
+						Object:     subnet,
+						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+					}.Build())
+					return persistErr
+				}).
+				Build()
+			if buildErr != nil {
+				return buildErr
+			}
+			if runErr := helper.Run(ctx); runErr != nil {
+				return runErr
+			}
 		}
 
 		err = t.update(ctx)
