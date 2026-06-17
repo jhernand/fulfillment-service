@@ -301,6 +301,83 @@ var _ = Describe("SecurityGroups server", func() {
 			Expect(proto.Equal(createResponse.GetObject(), getResponse.GetObject())).To(BeTrue())
 		})
 
+		It("Canonicalizes non-canonical rule CIDRs on Create", func() {
+			response, err := server.Create(ctx, publicv1.SecurityGroupsCreateRequest_builder{
+				Object: publicv1.SecurityGroup_builder{
+					Spec: publicv1.SecurityGroupSpec_builder{
+						VirtualNetwork: virtualNetworkID,
+						Ingress: []*publicv1.SecurityRule{
+							{
+								Protocol: publicv1.Protocol_PROTOCOL_TCP,
+								PortFrom: new(int32(80)),
+								PortTo:   new(int32(80)),
+								Ipv4Cidr: new("10.0.1.5/24"),
+							},
+						},
+						Egress: []*publicv1.SecurityRule{
+							{
+								Protocol: publicv1.Protocol_PROTOCOL_ALL,
+								Ipv4Cidr: new("0.0.0.0/0"),
+							},
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.GetObject().GetSpec().GetIngress()[0].GetIpv4Cidr()).To(Equal("10.0.1.0/24"))
+		})
+
+		It("Canonicalizes rule CIDRs on Update", func() {
+			createResponse, err := server.Create(ctx, publicv1.SecurityGroupsCreateRequest_builder{
+				Object: publicv1.SecurityGroup_builder{
+					Spec: publicv1.SecurityGroupSpec_builder{
+						VirtualNetwork: virtualNetworkID,
+						Ingress: []*publicv1.SecurityRule{
+							{
+								Protocol: publicv1.Protocol_PROTOCOL_TCP,
+								PortFrom: new(int32(443)),
+								PortTo:   new(int32(443)),
+								Ipv4Cidr: new("0.0.0.0/0"),
+							},
+						},
+						Egress: []*publicv1.SecurityRule{
+							{
+								Protocol: publicv1.Protocol_PROTOCOL_ALL,
+								Ipv4Cidr: new("0.0.0.0/0"),
+							},
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			updateResponse, err := server.Update(ctx, publicv1.SecurityGroupsUpdateRequest_builder{
+				Object: publicv1.SecurityGroup_builder{
+					Id: object.GetId(),
+					Spec: publicv1.SecurityGroupSpec_builder{
+						VirtualNetwork: virtualNetworkID,
+						Ingress: []*publicv1.SecurityRule{
+							{
+								Protocol: publicv1.Protocol_PROTOCOL_TCP,
+								PortFrom: new(int32(8080)),
+								PortTo:   new(int32(8080)),
+								Ipv4Cidr: new("10.0.2.5/24"),
+							},
+						},
+						Egress: []*publicv1.SecurityRule{
+							{
+								Protocol: publicv1.Protocol_PROTOCOL_ALL,
+								Ipv4Cidr: new("0.0.0.0/0"),
+							},
+						},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updateResponse.GetObject().GetSpec().GetIngress()[0].GetIpv4Cidr()).To(Equal("10.0.2.0/24"))
+		})
+
 		It("Update object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, publicv1.SecurityGroupsCreateRequest_builder{
