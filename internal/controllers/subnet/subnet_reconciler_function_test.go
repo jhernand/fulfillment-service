@@ -607,10 +607,10 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		}.Build()
 
 		f := &function{
-			logger:        logger,
-			hubCache:      hubCache,
-			subnetsClient: subnetsClient,
-			hubsClient:    hubsClient,
+			logger:         logger,
+			hubCache:       hubCache,
+			subnetsClient:  subnetsClient,
+			hubsClient:     hubsClient,
 			maskCalculator: nil,
 		}
 
@@ -664,10 +664,10 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		}.Build()
 
 		f := &function{
-			logger:        logger,
-			hubCache:      hubCache,
-			subnetsClient: subnetsClient,
-			hubsClient:    hubsClient,
+			logger:         logger,
+			hubCache:       hubCache,
+			subnetsClient:  subnetsClient,
+			hubsClient:     hubsClient,
 			maskCalculator: nil,
 		}
 
@@ -678,7 +678,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		list := &osacv1alpha1.SubnetList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(0))
+		Expect(list.Items).To(BeEmpty())
 	})
 
 	It("skips hub selection if already set", func() {
@@ -719,10 +719,10 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		}.Build()
 
 		f := &function{
-			logger:        logger,
-			hubCache:      hubCache,
-			subnetsClient: subnetsClient,
-			hubsClient:    hubsClient,
+			logger:         logger,
+			hubCache:       hubCache,
+			subnetsClient:  subnetsClient,
+			hubsClient:     hubsClient,
 			maskCalculator: nil,
 		}
 
@@ -789,10 +789,10 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		}.Build()
 
 		f := &function{
-			logger:        logger,
-			hubCache:      hubCache,
-			subnetsClient: subnetsClient,
-			hubsClient:    hubsClient,
+			logger:         logger,
+			hubCache:       hubCache,
+			subnetsClient:  subnetsClient,
+			hubsClient:     hubsClient,
 			maskCalculator: nil,
 		}
 

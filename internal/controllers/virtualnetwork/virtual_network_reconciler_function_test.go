@@ -714,7 +714,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		list := &osacv1alpha1.VirtualNetworkList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(0))
+		Expect(list.Items).To(BeEmpty())
 	})
 
 	It("skips hub selection if already set", func() {

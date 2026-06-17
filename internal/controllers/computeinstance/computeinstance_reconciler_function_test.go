@@ -1284,7 +1284,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		list := &osacv1alpha1.ComputeInstanceList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(0), "ComputeInstance should NOT be created when persistence fails")
+		Expect(list.Items).To(BeEmpty(), "ComputeInstance should NOT be created when persistence fails")
 	})
 
 	It("skips hub selection if already set", func() {

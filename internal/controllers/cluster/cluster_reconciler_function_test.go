@@ -719,7 +719,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		list := &osacv1alpha1.ClusterOrderList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(0), "ClusterOrder should NOT be created when persistence fails")
+		Expect(list.Items).To(BeEmpty(), "ClusterOrder should NOT be created when persistence fails")
 	})
 
 	It("skips hub selection if already set", func() {
