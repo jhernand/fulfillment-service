@@ -128,38 +128,31 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if cluster.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
-		helper := controllers.NewHubPersistenceHelper(r.logger)
-		if helper.ShouldPersistHub(
-			func() string { return cluster.GetStatus().GetHub() },
-			func() bool { return cluster.GetStatus().GetState() == privatev1.ClusterState_CLUSTER_STATE_PROGRESSING },
-		) {
-			err = helper.SelectAndPersistHub(
-				ctx,
-				cluster.GetId(),
-				"cluster",
-				func() string { return cluster.GetStatus().GetHub() },
-				func(ctx context.Context) (string, error) {
-					err := t.selectHub(ctx)
-					if err != nil {
-						return "", err
-					}
-					return t.hubId, nil
-				},
-				func(hubID string) {
-					cluster.GetStatus().SetHub(hubID)
-				},
-				func(ctx context.Context) error {
-					_, err := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-						Object:     cluster,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return err
-				},
-			)
-			if err != nil {
+		// OSAC-455: Persist hub to DB before creating Kubernetes object
+		if !cluster.HasStatus() {
+			cluster.SetStatus(&privatev1.ClusterStatus{})
+		}
+		helper, err := controllers.NewHubPersistenceHelper().
+			SetLogger(r.logger).
+			SetObjectId(cluster.GetId()).
+			SetStatus(cluster.GetStatus()).
+			SetSelectHub(func(ctx context.Context) (string, error) {
+				err := t.selectHub(ctx)
+				return t.hubId, err
+			}).
+			SetPersistHub(func(ctx context.Context) error {
+				_, err := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+					Object:     cluster,
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+				}.Build())
 				return err
-			}
+			}).
+			Build()
+		if err != nil {
+			return err
+		}
+		if err := helper.Run(ctx); err != nil {
+			return err
 		}
 
 		err = t.update(ctx)
@@ -206,7 +199,8 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
-	// Safety net: hub normally selected and persisted by run() before this point.
+	// Hub should already be selected and persisted by run() for new clusters.
+	// This is a safety check in case selectHub wasn't called (e.g., in tests or edge cases).
 	if t.hubId == "" {
 		err := t.selectHub(ctx)
 		if err != nil {
@@ -501,7 +495,8 @@ func (t *task) getKubeObject(ctx context.Context) (result *osacv1alpha1.ClusterO
 
 // updateCondition updates or creates a condition with the specified type, status, reason, and message.
 func (t *task) updateCondition(conditionType privatev1.ClusterConditionType, status privatev1.ConditionStatus,
-	reason string, message string) {
+	reason string, message string,
+) {
 	conditions := t.cluster.GetStatus().GetConditions()
 	updated := false
 	for i, condition := range conditions {

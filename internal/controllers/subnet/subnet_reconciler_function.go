@@ -126,42 +126,31 @@ func (r *function) run(ctx context.Context, subnet *privatev1.Subnet) error {
 	if subnet.HasMetadata() && subnet.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
-		helper := controllers.NewHubPersistenceHelper(r.logger)
-		if helper.ShouldPersistHub(
-			func() string { return subnet.GetStatus().GetHub() },
-			func() bool {
-				state := subnet.GetStatus().GetState()
-				return state == privatev1.SubnetState_SUBNET_STATE_UNSPECIFIED ||
-					state == privatev1.SubnetState_SUBNET_STATE_PENDING
-			},
-		) {
-			err = helper.SelectAndPersistHub(
-				ctx,
-				subnet.GetId(),
-				"subnet",
-				func() string { return subnet.GetStatus().GetHub() },
-				func(ctx context.Context) (string, error) {
-					err := t.selectHub(ctx)
-					if err != nil {
-						return "", err
-					}
-					return t.hubId, nil
-				},
-				func(hubID string) {
-					subnet.GetStatus().SetHub(hubID)
-				},
-				func(ctx context.Context) error {
-					_, err := r.subnetsClient.Update(ctx, privatev1.SubnetsUpdateRequest_builder{
-						Object:     subnet,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return err
-				},
-			)
-			if err != nil {
+		// OSAC-455: Persist hub to DB before creating Kubernetes object
+		if !subnet.HasStatus() {
+			subnet.SetStatus(&privatev1.SubnetStatus{})
+		}
+		helper, err := controllers.NewHubPersistenceHelper().
+			SetLogger(r.logger).
+			SetObjectId(subnet.GetId()).
+			SetStatus(subnet.GetStatus()).
+			SetSelectHub(func(ctx context.Context) (string, error) {
+				err := t.selectHub(ctx)
+				return t.hubId, err
+			}).
+			SetPersistHub(func(ctx context.Context) error {
+				_, err := r.subnetsClient.Update(ctx, privatev1.SubnetsUpdateRequest_builder{
+					Object:     subnet,
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+				}.Build())
 				return err
-			}
+			}).
+			Build()
+		if err != nil {
+			return err
+		}
+		if err := helper.Run(ctx); err != nil {
+			return err
 		}
 
 		err = t.update(ctx)

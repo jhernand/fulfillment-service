@@ -137,42 +137,31 @@ func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeIn
 	if computeInstance.HasMetadata() && computeInstance.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
-		helper := controllers.NewHubPersistenceHelper(r.logger)
-		if helper.ShouldPersistHub(
-			func() string { return computeInstance.GetStatus().GetHub() },
-			func() bool {
-				state := computeInstance.GetStatus().GetState()
-				return state == privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_UNSPECIFIED ||
-					state == privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_STARTING
-			},
-		) {
-			err = helper.SelectAndPersistHub(
-				ctx,
-				computeInstance.GetId(),
-				"computeinstance",
-				func() string { return computeInstance.GetStatus().GetHub() },
-				func(ctx context.Context) (string, error) {
-					err := t.selectHub(ctx)
-					if err != nil {
-						return "", err
-					}
-					return t.hubId, nil
-				},
-				func(hubID string) {
-					computeInstance.GetStatus().SetHub(hubID)
-				},
-				func(ctx context.Context) error {
-					_, err := r.computeInstancesClient.Update(ctx, privatev1.ComputeInstancesUpdateRequest_builder{
-						Object:     computeInstance,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return err
-				},
-			)
-			if err != nil {
+		// OSAC-455: Persist hub to DB before creating Kubernetes object
+		if !computeInstance.HasStatus() {
+			computeInstance.SetStatus(&privatev1.ComputeInstanceStatus{})
+		}
+		helper, err := controllers.NewHubPersistenceHelper().
+			SetLogger(r.logger).
+			SetObjectId(computeInstance.GetId()).
+			SetStatus(computeInstance.GetStatus()).
+			SetSelectHub(func(ctx context.Context) (string, error) {
+				err := t.selectHub(ctx)
+				return t.hubId, err
+			}).
+			SetPersistHub(func(ctx context.Context) error {
+				_, err := r.computeInstancesClient.Update(ctx, privatev1.ComputeInstancesUpdateRequest_builder{
+					Object:     computeInstance,
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+				}.Build())
 				return err
-			}
+			}).
+			Build()
+		if err != nil {
+			return err
+		}
+		if err := helper.Run(ctx); err != nil {
+			return err
 		}
 
 		err = t.update(ctx)

@@ -126,42 +126,31 @@ func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNet
 	if virtualNetwork.HasMetadata() && virtualNetwork.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
-		helper := controllers.NewHubPersistenceHelper(r.logger)
-		if helper.ShouldPersistHub(
-			func() string { return virtualNetwork.GetStatus().GetHub() },
-			func() bool {
-				state := virtualNetwork.GetStatus().GetState()
-				return state == privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_UNSPECIFIED ||
-					state == privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_PENDING
-			},
-		) {
-			err = helper.SelectAndPersistHub(
-				ctx,
-				virtualNetwork.GetId(),
-				"virtualnetwork",
-				func() string { return virtualNetwork.GetStatus().GetHub() },
-				func(ctx context.Context) (string, error) {
-					err := t.selectHub(ctx)
-					if err != nil {
-						return "", err
-					}
-					return t.hubId, nil
-				},
-				func(hubID string) {
-					virtualNetwork.GetStatus().SetHub(hubID)
-				},
-				func(ctx context.Context) error {
-					_, err := r.virtualNetworksClient.Update(ctx, privatev1.VirtualNetworksUpdateRequest_builder{
-						Object:     virtualNetwork,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return err
-				},
-			)
-			if err != nil {
+		// OSAC-455: Persist hub to DB before creating Kubernetes object
+		if !virtualNetwork.HasStatus() {
+			virtualNetwork.SetStatus(&privatev1.VirtualNetworkStatus{})
+		}
+		helper, err := controllers.NewHubPersistenceHelper().
+			SetLogger(r.logger).
+			SetObjectId(virtualNetwork.GetId()).
+			SetStatus(virtualNetwork.GetStatus()).
+			SetSelectHub(func(ctx context.Context) (string, error) {
+				err := t.selectHub(ctx)
+				return t.hubId, err
+			}).
+			SetPersistHub(func(ctx context.Context) error {
+				_, err := r.virtualNetworksClient.Update(ctx, privatev1.VirtualNetworksUpdateRequest_builder{
+					Object:     virtualNetwork,
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+				}.Build())
 				return err
-			}
+			}).
+			Build()
+		if err != nil {
+			return err
+		}
+		if err := helper.Run(ctx); err != nil {
+			return err
 		}
 
 		err = t.update(ctx)

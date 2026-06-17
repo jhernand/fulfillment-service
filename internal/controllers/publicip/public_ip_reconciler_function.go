@@ -125,42 +125,31 @@ func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error 
 	if publicIP.HasMetadata() && publicIP.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
-		helper := controllers.NewHubPersistenceHelper(r.logger)
-		if helper.ShouldPersistHub(
-			func() string { return publicIP.GetStatus().GetHub() },
-			func() bool {
-				state := publicIP.GetStatus().GetState()
-				return state == privatev1.PublicIPState_PUBLIC_IP_STATE_UNSPECIFIED ||
-					state == privatev1.PublicIPState_PUBLIC_IP_STATE_PENDING
-			},
-		) {
-			err = helper.SelectAndPersistHub(
-				ctx,
-				publicIP.GetId(),
-				"publicip",
-				func() string { return publicIP.GetStatus().GetHub() },
-				func(ctx context.Context) (string, error) {
-					err := t.selectHub(ctx)
-					if err != nil {
-						return "", err
-					}
-					return t.hubId, nil
-				},
-				func(hubID string) {
-					publicIP.GetStatus().SetHub(hubID)
-				},
-				func(ctx context.Context) error {
-					_, err := r.publicIPsClient.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
-						Object:     publicIP,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return err
-				},
-			)
-			if err != nil {
+		// OSAC-455: Persist hub to DB before creating Kubernetes object
+		if !publicIP.HasStatus() {
+			publicIP.SetStatus(&privatev1.PublicIPStatus{})
+		}
+		helper, err := controllers.NewHubPersistenceHelper().
+			SetLogger(r.logger).
+			SetObjectId(publicIP.GetId()).
+			SetStatus(publicIP.GetStatus()).
+			SetSelectHub(func(ctx context.Context) (string, error) {
+				err := t.selectHub(ctx)
+				return t.hubId, err
+			}).
+			SetPersistHub(func(ctx context.Context) error {
+				_, err := r.publicIPsClient.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
+					Object:     publicIP,
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+				}.Build())
 				return err
-			}
+			}).
+			Build()
+		if err != nil {
+			return err
+		}
+		if err := helper.Run(ctx); err != nil {
+			return err
 		}
 
 		err = t.update(ctx)

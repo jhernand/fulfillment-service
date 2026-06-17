@@ -134,42 +134,31 @@ func (r *function) run(ctx context.Context, publicIPPool *privatev1.PublicIPPool
 	if publicIPPool.HasMetadata() && publicIPPool.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating CR to prevent orphaning on crash
-		helper := controllers.NewHubPersistenceHelper(r.logger)
-		if helper.ShouldPersistHub(
-			func() string { return publicIPPool.GetStatus().GetHub() },
-			func() bool {
-				state := publicIPPool.GetStatus().GetState()
-				return state == privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_UNSPECIFIED ||
-					state == privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_PENDING
-			},
-		) {
-			err = helper.SelectAndPersistHub(
-				ctx,
-				publicIPPool.GetId(),
-				"publicippool",
-				func() string { return publicIPPool.GetStatus().GetHub() },
-				func(ctx context.Context) (string, error) {
-					err := t.selectHub(ctx)
-					if err != nil {
-						return "", err
-					}
-					return t.hubId, nil
-				},
-				func(hubID string) {
-					publicIPPool.GetStatus().SetHub(hubID)
-				},
-				func(ctx context.Context) error {
-					_, err := r.publicIPPoolsClient.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
-						Object:     publicIPPool,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return err
-				},
-			)
-			if err != nil {
+		// OSAC-455: Persist hub to DB before creating Kubernetes object
+		if !publicIPPool.HasStatus() {
+			publicIPPool.SetStatus(&privatev1.PublicIPPoolStatus{})
+		}
+		helper, err := controllers.NewHubPersistenceHelper().
+			SetLogger(r.logger).
+			SetObjectId(publicIPPool.GetId()).
+			SetStatus(publicIPPool.GetStatus()).
+			SetSelectHub(func(ctx context.Context) (string, error) {
+				err := t.selectHub(ctx)
+				return t.hubId, err
+			}).
+			SetPersistHub(func(ctx context.Context) error {
+				_, err := r.publicIPPoolsClient.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
+					Object:     publicIPPool,
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
+				}.Build())
 				return err
-			}
+			}).
+			Build()
+		if err != nil {
+			return err
+		}
+		if err := helper.Run(ctx); err != nil {
+			return err
 		}
 
 		err = t.update(ctx)
