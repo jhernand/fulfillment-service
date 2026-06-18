@@ -456,6 +456,19 @@ var _ = Describe("Private public IP pools server", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 
+			It("canonicalizes non-canonical CIDRs on Create", func() {
+				pool := privatev1.PublicIPPool_builder{
+					Spec: privatev1.PublicIPPoolSpec_builder{
+						Cidrs:    []string{"10.0.1.5/24"},
+						IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
+					}.Build(),
+				}.Build()
+
+				err := poolsServer.validateCreate(ctx, pool)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(pool.GetSpec().GetCidrs()).To(Equal([]string{"10.0.1.0/24"}))
+			})
+
 		})
 
 		Context("Cross-pool CIDR overlap detection", func() {

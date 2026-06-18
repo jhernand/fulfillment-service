@@ -576,6 +576,49 @@ var _ = Describe("Private clusters server", func() {
 			Expect(proto.Equal(createResponse.GetObject(), getResponse.GetObject())).To(BeTrue())
 		})
 
+		It("Canonicalizes network CIDRs on Update", func() {
+			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Spec: privatev1.ClusterSpec_builder{
+						Template: "my-template-id",
+					}.Build(),
+					Status: privatev1.ClusterStatus_builder{
+						Hub: "my-hub-id",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResponse.GetObject()
+
+			updateResponse, err := server.Update(ctx, privatev1.ClustersUpdateRequest_builder{
+				Object: privatev1.Cluster_builder{
+					Id: object.GetId(),
+					Spec: privatev1.ClusterSpec_builder{
+						Template: object.GetSpec().GetTemplate(),
+						Network: privatev1.ClusterNetwork_builder{
+							PodCidr:     new("10.128.0.5/14"),
+							ServiceCidr: new("172.30.1.0/16"),
+						}.Build(),
+					}.Build(),
+				}.Build(),
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.network.pod_cidr", "spec.network.service_cidr"},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			network := updateResponse.GetObject().GetSpec().GetNetwork()
+			Expect(network.GetPodCidr()).To(Equal("10.128.0.0/14"))
+			Expect(network.GetServiceCidr()).To(Equal("172.30.0.0/16"))
+
+			getResponse, err := server.Get(ctx, privatev1.ClustersGetRequest_builder{
+				Id: object.GetId(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			network = getResponse.GetObject().GetSpec().GetNetwork()
+			Expect(network.GetPodCidr()).To(Equal("10.128.0.0/14"))
+			Expect(network.GetServiceCidr()).To(Equal("172.30.0.0/16"))
+		})
+
 		It("Update object", func() {
 			// Create the object:
 			createResponse, err := server.Create(ctx, privatev1.ClustersCreateRequest_builder{

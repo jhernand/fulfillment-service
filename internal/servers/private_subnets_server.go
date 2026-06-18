@@ -226,18 +226,12 @@ func (s *PrivateSubnetsServer) validateSubnet(ctx context.Context,
 			"at least one of 'spec.ipv4_cidr' or 'spec.ipv6_cidr' must be provided")
 	}
 
-	// SUB-VAL-01: Validate IPv4 CIDR format
-	if spec.GetIpv4Cidr() != "" {
-		if err := validateCIDR(spec.GetIpv4Cidr(), "IPv4"); err != nil {
-			return err
-		}
-	}
-
-	// SUB-VAL-02: Validate IPv6 CIDR format
-	if spec.GetIpv6Cidr() != "" {
-		if err := validateCIDR(spec.GetIpv6Cidr(), "IPv6"); err != nil {
-			return err
-		}
+	// SUB-VAL-01, SUB-VAL-02: Validate and canonicalize CIDRs
+	if err := canonicalizeDualStackCIDRs(
+		spec.GetIpv4Cidr, spec.SetIpv4Cidr,
+		spec.GetIpv6Cidr, spec.SetIpv6Cidr,
+	); err != nil {
+		return err
 	}
 
 	// SUB-VAL-04, SUB-VAL-05, SUB-VAL-06, SUB-VAL-07, SUB-VAL-08: Validate parent VirtualNetwork
@@ -331,7 +325,7 @@ func (s *PrivateSubnetsServer) validateVirtualNetworkReference(ctx context.Conte
 				"subnet has IPv4 CIDR but parent VirtualNetwork does not support IPv4")
 		}
 		// SUB-VAL-06: Validate IPv4 CIDR is subset of parent
-		if err := validateCIDRSubset(spec.GetIpv4Cidr(), parentSpec.GetIpv4Cidr(), "IPv4"); err != nil {
+		if err := validateCIDRSubset(spec.GetIpv4Cidr(), parentSpec.GetIpv4Cidr(), cidrIPv4); err != nil {
 			return err
 		}
 	}
@@ -343,7 +337,7 @@ func (s *PrivateSubnetsServer) validateVirtualNetworkReference(ctx context.Conte
 				"subnet has IPv6 CIDR but parent VirtualNetwork does not support IPv6")
 		}
 		// SUB-VAL-06: Validate IPv6 CIDR is subset of parent
-		if err := validateCIDRSubset(spec.GetIpv6Cidr(), parentSpec.GetIpv6Cidr(), "IPv6"); err != nil {
+		if err := validateCIDRSubset(spec.GetIpv6Cidr(), parentSpec.GetIpv6Cidr(), cidrIPv6); err != nil {
 			return err
 		}
 	}
@@ -456,28 +450,30 @@ func validateImmutableFieldsSubnet(newSubnet *privatev1.Subnet, existingSubnet *
 			existingSpec.GetVirtualNetwork(), newSpec.GetVirtualNetwork())
 	}
 
-	// SUB-VAL-14: Preserve and check immutable ipv4_cidr field.
-	// If the request omits ipv4_cidr (HasIpv4Cidr() false), copy the existing value to prevent
-	// erasure — the private API has no Merge() step to preserve absent optional fields.
-	if existingSpec.HasIpv4Cidr() && !newSpec.HasIpv4Cidr() {
-		newSpec.SetIpv4Cidr(existingSpec.GetIpv4Cidr())
-	}
-	if newSpec.HasIpv4Cidr() && newSpec.GetIpv4Cidr() != existingSpec.GetIpv4Cidr() {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'spec.ipv4_cidr' is immutable and cannot be changed from '%s' to '%s'",
-			existingSpec.GetIpv4Cidr(), newSpec.GetIpv4Cidr())
-	}
-
-	// SUB-VAL-15: Preserve and check immutable ipv6_cidr field.
-	// If the request omits ipv6_cidr (HasIpv6Cidr() false), copy the existing value to prevent
-	// erasure — the private API has no Merge() step to preserve absent optional fields.
-	if existingSpec.HasIpv6Cidr() && !newSpec.HasIpv6Cidr() {
-		newSpec.SetIpv6Cidr(existingSpec.GetIpv6Cidr())
-	}
-	if newSpec.HasIpv6Cidr() && newSpec.GetIpv6Cidr() != existingSpec.GetIpv6Cidr() {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'spec.ipv6_cidr' is immutable and cannot be changed from '%s' to '%s'",
-			existingSpec.GetIpv6Cidr(), newSpec.GetIpv6Cidr())
+	// SUB-VAL-14, SUB-VAL-15: Preserve and check immutable CIDR fields.
+	for _, field := range []immutableCIDRField{
+		{
+			fieldName:       "spec.ipv4_cidr",
+			ipVersion:       cidrIPv4,
+			existingHasCIDR: existingSpec.HasIpv4Cidr,
+			existingCIDR:    existingSpec.GetIpv4Cidr,
+			newHasCIDR:      newSpec.HasIpv4Cidr,
+			newCIDR:         newSpec.GetIpv4Cidr,
+			setNewCIDR:      newSpec.SetIpv4Cidr,
+		},
+		{
+			fieldName:       "spec.ipv6_cidr",
+			ipVersion:       cidrIPv6,
+			existingHasCIDR: existingSpec.HasIpv6Cidr,
+			existingCIDR:    existingSpec.GetIpv6Cidr,
+			newHasCIDR:      newSpec.HasIpv6Cidr,
+			newCIDR:         newSpec.GetIpv6Cidr,
+			setNewCIDR:      newSpec.SetIpv6Cidr,
+		},
+	} {
+		if err := field.preserveAndValidate(); err != nil {
+			return err
+		}
 	}
 
 	return nil
