@@ -132,7 +132,7 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if cluster.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		// Persist hub to DB before creating Kubernetes object.
 		if cluster.GetStatus().GetHub() == "" {
 			helper, buildErr := controllers.NewHubPersistenceHelper().
 				SetLogger(r.logger).
@@ -163,13 +163,10 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 			if buildErr != nil {
 				return buildErr
 			}
-			runErr := helper.Run(ctx)
-			switch {
-			case runErr != nil && cluster.GetStatus().GetHub() != "":
-				return runErr
-			case runErr != nil:
-				// Hub selection failed — condition set in callback,
-				// fall through to persist via maskCalculator.
+			if runErr := helper.Run(ctx); runErr != nil {
+				if cluster.GetStatus().GetHub() != "" {
+					return runErr
+				}
 			}
 		}
 

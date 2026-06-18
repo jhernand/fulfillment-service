@@ -130,7 +130,7 @@ func (r *function) run(ctx context.Context, subnet *privatev1.Subnet) error {
 	if subnet.HasMetadata() && subnet.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		// Persist hub to DB before creating Kubernetes object.
 		if subnet.GetStatus().GetHub() == "" {
 			helper, buildErr := controllers.NewHubPersistenceHelper().
 				SetLogger(r.logger).

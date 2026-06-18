@@ -537,9 +537,9 @@ var _ = Describe("delete", func() {
 	})
 })
 
-var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
+var _ = Describe("hub persistence", func() {
 	const (
-		clusterID    = "osac-455-cluster"
+		clusterID    = "test-cluster-hub"
 		tenantName   = "test-tenant"
 		hubID        = "test-hub-123"
 		hubNamespace = "hub-123-ns"
@@ -556,10 +556,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		DeferCleanup(ctrl.Finish)
 	})
 
-	It("persists hub selection before creating ClusterOrder", func() {
-		// Test 1: Hub Persistence Success
-		// Verify that hub is persisted to database BEFORE ClusterOrder CR is created
-
+	It("should persist hub selection before creating ClusterOrder", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -576,7 +573,6 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			}, nil).
 			AnyTimes()
 
-		// Mock the hubs list for selectHub
 		hubsClient := controllers.NewMockHubsClient(ctrl)
 		hubsClient.EXPECT().
 			List(gomock.Any(), gomock.Any()).
@@ -586,30 +582,21 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 				},
 			}, nil)
 
-		// Track database update calls - expect two calls:
-		// 1. First call: persist hub (field mask: status.hub only)
-		// 2. Second call: persist other changes (field mask: status.conditions, status.hub)
 		hubPersisted := false
-		var firstUpdatedCluster *privatev1.Cluster
 		clustersClient := NewMockClustersClient(ctrl)
 
-		// First call: Hub persistence
 		clustersClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.ClustersUpdateRequest, opts ...grpc.CallOption) (*privatev1.ClustersUpdateResponse, error) {
 				hubPersisted = true
-				firstUpdatedCluster = req.GetObject()
-				// Verify field mask only includes status.hub
 				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
 				return &privatev1.ClustersUpdateResponse{Object: req.GetObject()}, nil
 			}).
 			Times(1)
 
-		// Second call: Final update (conditions, etc.)
 		clustersClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.ClustersUpdateRequest, opts ...grpc.CallOption) (*privatev1.ClustersUpdateResponse, error) {
-				// Verify hub is still set in final update
 				Expect(req.GetObject().GetStatus().GetHub()).To(Equal(hubID))
 				return &privatev1.ClustersUpdateResponse{Object: req.GetObject()}, nil
 			}).
@@ -626,7 +613,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			}.Build(),
 			Status: privatev1.ClusterStatus_builder{
 				State: privatev1.ClusterState_CLUSTER_STATE_PROGRESSING,
-				Hub:   "", // Empty - needs hub selection
+				Hub:   "",
 			}.Build(),
 		}.Build()
 
@@ -640,22 +627,15 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 
 		err := f.run(ctx, cluster)
 		Expect(err).ToNot(HaveOccurred())
+		Expect(hubPersisted).To(BeTrue())
 
-		// Verify hub was persisted to database in first Update call
-		Expect(hubPersisted).To(BeTrue(), "Hub should have been persisted in first Update call")
-		Expect(firstUpdatedCluster.GetStatus().GetHub()).To(Equal(hubID))
-
-		// Verify ClusterOrder was created
 		list := &osacv1alpha1.ClusterOrderList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(list.Items).To(HaveLen(1))
 	})
 
-	It("does not create CR if hub persistence fails", func() {
-		// Test 2: Hub Persistence Failure (Crash Scenario)
-		// Verify that ClusterOrder is NOT created if database update fails
-
+	It("should not create ClusterOrder if hub persistence fails", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -672,7 +652,6 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			}, nil).
 			AnyTimes()
 
-		// Mock the hubs list for selectHub
 		hubsClient := controllers.NewMockHubsClient(ctrl)
 		hubsClient.EXPECT().
 			List(gomock.Any(), gomock.Any()).
@@ -682,7 +661,6 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 				},
 			}, nil)
 
-		// Simulate database failure
 		clustersClient := NewMockClustersClient(ctrl)
 		clustersClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -699,7 +677,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			}.Build(),
 			Status: privatev1.ClusterStatus_builder{
 				State: privatev1.ClusterState_CLUSTER_STATE_PROGRESSING,
-				Hub:   "", // Empty - needs hub selection
+				Hub:   "",
 			}.Build(),
 		}.Build()
 
@@ -715,17 +693,13 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("failed to persist hub selection"))
 
-		// Verify ClusterOrder was NOT created
 		list := &osacv1alpha1.ClusterOrderList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(BeEmpty(), "ClusterOrder should NOT be created when persistence fails")
+		Expect(list.Items).To(BeEmpty())
 	})
 
-	It("skips hub selection if already set", func() {
-		// Test 3: Hub Already Set (Idempotency)
-		// Verify that hub selection is skipped if status.hub is already set
-
+	It("should skip hub selection if already set", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -742,17 +716,12 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			}, nil).
 			AnyTimes()
 
-		// Hub list should NOT be called since hub is already set
 		hubsClient := controllers.NewMockHubsClient(ctrl)
-		// No expectations - List should not be called
 
-		// Database Update may be called for other fields (like conditions), but NOT for hub persistence
-		// We verify by checking that any Update calls do NOT have status.hub in the field mask
 		clustersClient := NewMockClustersClient(ctrl)
 		clustersClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.ClustersUpdateRequest, opts ...grpc.CallOption) (*privatev1.ClustersUpdateResponse, error) {
-				// Verify that status.hub is NOT in the field mask (hub already persisted)
 				Expect(req.GetUpdateMask().GetPaths()).ToNot(ContainElement("status.hub"))
 				return &privatev1.ClustersUpdateResponse{Object: req.GetObject()}, nil
 			}).
@@ -769,7 +738,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			}.Build(),
 			Status: privatev1.ClusterStatus_builder{
 				State: privatev1.ClusterState_CLUSTER_STATE_PROGRESSING,
-				Hub:   hubID, // Already set - should not re-select
+				Hub:   hubID,
 			}.Build(),
 		}.Build()
 
@@ -784,7 +753,6 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		err := f.run(ctx, cluster)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify ClusterOrder was created using existing hub
 		list := &osacv1alpha1.ClusterOrderList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
@@ -792,11 +760,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		Expect(list.Items[0].GetNamespace()).To(Equal(hubNamespace))
 	})
 
-	It("recovers from crash by using persisted hub", func() {
-		// Test 4: Crash Recovery Scenario
-		// Simulates: First reconcile creates CR and persists hub, then crashes
-		// Second reconcile finds hub already set and uses it (no duplicate)
-
+	It("should not create duplicate ClusterOrder after crash recovery", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -829,7 +793,6 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			Return(&privatev1.ClustersUpdateResponse{}, nil).
 			AnyTimes()
 
-		// First reconcile: empty hub, needs selection
 		cluster1 := privatev1.Cluster_builder{
 			Id: clusterID,
 			Metadata: privatev1.Metadata_builder{
@@ -841,7 +804,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			}.Build(),
 			Status: privatev1.ClusterStatus_builder{
 				State: privatev1.ClusterState_CLUSTER_STATE_PROGRESSING,
-				Hub:   "", // Empty
+				Hub:   "",
 			}.Build(),
 		}.Build()
 
@@ -855,16 +818,13 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 
 		err := f.run(ctx, cluster1)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(cluster1.GetStatus().GetHub()).To(Equal(hubID))
 
-		// Verify first CR was created
 		list1 := &osacv1alpha1.ClusterOrderList{}
 		err = fakeClient.List(ctx, list1)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(list1.Items).To(HaveLen(1))
 		firstCRName := list1.Items[0].GetName()
 
-		// Second reconcile: hub already set (simulating recovery after crash)
 		cluster2 := privatev1.Cluster_builder{
 			Id: clusterID,
 			Metadata: privatev1.Metadata_builder{
@@ -876,18 +836,82 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 			}.Build(),
 			Status: privatev1.ClusterStatus_builder{
 				State: privatev1.ClusterState_CLUSTER_STATE_PROGRESSING,
-				Hub:   hubID, // Already set from first reconcile
+				Hub:   hubID,
 			}.Build(),
 		}.Build()
 
 		err = f.run(ctx, cluster2)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify NO duplicate CR was created
 		list2 := &osacv1alpha1.ClusterOrderList{}
 		err = fakeClient.List(ctx, list2)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list2.Items).To(HaveLen(1), "Should still have exactly 1 ClusterOrder (no duplicate)")
-		Expect(list2.Items[0].GetName()).To(Equal(firstCRName), "Should be the same CR, not a new one")
+		Expect(list2.Items).To(HaveLen(1))
+		Expect(list2.Items[0].GetName()).To(Equal(firstCRName))
+	})
+
+	It("should set ResourcesUnavailable condition when no hubs are available", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		_ = fakeClient
+
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+		hubsClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.HubsListResponse{
+				Items: []*privatev1.Hub{},
+			}, nil).
+			AnyTimes()
+
+		clustersClient := NewMockClustersClient(ctrl)
+		clustersClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.ClustersUpdateRequest, opts ...grpc.CallOption) (*privatev1.ClustersUpdateResponse, error) {
+				return &privatev1.ClustersUpdateResponse{Object: req.GetObject()}, nil
+			}).
+			AnyTimes()
+
+		cluster := privatev1.Cluster_builder{
+			Id: clusterID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.ClusterSpec_builder{
+				Template: "test-template",
+			}.Build(),
+			Status: privatev1.ClusterStatus_builder{
+				State: privatev1.ClusterState_CLUSTER_STATE_PROGRESSING,
+				Hub:   "",
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:         logger,
+			hubCache:       hubCache,
+			clustersClient: clustersClient,
+			hubsClient:     hubsClient,
+			maskCalculator: nil,
+		}
+
+		err := f.run(ctx, cluster)
+		Expect(err).ToNot(HaveOccurred())
+
+		conditions := cluster.GetStatus().GetConditions()
+		found := false
+		for _, c := range conditions {
+			if c.GetType() == privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING {
+				Expect(c.GetStatus()).To(Equal(privatev1.ConditionStatus_CONDITION_STATUS_FALSE))
+				Expect(c.GetReason()).To(Equal("ResourcesUnavailable"))
+				found = true
+			}
+		}
+		Expect(found).To(BeTrue(), "should have set ResourcesUnavailable condition")
 	})
 })

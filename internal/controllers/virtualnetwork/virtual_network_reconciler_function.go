@@ -129,7 +129,7 @@ func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNet
 	if virtualNetwork.HasMetadata() && virtualNetwork.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		// Persist hub to DB before creating Kubernetes object.
 		if virtualNetwork.GetStatus().GetHub() == "" {
 			helper, buildErr := controllers.NewHubPersistenceHelper().
 				SetLogger(r.logger).

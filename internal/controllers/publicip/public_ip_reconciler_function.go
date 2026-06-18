@@ -128,7 +128,7 @@ func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error 
 	if publicIP.HasMetadata() && publicIP.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// OSAC-455: Persist hub to DB before creating Kubernetes object.
+		// Persist hub to DB before creating Kubernetes object.
 		if publicIP.GetStatus().GetHub() == "" {
 			helper, buildErr := controllers.NewHubPersistenceHelper().
 				SetLogger(r.logger).

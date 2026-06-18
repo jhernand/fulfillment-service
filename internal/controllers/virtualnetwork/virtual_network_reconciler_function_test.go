@@ -569,9 +569,9 @@ var _ = Describe("removeFinalizer", func() {
 	})
 })
 
-var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
+var _ = Describe("hub persistence", func() {
 	const (
-		virtualNetworkID = "osac-455-vn"
+		virtualNetworkID = "test-vn-hub"
 		tenantName       = "test-tenant"
 		hubID            = "test-hub-123"
 		hubNamespace     = "hub-123-ns"
@@ -588,7 +588,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		DeferCleanup(ctrl.Finish)
 	})
 
-	It("persists hub selection before creating VirtualNetwork CR", func() {
+	It("should persist hub selection before creating VirtualNetwork CR", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -659,7 +659,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		Expect(list.Items).To(HaveLen(1))
 	})
 
-	It("does not create CR if hub persistence fails", func() {
+	It("should not create CR if hub persistence fails", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -717,7 +717,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		Expect(list.Items).To(BeEmpty())
 	})
 
-	It("skips hub selection if already set", func() {
+	It("should skip hub selection if already set", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -773,7 +773,7 @@ var _ = Describe("OSAC-455: Hub Persistence Before CR Creation", func() {
 		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
 	})
 
-	It("recovers from crash by using persisted hub", func() {
+	It("should not create duplicate CR after crash recovery", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 

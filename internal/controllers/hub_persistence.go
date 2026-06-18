@@ -29,7 +29,7 @@ type statusWithHub interface {
 }
 
 // HubPersistenceHelper persists hub selection to the database before creating
-// Kubernetes objects, preventing orphaned objects on crash (OSAC-455).
+// Kubernetes objects, preventing orphaned objects on crash.
 type HubPersistenceHelper struct {
 	logger     *slog.Logger
 	objectId   string
