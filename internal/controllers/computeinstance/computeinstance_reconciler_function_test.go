@@ -1125,7 +1125,7 @@ var _ = Describe("hub persistence", func() {
 		DeferCleanup(ctrl.Finish)
 	})
 
-	It("should persist hub selection before creating ComputeInstance VM", func() {
+	It("should select hub and return without creating ComputeInstance VM", func() {
 
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
@@ -1135,13 +1135,6 @@ var _ = Describe("hub persistence", func() {
 			Build()
 
 		hubCache := controllers.NewMockHubCache(ctrl)
-		hubCache.EXPECT().
-			Get(gomock.Any(), hubID).
-			Return(&controllers.HubEntry{
-				Namespace: hubNamespace,
-				Client:    fakeClient,
-			}, nil).
-			AnyTimes()
 
 		// Mock the hubs list for selectHub
 		hubsClient := controllers.NewMockHubsClient(ctrl)
@@ -1153,34 +1146,14 @@ var _ = Describe("hub persistence", func() {
 				},
 			}, nil)
 
-		// Track database update calls - expect two calls:
-		// 1. First call: persist hub (field mask: status.hub only)
-		// 2. Second call: persist other changes (field mask varies)
-		hubPersisted := false
-		var firstUpdatedComputeInstance *privatev1.ComputeInstance
+		// Single update to persist hub selection, then early return
 		computeInstancesClient := NewMockComputeInstancesClient(ctrl)
-
-		// First call: Hub persistence
 		computeInstancesClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.ComputeInstancesUpdateRequest, opts ...grpc.CallOption) (*privatev1.ComputeInstancesUpdateResponse, error) {
-				hubPersisted = true
-				firstUpdatedComputeInstance = req.GetObject()
-				// Verify field mask only includes status.hub
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
 				return &privatev1.ComputeInstancesUpdateResponse{Object: req.GetObject()}, nil
 			}).
-			Times(1)
-
-		// Second call: Final update
-		computeInstancesClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, req *privatev1.ComputeInstancesUpdateRequest, opts ...grpc.CallOption) (*privatev1.ComputeInstancesUpdateResponse, error) {
-				// Verify hub is still set in final update
-				Expect(req.GetObject().GetStatus().GetHub()).To(Equal(hubID))
-				return &privatev1.ComputeInstancesUpdateResponse{Object: req.GetObject()}, nil
-			}).
-			Times(1)
+			AnyTimes()
 
 		computeInstance := privatev1.ComputeInstance_builder{
 			Id: computeInstanceID,
@@ -1206,18 +1179,17 @@ var _ = Describe("hub persistence", func() {
 		err := f.run(ctx, computeInstance)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Verify hub was persisted to database in first Update call
-		Expect(hubPersisted).To(BeTrue(), "Hub should have been persisted in first Update call")
-		Expect(firstUpdatedComputeInstance.GetStatus().GetHub()).To(Equal(hubID))
+		// Verify hub was set in status
+		Expect(computeInstance.GetStatus().GetHub()).To(Equal(hubID))
 
-		// Verify ComputeInstance was created
+		// Verify ComputeInstance CR was NOT created (early return)
 		list := &osacv1alpha1.ComputeInstanceList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items).To(BeEmpty())
 	})
 
-	It("should not create CR if hub persistence fails", func() {
+	It("should not create CR when no hubs available", func() {
 
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
@@ -1227,29 +1199,16 @@ var _ = Describe("hub persistence", func() {
 			Build()
 
 		hubCache := controllers.NewMockHubCache(ctrl)
-		hubCache.EXPECT().
-			Get(gomock.Any(), hubID).
-			Return(&controllers.HubEntry{
-				Namespace: hubNamespace,
-				Client:    fakeClient,
-			}, nil).
-			AnyTimes()
 
-		// Mock the hubs list for selectHub
+		// Mock the hubs list returning empty — no hubs available
 		hubsClient := controllers.NewMockHubsClient(ctrl)
 		hubsClient.EXPECT().
 			List(gomock.Any(), gomock.Any()).
 			Return(&privatev1.HubsListResponse{
-				Items: []*privatev1.Hub{
-					privatev1.Hub_builder{Id: hubID}.Build(),
-				},
+				Items: []*privatev1.Hub{},
 			}, nil)
 
-		// Simulate database failure
 		computeInstancesClient := NewMockComputeInstancesClient(ctrl)
-		computeInstancesClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("database connection failed"))
 
 		computeInstance := privatev1.ComputeInstance_builder{
 			Id: computeInstanceID,
@@ -1274,13 +1233,13 @@ var _ = Describe("hub persistence", func() {
 
 		err := f.run(ctx, computeInstance)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("failed to persist hub selection"))
+		Expect(err.Error()).To(ContainSubstring("there are no hubs"))
 
 		// Verify ComputeInstance was NOT created
 		list := &osacv1alpha1.ComputeInstanceList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(BeEmpty(), "ComputeInstance should NOT be created when persistence fails")
+		Expect(list.Items).To(BeEmpty(), "ComputeInstance should NOT be created when no hubs available")
 	})
 
 	It("should skip hub selection if already set", func() {
@@ -1348,7 +1307,7 @@ var _ = Describe("hub persistence", func() {
 		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
 	})
 
-	It("should not create duplicate CR after crash recovery", func() {
+	It("should create CR on second reconcile after hub is persisted", func() {
 
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
@@ -1377,21 +1336,12 @@ var _ = Describe("hub persistence", func() {
 			}, nil)
 
 		computeInstancesClient := NewMockComputeInstancesClient(ctrl)
-
-		// First reconcile: persist hub, then "crash" (error returned)
 		computeInstancesClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.ComputeInstancesUpdateRequest, opts ...grpc.CallOption) (*privatev1.ComputeInstancesUpdateResponse, error) {
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
-				// Persist succeeds, but set hub in object for next reconcile
-				req.GetObject().GetStatus().SetHub(hubID)
 				return &privatev1.ComputeInstancesUpdateResponse{Object: req.GetObject()}, nil
-			})
-
-		// Simulate crash by returning error from run() via second Update call failure
-		computeInstancesClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("simulated crash"))
+			}).
+			AnyTimes()
 
 		computeInstance := privatev1.ComputeInstance_builder{
 			Id: computeInstanceID,
@@ -1414,28 +1364,22 @@ var _ = Describe("hub persistence", func() {
 			maskCalculator:         nil,
 		}
 
-		// First reconcile: should fail after hub persistence
+		// First reconcile: hub is empty, selects hub and returns early — no CR
 		err := f.run(ctx, computeInstance)
-		Expect(err).To(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred())
 
-		// CR was created before the crash on final update
 		list := &osacv1alpha1.ComputeInstanceList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items).To(BeEmpty())
 
-		// Second reconcile: hub already set, should use same hub (no duplicate)
+		// Second reconcile: hub already set, should create the CR
 		computeInstance.GetStatus().SetHub(hubID)
-
-		computeInstancesClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&privatev1.ComputeInstancesUpdateResponse{Object: computeInstance}, nil).
-			AnyTimes()
 
 		err = f.run(ctx, computeInstance)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Still only 1 CR — no duplicate created
+		// CR should now exist
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(list.Items).To(HaveLen(1))

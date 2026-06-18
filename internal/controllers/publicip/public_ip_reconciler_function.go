@@ -157,9 +157,8 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Select the hub and return immediately if it was just selected, following the same
-	// pattern as the finalizer above. This ensures the hub is persisted before any
-	// Kubernetes objects are created.
+	// Select the hub and return immediately if it was just selected. This ensures the hub is
+	// persisted before any Kubernetes objects are created.
 	hubJustSelected := t.publicIP.GetStatus().GetHub() == ""
 	if err := t.selectHub(ctx); err != nil {
 		return err

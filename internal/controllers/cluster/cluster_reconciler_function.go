@@ -13,8 +13,6 @@ language governing permissions and limitations under the License.
 
 package cluster
 
-//go:generate mockgen -source=../../api/osac/private/v1/clusters_service_grpc.pb.go -destination=clusters_client_mock.go -package=cluster ClustersClient
-
 import (
 	"context"
 	"errors"
@@ -172,8 +170,7 @@ func (t *task) update(ctx context.Context) error {
 	}
 
 	// Select the hub and return immediately if it was just selected. This ensures the hub is
-	// persisted before any Kubernetes objects are created, following the same pattern as the
-	// finalizer above.
+	// persisted before any Kubernetes objects are created.
 	hubJustSelected := t.cluster.GetStatus().GetHub() == ""
 	err := t.selectHub(ctx)
 	if err != nil {
@@ -471,8 +468,7 @@ func (t *task) getKubeObject(ctx context.Context) (result *osacv1alpha1.ClusterO
 
 // updateCondition updates or creates a condition with the specified type, status, reason, and message.
 func (t *task) updateCondition(conditionType privatev1.ClusterConditionType, status privatev1.ConditionStatus,
-	reason string, message string,
-) {
+	reason string, message string) {
 	conditions := t.cluster.GetStatus().GetConditions()
 	updated := false
 	for i, condition := range conditions {
