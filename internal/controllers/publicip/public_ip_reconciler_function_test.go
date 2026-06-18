@@ -671,3 +671,270 @@ var _ = Describe("selectHub", func() {
 		Expect(err.Error()).To(ContainSubstring("pool not found"))
 	})
 })
+
+var _ = Describe("hub persistence", func() {
+	const (
+		publicIPID   = "test-publicip-hub"
+		poolID       = "pool-123"
+		tenantName   = "test-tenant"
+		hubID        = "test-hub-123"
+		hubNamespace = "hub-123-ns"
+	)
+
+	var (
+		ctx  context.Context
+		ctrl *gomock.Controller
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
+	})
+
+	It("should select hub and return without creating PublicIP CR", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
+			AnyTimes()
+
+		// PublicIP derives hub from parent pool
+		poolsClient := &fakePublicIPPoolsClient{
+			getResponse: privatev1.PublicIPPoolsGetResponse_builder{
+				Object: privatev1.PublicIPPool_builder{
+					Id: poolID,
+					Status: privatev1.PublicIPPoolStatus_builder{
+						Hub: hubID,
+					}.Build(),
+				}.Build(),
+			}.Build(),
+		}
+
+		publicIPsClient := NewMockPublicIPsClient(ctrl)
+		publicIPsClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.PublicIPsUpdateRequest, opts ...grpc.CallOption) (*privatev1.PublicIPsUpdateResponse, error) {
+				return &privatev1.PublicIPsUpdateResponse{Object: req.GetObject()}, nil
+			}).AnyTimes()
+
+		publicIP := privatev1.PublicIP_builder{
+			Id: publicIPID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.PublicIPSpec_builder{
+				Pool: poolID,
+			}.Build(),
+			Status: privatev1.PublicIPStatus_builder{
+				State: privatev1.PublicIPState_PUBLIC_IP_STATE_PENDING,
+				Hub:   "",
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:              logger,
+			hubCache:            hubCache,
+			publicIPsClient:     publicIPsClient,
+			publicIPPoolsClient: poolsClient,
+			maskCalculator:      nil,
+		}
+
+		err := f.run(ctx, publicIP)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(publicIP.GetStatus().GetHub()).To(Equal(hubID))
+
+		list := &osacv1alpha1.PublicIPList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(BeEmpty())
+	})
+
+	It("should not create CR when no hubs available", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		// Parent pool has no hub assigned yet (not reconciled)
+		poolsClient := &fakePublicIPPoolsClient{
+			getResponse: privatev1.PublicIPPoolsGetResponse_builder{
+				Object: privatev1.PublicIPPool_builder{
+					Id:     poolID,
+					Status: privatev1.PublicIPPoolStatus_builder{
+						// Hub is empty: pool not yet reconciled
+					}.Build(),
+				}.Build(),
+			}.Build(),
+		}
+
+		publicIP := privatev1.PublicIP_builder{
+			Id: publicIPID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.PublicIPSpec_builder{
+				Pool: poolID,
+			}.Build(),
+			Status: privatev1.PublicIPStatus_builder{
+				State: privatev1.PublicIPState_PUBLIC_IP_STATE_PENDING,
+				Hub:   "",
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:              logger,
+			publicIPPoolsClient: poolsClient,
+			maskCalculator:      nil,
+		}
+
+		err := f.run(ctx, publicIP)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("no hub assigned yet"))
+
+		list := &osacv1alpha1.PublicIPList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(BeEmpty())
+	})
+
+	It("should skip hub selection if already set", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
+			AnyTimes()
+
+		publicIPsClient := NewMockPublicIPsClient(ctrl)
+		publicIPsClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.PublicIPsUpdateRequest, opts ...grpc.CallOption) (*privatev1.PublicIPsUpdateResponse, error) {
+				Expect(req.GetUpdateMask().GetPaths()).ToNot(ContainElement("status.hub"))
+				return &privatev1.PublicIPsUpdateResponse{Object: req.GetObject()}, nil
+			}).AnyTimes()
+
+		publicIP := privatev1.PublicIP_builder{
+			Id: publicIPID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.PublicIPSpec_builder{
+				Pool: poolID,
+			}.Build(),
+			Status: privatev1.PublicIPStatus_builder{
+				State: privatev1.PublicIPState_PUBLIC_IP_STATE_PENDING,
+				Hub:   hubID,
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:          logger,
+			hubCache:        hubCache,
+			publicIPsClient: publicIPsClient,
+			maskCalculator:  nil,
+		}
+
+		err := f.run(ctx, publicIP)
+		Expect(err).ToNot(HaveOccurred())
+
+		list := &osacv1alpha1.PublicIPList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
+	})
+
+	It("should create CR on second reconcile after hub is persisted", func() {
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
+			AnyTimes()
+
+		poolsClient := &fakePublicIPPoolsClient{
+			getResponse: privatev1.PublicIPPoolsGetResponse_builder{
+				Object: privatev1.PublicIPPool_builder{
+					Id: poolID,
+					Status: privatev1.PublicIPPoolStatus_builder{
+						Hub: hubID,
+					}.Build(),
+				}.Build(),
+			}.Build(),
+		}
+
+		publicIPsClient := NewMockPublicIPsClient(ctrl)
+
+		// First reconcile: persist hub succeeds
+		publicIPsClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.PublicIPsUpdateRequest, opts ...grpc.CallOption) (*privatev1.PublicIPsUpdateResponse, error) {
+				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
+				return &privatev1.PublicIPsUpdateResponse{Object: req.GetObject()}, nil
+			})
+
+		publicIP := privatev1.PublicIP_builder{
+			Id: publicIPID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.PublicIPSpec_builder{
+				Pool: poolID,
+			}.Build(),
+			Status: privatev1.PublicIPStatus_builder{
+				State: privatev1.PublicIPState_PUBLIC_IP_STATE_PENDING,
+				Hub:   "",
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:              logger,
+			hubCache:            hubCache,
+			publicIPsClient:     publicIPsClient,
+			publicIPPoolsClient: poolsClient,
+			maskCalculator:      nil,
+		}
+
+		// First reconcile: hub="" → selects hub, returns early, no CR
+		err := f.run(ctx, publicIP)
+		Expect(err).ToNot(HaveOccurred())
+
+		list := &osacv1alpha1.PublicIPList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(BeEmpty())
+
+		// Second reconcile: hub already set → CR created
+		publicIP.GetStatus().SetHub(hubID)
+		publicIPsClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&privatev1.PublicIPsUpdateResponse{Object: publicIP}, nil).
+			AnyTimes()
+
+		err = f.run(ctx, publicIP)
+		Expect(err).ToNot(HaveOccurred())
+
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
+	})
+})

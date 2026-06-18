@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package virtualnetwork
 
+//go:generate mockgen -source=../../api/osac/private/v1/virtual_networks_service_grpc.pb.go -destination=virtual_networks_client_mock.go -package=virtualnetwork VirtualNetworksClient
+
 import (
 	"context"
 	"errors"
@@ -156,9 +158,15 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Select the hub:
+	// Select the hub and return immediately if it was just selected. This ensures the hub is
+	// persisted before any Kubernetes objects are created.
+	hubJustSelected := t.virtualNetwork.GetStatus().GetHub() == ""
 	if err := t.selectHub(ctx); err != nil {
 		return err
+	}
+	t.virtualNetwork.GetStatus().SetHub(t.hubId)
+	if hubJustSelected {
+		return nil
 	}
 
 	// Get the K8S object:
@@ -313,8 +321,6 @@ func (t *task) selectHub(ctx context.Context) error {
 	}
 	t.hubNamespace = hubEntry.Namespace
 	t.hubClient = hubEntry.Client
-	// Save the selected hub in the private data of the virtual network:
-	t.virtualNetwork.GetStatus().SetHub(t.hubId)
 	return nil
 }
 

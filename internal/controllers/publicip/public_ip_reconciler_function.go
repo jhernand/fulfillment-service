@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package publicip
 
+//go:generate mockgen -source=../../api/osac/private/v1/public_ips_service_grpc.pb.go -destination=public_ips_client_mock.go -package=publicip PublicIPsClient
+
 import (
 	"context"
 	"errors"
@@ -155,13 +157,16 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Select the hub from the parent pool:
+	// Select the hub and return immediately if it was just selected. This ensures the hub is
+	// persisted before any Kubernetes objects are created.
+	hubJustSelected := t.publicIP.GetStatus().GetHub() == ""
 	if err := t.selectHub(ctx); err != nil {
 		return err
 	}
-
-	// Save the selected hub in the status of the public IP:
 	t.publicIP.GetStatus().SetHub(t.hubId)
+	if hubJustSelected {
+		return nil
+	}
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)

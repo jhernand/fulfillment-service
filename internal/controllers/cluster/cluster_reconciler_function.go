@@ -169,9 +169,9 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
-	// Select the hub, and if no hubs are available, update the condition to inform the user that creation is
-	// pending. Note that we don't want to disclose the existence of hubs to the user, as that is a internal
-	// implementation detail, so keep the message generic enough to not reveal that information.
+	// Select the hub and return immediately if it was just selected. This ensures the hub is
+	// persisted before any Kubernetes objects are created.
+	hubJustSelected := t.cluster.GetStatus().GetHub() == ""
 	err := t.selectHub(ctx)
 	if err != nil {
 		t.r.logger.ErrorContext(
@@ -188,9 +188,10 @@ func (t *task) update(ctx context.Context) error {
 		)
 		return nil
 	}
-
-	// Save the selected hub in the private data of the cluster:
 	t.cluster.GetStatus().SetHub(t.hubId)
+	if hubJustSelected {
+		return nil
+	}
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)

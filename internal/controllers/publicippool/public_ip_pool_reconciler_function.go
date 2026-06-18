@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package publicippool
 
+//go:generate mockgen -source=../../api/osac/private/v1/public_ip_pools_service_grpc.pb.go -destination=public_ip_pools_client_mock.go -package=publicippool PublicIPPoolsClient
+
 import (
 	"context"
 	"errors"
@@ -161,11 +163,16 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
+	// Select the hub and return immediately if it was just selected. This ensures the hub is
+	// persisted before any Kubernetes objects are created.
+	hubJustSelected := t.publicIPPool.GetStatus().GetHub() == ""
 	if err := t.selectHub(ctx); err != nil {
 		return err
 	}
-
 	t.publicIPPool.GetStatus().SetHub(t.hubId)
+	if hubJustSelected {
+		return nil
+	}
 
 	existingObject, err := t.getKubeObject(ctx)
 	if err != nil {

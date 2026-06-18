@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	osacv1alpha1 "github.com/osac-project/osac-operator/api/v1alpha1"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -1102,5 +1103,291 @@ var _ = Describe("ensureUserDataSecret", func() {
 
 		err := t.ensureUserDataSecret(ctx, owner)
 		Expect(err).ToNot(HaveOccurred())
+	})
+})
+
+var _ = Describe("hub persistence", func() {
+	const (
+		computeInstanceID = "test-ci-hub"
+		tenantName        = "test-tenant"
+		hubID             = "test-hub-123"
+		hubNamespace      = "hub-123-ns"
+	)
+
+	var (
+		ctx  context.Context
+		ctrl *gomock.Controller
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		ctrl = gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
+	})
+
+	It("should select hub and return without creating ComputeInstance VM", func() {
+
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{
+				Namespace: hubNamespace,
+				Client:    fakeClient,
+			}, nil).
+			AnyTimes()
+
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+		hubsClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.HubsListResponse{
+				Items: []*privatev1.Hub{
+					privatev1.Hub_builder{Id: hubID}.Build(),
+				},
+			}, nil)
+
+		computeInstancesClient := NewMockComputeInstancesClient(ctrl)
+		computeInstancesClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.ComputeInstancesUpdateRequest, opts ...grpc.CallOption) (*privatev1.ComputeInstancesUpdateResponse, error) {
+				return &privatev1.ComputeInstancesUpdateResponse{Object: req.GetObject()}, nil
+			}).
+			AnyTimes()
+
+		computeInstance := privatev1.ComputeInstance_builder{
+			Id: computeInstanceID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.ComputeInstanceSpec_builder{}.Build(),
+			Status: privatev1.ComputeInstanceStatus_builder{
+				State: privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_STARTING,
+				Hub:   "",
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:                 logger,
+			hubCache:               hubCache,
+			computeInstancesClient: computeInstancesClient,
+			hubsClient:             hubsClient,
+			maskCalculator:         nil,
+		}
+
+		err := f.run(ctx, computeInstance)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify hub was set in status
+		Expect(computeInstance.GetStatus().GetHub()).To(Equal(hubID))
+
+		// Verify ComputeInstance CR was NOT created (early return)
+		list := &osacv1alpha1.ComputeInstanceList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(BeEmpty())
+	})
+
+	It("should not create CR when no hubs available", func() {
+
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+
+		// Mock the hubs list returning empty — no hubs available
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+		hubsClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.HubsListResponse{
+				Items: []*privatev1.Hub{},
+			}, nil)
+
+		computeInstancesClient := NewMockComputeInstancesClient(ctrl)
+
+		computeInstance := privatev1.ComputeInstance_builder{
+			Id: computeInstanceID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.ComputeInstanceSpec_builder{}.Build(),
+			Status: privatev1.ComputeInstanceStatus_builder{
+				State: privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_STARTING,
+				Hub:   "", // Empty - needs hub selection
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:                 logger,
+			hubCache:               hubCache,
+			computeInstancesClient: computeInstancesClient,
+			hubsClient:             hubsClient,
+			maskCalculator:         nil,
+		}
+
+		err := f.run(ctx, computeInstance)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("there are no hubs"))
+
+		// Verify ComputeInstance was NOT created
+		list := &osacv1alpha1.ComputeInstanceList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(BeEmpty(), "ComputeInstance should NOT be created when no hubs available")
+	})
+
+	It("should skip hub selection if already set", func() {
+
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{
+				Namespace: hubNamespace,
+				Client:    fakeClient,
+			}, nil).
+			AnyTimes()
+
+		// Hub selection should NOT be called (status.hub already set)
+		// No call to hubsClient.List expected
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+
+		// Only expect final update (no hub persistence update)
+		computeInstancesClient := NewMockComputeInstancesClient(ctrl)
+		computeInstancesClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.ComputeInstancesUpdateRequest, opts ...grpc.CallOption) (*privatev1.ComputeInstancesUpdateResponse, error) {
+				// Verify status.hub is NOT in the field mask (already set, no update needed)
+				Expect(req.GetUpdateMask().GetPaths()).ToNot(ContainElement("status.hub"))
+				return &privatev1.ComputeInstancesUpdateResponse{Object: req.GetObject()}, nil
+			}).
+			AnyTimes()
+
+		computeInstance := privatev1.ComputeInstance_builder{
+			Id: computeInstanceID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.ComputeInstanceSpec_builder{}.Build(),
+			Status: privatev1.ComputeInstanceStatus_builder{
+				State: privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_STARTING,
+				Hub:   hubID, // Hub already set
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:                 logger,
+			hubCache:               hubCache,
+			computeInstancesClient: computeInstancesClient,
+			hubsClient:             hubsClient,
+			maskCalculator:         nil,
+		}
+
+		err := f.run(ctx, computeInstance)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify ComputeInstance was created on the existing hub
+		list := &osacv1alpha1.ComputeInstanceList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
+	})
+
+	It("should create CR on second reconcile after hub is persisted", func() {
+
+		scheme := runtime.NewScheme()
+		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{
+				Namespace: hubNamespace,
+				Client:    fakeClient,
+			}, nil).
+			AnyTimes()
+
+		hubsClient := controllers.NewMockHubsClient(ctrl)
+		// First reconcile: select random hub
+		hubsClient.EXPECT().
+			List(gomock.Any(), gomock.Any()).
+			Return(&privatev1.HubsListResponse{
+				Items: []*privatev1.Hub{
+					privatev1.Hub_builder{Id: hubID}.Build(),
+				},
+			}, nil)
+
+		computeInstancesClient := NewMockComputeInstancesClient(ctrl)
+		computeInstancesClient.EXPECT().
+			Update(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, req *privatev1.ComputeInstancesUpdateRequest, opts ...grpc.CallOption) (*privatev1.ComputeInstancesUpdateResponse, error) {
+				return &privatev1.ComputeInstancesUpdateResponse{Object: req.GetObject()}, nil
+			}).
+			AnyTimes()
+
+		computeInstance := privatev1.ComputeInstance_builder{
+			Id: computeInstanceID,
+			Metadata: privatev1.Metadata_builder{
+				Finalizers: []string{finalizers.Controller},
+				Tenant:     tenantName,
+			}.Build(),
+			Spec: privatev1.ComputeInstanceSpec_builder{}.Build(),
+			Status: privatev1.ComputeInstanceStatus_builder{
+				State: privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_STARTING,
+				Hub:   "", // Empty initially
+			}.Build(),
+		}.Build()
+
+		f := &function{
+			logger:                 logger,
+			hubCache:               hubCache,
+			computeInstancesClient: computeInstancesClient,
+			hubsClient:             hubsClient,
+			maskCalculator:         nil,
+		}
+
+		// First reconcile: hub is empty, selects hub and returns early — no CR
+		err := f.run(ctx, computeInstance)
+		Expect(err).ToNot(HaveOccurred())
+
+		list := &osacv1alpha1.ComputeInstanceList{}
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(BeEmpty())
+
+		// Second reconcile: hub already set, should create the CR
+		computeInstance.GetStatus().SetHub(hubID)
+
+		err = f.run(ctx, computeInstance)
+		Expect(err).ToNot(HaveOccurred())
+
+		// CR should now exist
+		err = fakeClient.List(ctx, list)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
 	})
 })

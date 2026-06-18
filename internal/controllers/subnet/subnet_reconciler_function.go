@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package subnet
 
+//go:generate mockgen -source=../../api/osac/private/v1/subnets_service_grpc.pb.go -destination=subnets_client_mock.go -package=subnet SubnetsClient
+
 import (
 	"context"
 	"errors"
@@ -156,13 +158,16 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Select the hub:
+	// Select the hub and return immediately if it was just selected. This ensures the hub is
+	// persisted before any Kubernetes objects are created.
+	hubJustSelected := t.subnet.GetStatus().GetHub() == ""
 	if err := t.selectHub(ctx); err != nil {
 		return err
 	}
-
-	// Save the selected hub in the private data of the subnet:
 	t.subnet.GetStatus().SetHub(t.hubId)
+	if hubJustSelected {
+		return nil
+	}
 
 	// Get the K8S object:
 	object, err := t.getKubeObject(ctx)
