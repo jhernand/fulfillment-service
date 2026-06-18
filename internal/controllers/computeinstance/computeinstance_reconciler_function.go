@@ -128,6 +128,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeInstance) error {
+	// Initialize status before clone so maskCalculator doesn't treat it as a change.
 	if !computeInstance.HasStatus() {
 		computeInstance.SetStatus(&privatev1.ComputeInstanceStatus{})
 	}

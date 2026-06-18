@@ -116,6 +116,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error {
+	// Initialize status before clone so maskCalculator doesn't treat it as a change.
 	if !publicIP.HasStatus() {
 		publicIP.SetStatus(&privatev1.PublicIPStatus{})
 	}

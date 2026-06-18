@@ -130,7 +130,7 @@ func (h *HubPersistenceHelper) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to persist hub selection for %s: %w", h.objectId, err)
 	}
 
-	h.logger.InfoContext(ctx, "Persisted hub selection",
+	h.logger.DebugContext(ctx, "Persisted hub selection",
 		slog.String("object_id", h.objectId),
 		slog.String("hub_id", hubID),
 	)

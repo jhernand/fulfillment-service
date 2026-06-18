@@ -117,6 +117,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNetwork) error {
+	// Initialize status before clone so maskCalculator doesn't treat it as a change.
 	if !virtualNetwork.HasStatus() {
 		virtualNetwork.SetStatus(&privatev1.VirtualNetworkStatus{})
 	}
