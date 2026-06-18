@@ -944,7 +944,7 @@ var _ = Describe("hub persistence", func() {
 		DeferCleanup(ctrl.Finish)
 	})
 
-	It("should persist hub selection before creating PublicIPPool CR", func() {
+	It("should select hub and return without creating PublicIPPool CR", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -963,23 +963,12 @@ var _ = Describe("hub persistence", func() {
 				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
 			}, nil)
 
-		hubPersisted := false
 		poolsClient := NewMockPublicIPPoolsClient(ctrl)
-
 		poolsClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.PublicIPPoolsUpdateRequest, opts ...grpc.CallOption) (*privatev1.PublicIPPoolsUpdateResponse, error) {
-				hubPersisted = true
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
 				return &privatev1.PublicIPPoolsUpdateResponse{Object: req.GetObject()}, nil
-			}).Times(1)
-
-		poolsClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, req *privatev1.PublicIPPoolsUpdateRequest, opts ...grpc.CallOption) (*privatev1.PublicIPPoolsUpdateResponse, error) {
-				Expect(req.GetObject().GetStatus().GetHub()).To(Equal(hubID))
-				return &privatev1.PublicIPPoolsUpdateResponse{Object: req.GetObject()}, nil
-			}).Times(1)
+			}).AnyTimes()
 
 		pool := privatev1.PublicIPPool_builder{
 			Id: poolID,
@@ -1007,37 +996,29 @@ var _ = Describe("hub persistence", func() {
 
 		err := f.run(ctx, pool)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(hubPersisted).To(BeTrue())
+		Expect(pool.GetStatus().GetHub()).To(Equal(hubID))
 
+		// No CR should be created on first reconcile — hub was just selected
 		list := &osacv1alpha1.PublicIPPoolList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items).To(BeEmpty())
 	})
 
-	It("should not create CR if hub persistence fails", func() {
+	It("should not create CR when no hubs available", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-		hubCache := controllers.NewMockHubCache(ctrl)
-		hubCache.EXPECT().
-			Get(gomock.Any(), hubID).
-			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
-			AnyTimes()
-
 		hubsClient := controllers.NewMockHubsClient(ctrl)
 		hubsClient.EXPECT().
 			List(gomock.Any(), gomock.Any()).
 			Return(&privatev1.HubsListResponse{
-				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
+				Items: []*privatev1.Hub{},
 			}, nil)
 
 		poolsClient := NewMockPublicIPPoolsClient(ctrl)
-		poolsClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("database connection failed"))
 
 		pool := privatev1.PublicIPPool_builder{
 			Id: poolID,
@@ -1057,7 +1038,6 @@ var _ = Describe("hub persistence", func() {
 
 		f := &function{
 			logger:              logger,
-			hubCache:            hubCache,
 			publicIPPoolsClient: poolsClient,
 			hubsClient:          hubsClient,
 			maskCalculator:      nil,
@@ -1065,8 +1045,9 @@ var _ = Describe("hub persistence", func() {
 
 		err := f.run(ctx, pool)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("failed to persist hub selection"))
+		Expect(errors.Is(err, errNoHubsFound)).To(BeTrue())
 
+		// No CR should be created
 		list := &osacv1alpha1.PublicIPPoolList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
@@ -1129,7 +1110,7 @@ var _ = Describe("hub persistence", func() {
 		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
 	})
 
-	It("should not create duplicate CR after crash recovery", func() {
+	It("should create CR on second reconcile after hub is persisted", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -1149,17 +1130,11 @@ var _ = Describe("hub persistence", func() {
 			}, nil)
 
 		poolsClient := NewMockPublicIPPoolsClient(ctrl)
-
 		poolsClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.PublicIPPoolsUpdateRequest, opts ...grpc.CallOption) (*privatev1.PublicIPPoolsUpdateResponse, error) {
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
 				return &privatev1.PublicIPPoolsUpdateResponse{Object: req.GetObject()}, nil
-			})
-
-		poolsClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("simulated crash"))
+			}).AnyTimes()
 
 		pool := privatev1.PublicIPPool_builder{
 			Id: poolID,
@@ -1185,26 +1160,21 @@ var _ = Describe("hub persistence", func() {
 			maskCalculator:      nil,
 		}
 
+		// First reconcile: hub is empty, so hub is selected and persisted but no CR created
 		err := f.run(ctx, pool)
-		Expect(err).To(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred())
 
-		// CR was created before the crash on final update
 		list := &osacv1alpha1.PublicIPPoolList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items).To(BeEmpty())
 
-		// Second reconcile: hub already set, should use same hub (no duplicate)
+		// Second reconcile: hub already set, CR should be created
 		pool.GetStatus().SetHub(hubID)
-		poolsClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&privatev1.PublicIPPoolsUpdateResponse{Object: pool}, nil).
-			AnyTimes()
 
 		err = f.run(ctx, pool)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Still only 1 CR — no duplicate created
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(list.Items).To(HaveLen(1))

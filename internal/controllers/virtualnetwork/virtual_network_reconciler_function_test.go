@@ -33,6 +33,7 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/controllers"
 	"github.com/osac-project/fulfillment-service/internal/controllers/finalizers"
 	"github.com/osac-project/fulfillment-service/internal/kubernetes/labels"
+	"github.com/osac-project/fulfillment-service/internal/masks"
 )
 
 var _ = Describe("buildSpec", func() {
@@ -588,7 +589,7 @@ var _ = Describe("hub persistence", func() {
 		DeferCleanup(ctrl.Finish)
 	})
 
-	It("should persist hub selection before creating VirtualNetwork CR", func() {
+	It("should select hub and return without creating VirtualNetwork CR", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -607,23 +608,12 @@ var _ = Describe("hub persistence", func() {
 				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
 			}, nil)
 
-		hubPersisted := false
 		vnClient := NewMockVirtualNetworksClient(ctrl)
-
 		vnClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.VirtualNetworksUpdateRequest, opts ...grpc.CallOption) (*privatev1.VirtualNetworksUpdateResponse, error) {
-				hubPersisted = true
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
 				return &privatev1.VirtualNetworksUpdateResponse{Object: req.GetObject()}, nil
-			}).Times(1)
-
-		vnClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, req *privatev1.VirtualNetworksUpdateRequest, opts ...grpc.CallOption) (*privatev1.VirtualNetworksUpdateResponse, error) {
-				Expect(req.GetObject().GetStatus().GetHub()).To(Equal(hubID))
-				return &privatev1.VirtualNetworksUpdateResponse{Object: req.GetObject()}, nil
-			}).Times(1)
+			}).AnyTimes()
 
 		vn := privatev1.VirtualNetwork_builder{
 			Id: virtualNetworkID,
@@ -646,42 +636,35 @@ var _ = Describe("hub persistence", func() {
 			hubCache:              hubCache,
 			virtualNetworksClient: vnClient,
 			hubsClient:            hubsClient,
-			maskCalculator:        nil,
+			maskCalculator:        masks.NewCalculator().Build(),
 		}
 
 		err := f.run(ctx, vn)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(hubPersisted).To(BeTrue())
+		Expect(vn.GetStatus().GetHub()).To(Equal(hubID))
 
 		list := &osacv1alpha1.VirtualNetworkList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items).To(BeEmpty())
 	})
 
-	It("should not create CR if hub persistence fails", func() {
+	It("should not create CR when no hubs available", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 		hubCache := controllers.NewMockHubCache(ctrl)
-		hubCache.EXPECT().
-			Get(gomock.Any(), hubID).
-			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
-			AnyTimes()
 
 		hubsClient := controllers.NewMockHubsClient(ctrl)
 		hubsClient.EXPECT().
 			List(gomock.Any(), gomock.Any()).
 			Return(&privatev1.HubsListResponse{
-				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
+				Items: []*privatev1.Hub{},
 			}, nil)
 
 		vnClient := NewMockVirtualNetworksClient(ctrl)
-		vnClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("database connection failed"))
 
 		vn := privatev1.VirtualNetwork_builder{
 			Id: virtualNetworkID,
@@ -704,12 +687,12 @@ var _ = Describe("hub persistence", func() {
 			hubCache:              hubCache,
 			virtualNetworksClient: vnClient,
 			hubsClient:            hubsClient,
-			maskCalculator:        nil,
+			maskCalculator:        masks.NewCalculator().Build(),
 		}
 
 		err := f.run(ctx, vn)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("failed to persist hub selection"))
+		Expect(err.Error()).To(ContainSubstring("there are no hubs"))
 
 		list := &osacv1alpha1.VirtualNetworkList{}
 		err = fakeClient.List(ctx, list)
@@ -773,7 +756,7 @@ var _ = Describe("hub persistence", func() {
 		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
 	})
 
-	It("should not create duplicate CR after crash recovery", func() {
+	It("should create CR on second reconcile after hub is persisted", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -793,17 +776,11 @@ var _ = Describe("hub persistence", func() {
 			}, nil)
 
 		vnClient := NewMockVirtualNetworksClient(ctrl)
-
 		vnClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.VirtualNetworksUpdateRequest, opts ...grpc.CallOption) (*privatev1.VirtualNetworksUpdateResponse, error) {
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
 				return &privatev1.VirtualNetworksUpdateResponse{Object: req.GetObject()}, nil
-			})
-
-		vnClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("simulated crash"))
+			}).AnyTimes()
 
 		vn := privatev1.VirtualNetwork_builder{
 			Id: virtualNetworkID,
@@ -826,29 +803,24 @@ var _ = Describe("hub persistence", func() {
 			hubCache:              hubCache,
 			virtualNetworksClient: vnClient,
 			hubsClient:            hubsClient,
-			maskCalculator:        nil,
+			maskCalculator:        masks.NewCalculator().Build(),
 		}
 
+		// First reconcile: hub is empty, should select hub and return without creating CR
 		err := f.run(ctx, vn)
-		Expect(err).To(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred())
 
-		// CR was created before the crash on final update
 		list := &osacv1alpha1.VirtualNetworkList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items).To(BeEmpty())
 
-		// Second reconcile: hub already set, should use same hub (no duplicate)
+		// Second reconcile: hub already set, should create CR
 		vn.GetStatus().SetHub(hubID)
-		vnClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&privatev1.VirtualNetworksUpdateResponse{Object: vn}, nil).
-			AnyTimes()
 
 		err = f.run(ctx, vn)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Still only 1 CR — no duplicate created
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(list.Items).To(HaveLen(1))

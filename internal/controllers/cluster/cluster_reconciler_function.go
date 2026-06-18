@@ -25,7 +25,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
@@ -119,10 +118,6 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
-	// Initialize status before clone so maskCalculator doesn't treat it as a change.
-	if !cluster.HasStatus() {
-		cluster.SetStatus(&privatev1.ClusterStatus{})
-	}
 	oldCluster := proto.Clone(cluster).(*privatev1.Cluster)
 	t := task{
 		r:       r,
@@ -132,43 +127,6 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 	if cluster.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// Persist hub to DB before creating Kubernetes object.
-		if cluster.GetStatus().GetHub() == "" {
-			helper, buildErr := controllers.NewHubPersistenceHelper().
-				SetLogger(r.logger).
-				SetStatus(cluster.GetStatus()).
-				SetSelectHub(func(ctx context.Context) (string, error) {
-					if selectErr := t.selectHub(ctx); selectErr != nil {
-						t.setDefaults()
-						t.updateCondition(
-							privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
-							privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
-							"ResourcesUnavailable",
-							"The cluster cannot be created because there are no resources available to "+
-								"fulfill the request.",
-						)
-						return "", selectErr
-					}
-					return t.hubId, nil
-				}).
-				SetPersistHub(func(ctx context.Context) error {
-					_, persistErr := r.clustersClient.Update(ctx, privatev1.ClustersUpdateRequest_builder{
-						Object:     cluster,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return persistErr
-				}).
-				Build()
-			if buildErr != nil {
-				return buildErr
-			}
-			if runErr := helper.Run(ctx, cluster.GetId()); runErr != nil {
-				if cluster.GetStatus().GetHub() != "" {
-					return runErr
-				}
-			}
-		}
-
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -213,24 +171,29 @@ func (t *task) update(ctx context.Context) error {
 		return nil
 	}
 
-	// Safety net: hub normally selected and persisted by run() before this point.
-	if t.hubId == "" {
-		err := t.selectHub(ctx)
-		if err != nil {
-			t.r.logger.ErrorContext(
-				ctx,
-				"Failed to select hub",
-				slog.String("error", err.Error()),
-			)
-			t.updateCondition(
-				privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
-				privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
-				"ResourcesUnavailable",
-				"The cluster cannot be created because there are no resources available to fulfill the "+
-					"request.",
-			)
-			return nil
-		}
+	// Select the hub and return immediately if it was just selected. This ensures the hub is
+	// persisted before any Kubernetes objects are created, following the same pattern as the
+	// finalizer above.
+	hubJustSelected := t.cluster.GetStatus().GetHub() == ""
+	err := t.selectHub(ctx)
+	if err != nil {
+		t.r.logger.ErrorContext(
+			ctx,
+			"Failed to select hub",
+			slog.String("error", err.Error()),
+		)
+		t.updateCondition(
+			privatev1.ClusterConditionType_CLUSTER_CONDITION_TYPE_PROGRESSING,
+			privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
+			"ResourcesUnavailable",
+			"The cluster cannot be created because there are no resources available to fulfill the "+
+				"request.",
+		)
+		return nil
+	}
+	t.cluster.GetStatus().SetHub(t.hubId)
+	if hubJustSelected {
+		return nil
 	}
 
 	// Get the K8S object:

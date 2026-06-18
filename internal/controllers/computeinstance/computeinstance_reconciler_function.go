@@ -26,7 +26,6 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/computeinstancespec"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -128,10 +127,6 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 }
 
 func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeInstance) error {
-	// Initialize status before clone so maskCalculator doesn't treat it as a change.
-	if !computeInstance.HasStatus() {
-		computeInstance.SetStatus(&privatev1.ComputeInstanceStatus{})
-	}
 	oldComputeInstance := proto.Clone(computeInstance).(*privatev1.ComputeInstance)
 	t := task{
 		r:               r,
@@ -141,31 +136,6 @@ func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeIn
 	if computeInstance.HasMetadata() && computeInstance.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// Persist hub to DB before creating Kubernetes object.
-		if computeInstance.GetStatus().GetHub() == "" {
-			helper, buildErr := controllers.NewHubPersistenceHelper().
-				SetLogger(r.logger).
-				SetStatus(computeInstance.GetStatus()).
-				SetSelectHub(func(ctx context.Context) (string, error) {
-					selectErr := t.selectHub(ctx)
-					return t.hubId, selectErr
-				}).
-				SetPersistHub(func(ctx context.Context) error {
-					_, persistErr := r.computeInstancesClient.Update(ctx, privatev1.ComputeInstancesUpdateRequest_builder{
-						Object:     computeInstance,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return persistErr
-				}).
-				Build()
-			if buildErr != nil {
-				return buildErr
-			}
-			if runErr := helper.Run(ctx, computeInstance.GetId()); runErr != nil {
-				return runErr
-			}
-		}
-
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -199,11 +169,16 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Safety net: hub normally selected and persisted by run() before this point.
-	if t.hubId == "" {
-		if err := t.selectHub(ctx); err != nil {
-			return err
-		}
+	// Select the hub and return immediately if it was just selected, following the same
+	// pattern as the finalizer above. This ensures the hub is persisted before any
+	// Kubernetes objects are created.
+	hubJustSelected := t.computeInstance.GetStatus().GetHub() == ""
+	if err := t.selectHub(ctx); err != nil {
+		return err
+	}
+	t.computeInstance.GetStatus().SetHub(t.hubId)
+	if hubJustSelected {
+		return nil
 	}
 
 	// Get the K8S object:

@@ -15,7 +15,6 @@ package cluster
 
 import (
 	"context"
-	"errors"
 	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -556,7 +555,7 @@ var _ = Describe("hub persistence", func() {
 		DeferCleanup(ctrl.Finish)
 	})
 
-	It("should persist hub selection before creating ClusterOrder", func() {
+	It("should select hub and return without creating ClusterOrder", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -582,90 +581,15 @@ var _ = Describe("hub persistence", func() {
 				},
 			}, nil)
 
-		hubPersisted := false
 		clustersClient := NewMockClustersClient(ctrl)
-
-		clustersClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, req *privatev1.ClustersUpdateRequest, opts ...grpc.CallOption) (*privatev1.ClustersUpdateResponse, error) {
-				hubPersisted = true
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
-				return &privatev1.ClustersUpdateResponse{Object: req.GetObject()}, nil
-			}).
-			Times(1)
-
 		clustersClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.ClustersUpdateRequest, opts ...grpc.CallOption) (*privatev1.ClustersUpdateResponse, error) {
 				Expect(req.GetObject().GetStatus().GetHub()).To(Equal(hubID))
 				return &privatev1.ClustersUpdateResponse{Object: req.GetObject()}, nil
 			}).
-			Times(1)
-
-		cluster := privatev1.Cluster_builder{
-			Id: clusterID,
-			Metadata: privatev1.Metadata_builder{
-				Finalizers: []string{finalizers.Controller},
-				Tenant:     tenantName,
-			}.Build(),
-			Spec: privatev1.ClusterSpec_builder{
-				Template: "test-template",
-			}.Build(),
-			Status: privatev1.ClusterStatus_builder{
-				State: privatev1.ClusterState_CLUSTER_STATE_PROGRESSING,
-				Hub:   "",
-			}.Build(),
-		}.Build()
-
-		f := &function{
-			logger:         logger,
-			hubCache:       hubCache,
-			clustersClient: clustersClient,
-			hubsClient:     hubsClient,
-			maskCalculator: nil,
-		}
-
-		err := f.run(ctx, cluster)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(hubPersisted).To(BeTrue())
-
-		list := &osacv1alpha1.ClusterOrderList{}
-		err = fakeClient.List(ctx, list)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
-	})
-
-	It("should not create ClusterOrder if hub persistence fails", func() {
-		scheme := runtime.NewScheme()
-		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
-
-		fakeClient := fake.NewClientBuilder().
-			WithScheme(scheme).
-			Build()
-
-		hubCache := controllers.NewMockHubCache(ctrl)
-		hubCache.EXPECT().
-			Get(gomock.Any(), hubID).
-			Return(&controllers.HubEntry{
-				Namespace: hubNamespace,
-				Client:    fakeClient,
-			}, nil).
 			AnyTimes()
 
-		hubsClient := controllers.NewMockHubsClient(ctrl)
-		hubsClient.EXPECT().
-			List(gomock.Any(), gomock.Any()).
-			Return(&privatev1.HubsListResponse{
-				Items: []*privatev1.Hub{
-					privatev1.Hub_builder{Id: hubID}.Build(),
-				},
-			}, nil)
-
-		clustersClient := NewMockClustersClient(ctrl)
-		clustersClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("database connection failed"))
-
 		cluster := privatev1.Cluster_builder{
 			Id: clusterID,
 			Metadata: privatev1.Metadata_builder{
@@ -690,13 +614,14 @@ var _ = Describe("hub persistence", func() {
 		}
 
 		err := f.run(ctx, cluster)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("failed to persist hub selection"))
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(cluster.GetStatus().GetHub()).To(Equal(hubID))
 
 		list := &osacv1alpha1.ClusterOrderList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(BeEmpty())
+		Expect(list.Items).To(BeEmpty(), "ClusterOrder should NOT be created on first reconcile")
 	})
 
 	It("should skip hub selection if already set", func() {
@@ -760,7 +685,7 @@ var _ = Describe("hub persistence", func() {
 		Expect(list.Items[0].GetNamespace()).To(Equal(hubNamespace))
 	})
 
-	It("should not create duplicate ClusterOrder after crash recovery", func() {
+	It("should create ClusterOrder on second reconcile after hub is persisted", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -793,6 +718,15 @@ var _ = Describe("hub persistence", func() {
 			Return(&privatev1.ClustersUpdateResponse{}, nil).
 			AnyTimes()
 
+		f := &function{
+			logger:         logger,
+			hubCache:       hubCache,
+			clustersClient: clustersClient,
+			hubsClient:     hubsClient,
+			maskCalculator: nil,
+		}
+
+		// First reconcile: hub empty → select hub, return without creating CR
 		cluster1 := privatev1.Cluster_builder{
 			Id: clusterID,
 			Metadata: privatev1.Metadata_builder{
@@ -808,23 +742,15 @@ var _ = Describe("hub persistence", func() {
 			}.Build(),
 		}.Build()
 
-		f := &function{
-			logger:         logger,
-			hubCache:       hubCache,
-			clustersClient: clustersClient,
-			hubsClient:     hubsClient,
-			maskCalculator: nil,
-		}
-
 		err := f.run(ctx, cluster1)
 		Expect(err).ToNot(HaveOccurred())
 
-		list1 := &osacv1alpha1.ClusterOrderList{}
-		err = fakeClient.List(ctx, list1)
+		list := &osacv1alpha1.ClusterOrderList{}
+		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list1.Items).To(HaveLen(1))
-		firstCRName := list1.Items[0].GetName()
+		Expect(list.Items).To(BeEmpty(), "no CR on first reconcile")
 
+		// Second reconcile: hub already set → creates CR
 		cluster2 := privatev1.Cluster_builder{
 			Id: clusterID,
 			Metadata: privatev1.Metadata_builder{
@@ -843,11 +769,10 @@ var _ = Describe("hub persistence", func() {
 		err = f.run(ctx, cluster2)
 		Expect(err).ToNot(HaveOccurred())
 
-		list2 := &osacv1alpha1.ClusterOrderList{}
-		err = fakeClient.List(ctx, list2)
+		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list2.Items).To(HaveLen(1))
-		Expect(list2.Items[0].GetName()).To(Equal(firstCRName))
+		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items[0].GetNamespace()).To(Equal(hubNamespace))
 	})
 
 	It("should set ResourcesUnavailable condition when no hubs are available", func() {

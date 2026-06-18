@@ -25,7 +25,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -125,10 +124,6 @@ func (b *FunctionBuilder) Build() (controllers.ReconcilerFunction[*privatev1.Pub
 }
 
 func (r *function) run(ctx context.Context, publicIPPool *privatev1.PublicIPPool) error {
-	// Initialize status before clone so maskCalculator doesn't treat it as a change.
-	if !publicIPPool.HasStatus() {
-		publicIPPool.SetStatus(&privatev1.PublicIPPoolStatus{})
-	}
 	oldPool := proto.Clone(publicIPPool).(*privatev1.PublicIPPool)
 	t := task{
 		r:            r,
@@ -138,31 +133,6 @@ func (r *function) run(ctx context.Context, publicIPPool *privatev1.PublicIPPool
 	if publicIPPool.HasMetadata() && publicIPPool.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
-		// Persist hub to DB before creating Kubernetes object.
-		if publicIPPool.GetStatus().GetHub() == "" {
-			helper, buildErr := controllers.NewHubPersistenceHelper().
-				SetLogger(r.logger).
-				SetStatus(publicIPPool.GetStatus()).
-				SetSelectHub(func(ctx context.Context) (string, error) {
-					selectErr := t.selectHub(ctx)
-					return t.hubId, selectErr
-				}).
-				SetPersistHub(func(ctx context.Context) error {
-					_, persistErr := r.publicIPPoolsClient.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
-						Object:     publicIPPool,
-						UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.hub"}},
-					}.Build())
-					return persistErr
-				}).
-				Build()
-			if buildErr != nil {
-				return buildErr
-			}
-			if runErr := helper.Run(ctx, publicIPPool.GetId()); runErr != nil {
-				return runErr
-			}
-		}
-
 		err = t.update(ctx)
 	}
 	if err != nil {
@@ -193,11 +163,16 @@ func (t *task) update(ctx context.Context) error {
 		return err
 	}
 
-	// Safety net: hub normally selected and persisted by run() before this point.
-	if t.hubId == "" {
-		if err := t.selectHub(ctx); err != nil {
-			return err
-		}
+	// Select the hub and return immediately if it was just selected, following the same
+	// pattern as the finalizer above. This ensures the hub is persisted before any
+	// Kubernetes objects are created.
+	hubJustSelected := t.publicIPPool.GetStatus().GetHub() == ""
+	if err := t.selectHub(ctx); err != nil {
+		return err
+	}
+	t.publicIPPool.GetStatus().SetHub(t.hubId)
+	if hubJustSelected {
+		return nil
 	}
 
 	existingObject, err := t.getKubeObject(ctx)

@@ -552,7 +552,7 @@ var _ = Describe("hub persistence", func() {
 		DeferCleanup(ctrl.Finish)
 	})
 
-	It("should persist hub selection before creating Subnet CR", func() {
+	It("should select hub and return without creating Subnet CR", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -571,25 +571,12 @@ var _ = Describe("hub persistence", func() {
 				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
 			}, nil)
 
-		hubPersisted := false
 		subnetsClient := NewMockSubnetsClient(ctrl)
-
-		// First call: hub persistence
 		subnetsClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.SubnetsUpdateRequest, opts ...grpc.CallOption) (*privatev1.SubnetsUpdateResponse, error) {
-				hubPersisted = true
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
 				return &privatev1.SubnetsUpdateResponse{Object: req.GetObject()}, nil
-			}).Times(1)
-
-		// Second call: final update
-		subnetsClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(ctx context.Context, req *privatev1.SubnetsUpdateRequest, opts ...grpc.CallOption) (*privatev1.SubnetsUpdateResponse, error) {
-				Expect(req.GetObject().GetStatus().GetHub()).To(Equal(hubID))
-				return &privatev1.SubnetsUpdateResponse{Object: req.GetObject()}, nil
-			}).Times(1)
+			}).AnyTimes()
 
 		subnet := privatev1.Subnet_builder{
 			Id: subnetID,
@@ -616,37 +603,30 @@ var _ = Describe("hub persistence", func() {
 
 		err := f.run(ctx, subnet)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(hubPersisted).To(BeTrue())
+		Expect(subnet.GetStatus().GetHub()).To(Equal(hubID))
 
 		list := &osacv1alpha1.SubnetList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items).To(BeEmpty())
 	})
 
-	It("should not create CR if hub persistence fails", func() {
+	It("should not create CR when no hubs available", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 		hubCache := controllers.NewMockHubCache(ctrl)
-		hubCache.EXPECT().
-			Get(gomock.Any(), hubID).
-			Return(&controllers.HubEntry{Namespace: hubNamespace, Client: fakeClient}, nil).
-			AnyTimes()
 
 		hubsClient := controllers.NewMockHubsClient(ctrl)
 		hubsClient.EXPECT().
 			List(gomock.Any(), gomock.Any()).
 			Return(&privatev1.HubsListResponse{
-				Items: []*privatev1.Hub{privatev1.Hub_builder{Id: hubID}.Build()},
+				Items: []*privatev1.Hub{},
 			}, nil)
 
 		subnetsClient := NewMockSubnetsClient(ctrl)
-		subnetsClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("database connection failed"))
 
 		subnet := privatev1.Subnet_builder{
 			Id: subnetID,
@@ -673,7 +653,7 @@ var _ = Describe("hub persistence", func() {
 
 		err := f.run(ctx, subnet)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("failed to persist hub selection"))
+		Expect(err.Error()).To(ContainSubstring("there are no hubs"))
 
 		list := &osacv1alpha1.SubnetList{}
 		err = fakeClient.List(ctx, list)
@@ -736,7 +716,7 @@ var _ = Describe("hub persistence", func() {
 		Expect(list.Items[0].Namespace).To(Equal(hubNamespace))
 	})
 
-	It("should not create duplicate CR after crash recovery", func() {
+	It("should create CR on second reconcile after hub is persisted", func() {
 		scheme := runtime.NewScheme()
 		Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
 
@@ -756,19 +736,11 @@ var _ = Describe("hub persistence", func() {
 			}, nil)
 
 		subnetsClient := NewMockSubnetsClient(ctrl)
-
-		// First reconcile: persist hub succeeds
 		subnetsClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(ctx context.Context, req *privatev1.SubnetsUpdateRequest, opts ...grpc.CallOption) (*privatev1.SubnetsUpdateResponse, error) {
-				Expect(req.GetUpdateMask().GetPaths()).To(Equal([]string{"status.hub"}))
 				return &privatev1.SubnetsUpdateResponse{Object: req.GetObject()}, nil
-			})
-
-		// First reconcile: simulated crash on final update (CR already created)
-		subnetsClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, errors.New("simulated crash"))
+			}).AnyTimes()
 
 		subnet := privatev1.Subnet_builder{
 			Id: subnetID,
@@ -793,26 +765,21 @@ var _ = Describe("hub persistence", func() {
 			maskCalculator: nil,
 		}
 
+		// First reconcile: hub is empty, gets selected and persisted, but no CR created
 		err := f.run(ctx, subnet)
-		Expect(err).To(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred())
 
-		// CR was created before the crash on final update
 		list := &osacv1alpha1.SubnetList{}
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(list.Items).To(HaveLen(1))
+		Expect(list.Items).To(BeEmpty())
 
-		// Second reconcile: hub already set, should use same hub (no duplicate)
+		// Second reconcile: hub already set, CR should be created
 		subnet.GetStatus().SetHub(hubID)
-		subnetsClient.EXPECT().
-			Update(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&privatev1.SubnetsUpdateResponse{Object: subnet}, nil).
-			AnyTimes()
 
 		err = f.run(ctx, subnet)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Still only 1 CR — no duplicate created
 		err = fakeClient.List(ctx, list)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(list.Items).To(HaveLen(1))
