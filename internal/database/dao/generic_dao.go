@@ -40,6 +40,7 @@ type Object interface {
 // GenericDAOBuilder is a builder for creating generic data access objects.
 type GenericDAOBuilder[O Object] struct {
 	logger            *slog.Logger
+	table             string
 	defaultLimit      int32
 	maxLimit          int32
 	eventCallbacks    []EventCallback
@@ -177,6 +178,14 @@ func (b *GenericDAOBuilder[O]) SetMetricsRegisterer(value prometheus.Registerer)
 	return b
 }
 
+// SetTableName overrides the database table name. By default the table name is derived from the
+// protobuf message type name (e.g. Cluster becomes clusters). Use this when the table name does not
+// match the type name.
+func (b *GenericDAOBuilder[O]) SetTableName(value string) *GenericDAOBuilder[O] {
+	b.table = value
+	return b
+}
+
 // Build creates a new generic DAO using the configuration stored in the builder.
 func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 	// Check parameters:
@@ -280,7 +289,7 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 	// Create and populate the object:
 	result = &GenericDAO[O]{
 		logger:           b.logger,
-		table:            b.tableName(),
+		table:            b.resolveTableName(),
 		defaultLimit:     b.defaultLimit,
 		maxLimit:         b.maxLimit,
 		timestampDesc:    timestampDesc,
@@ -296,6 +305,15 @@ func (b *GenericDAOBuilder[O]) Build() (result *GenericDAO[O], err error) {
 		opDurationMetric: opDurationMetric,
 	}
 	return
+}
+
+// resolveTableName returns the explicit table name if one was set via SetTableName, otherwise it
+// derives the name from the protobuf message type.
+func (b *GenericDAOBuilder[O]) resolveTableName() string {
+	if b.table != "" {
+		return b.table
+	}
+	return b.tableName()
 }
 
 // tableName calculates the table name from the protobuf message type name. It converts the CamelCase type

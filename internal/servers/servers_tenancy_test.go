@@ -35,6 +35,7 @@ var _ = Describe("Tenancy logic", func() {
 		// Create the tenants used in the tests:
 		tenantsDao, err := dao.NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
+			SetTableName("tenants").
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())

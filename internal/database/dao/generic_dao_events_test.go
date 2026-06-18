@@ -72,6 +72,7 @@ var _ = Describe("Generic DAO events", func() {
 		// Create the tenant used in the tests:
 		tenantsDao, err := NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
+			SetTableName("tenants").
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())
