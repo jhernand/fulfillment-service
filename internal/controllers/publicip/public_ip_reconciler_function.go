@@ -133,7 +133,6 @@ func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error 
 		if publicIP.GetStatus().GetHub() == "" {
 			helper, buildErr := controllers.NewHubPersistenceHelper().
 				SetLogger(r.logger).
-				SetObjectId(publicIP.GetId()).
 				SetStatus(publicIP.GetStatus()).
 				SetSelectHub(func(ctx context.Context) (string, error) {
 					selectErr := t.selectHub(ctx)
@@ -150,7 +149,7 @@ func (r *function) run(ctx context.Context, publicIP *privatev1.PublicIP) error 
 			if buildErr != nil {
 				return buildErr
 			}
-			if runErr := helper.Run(ctx); runErr != nil {
+			if runErr := helper.Run(ctx, publicIP.GetId()); runErr != nil {
 				return runErr
 			}
 		}

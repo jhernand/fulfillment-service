@@ -20,10 +20,10 @@ import (
 	"log/slog"
 )
 
-// statusWithHub is satisfied by any protobuf status type that carries a hub field.
+// StatusWithHub is satisfied by any protobuf status type that carries a hub field.
 // All generated *Status types (ClusterStatus, SubnetStatus, etc.) implicitly satisfy
 // this via Go's structural typing.
-type statusWithHub interface {
+type StatusWithHub interface {
 	GetHub() string
 	SetHub(string)
 }
@@ -32,8 +32,7 @@ type statusWithHub interface {
 // Kubernetes objects, preventing orphaned objects on crash.
 type HubPersistenceHelper struct {
 	logger     *slog.Logger
-	objectId   string
-	status     statusWithHub
+	status     StatusWithHub
 	selectHub  func(context.Context) (string, error)
 	persistHub func(context.Context) error
 }
@@ -41,8 +40,7 @@ type HubPersistenceHelper struct {
 // HubPersistenceHelperBuilder builds HubPersistenceHelper instances.
 type HubPersistenceHelperBuilder struct {
 	logger     *slog.Logger
-	objectId   string
-	status     statusWithHub
+	status     StatusWithHub
 	selectHub  func(context.Context) (string, error)
 	persistHub func(context.Context) error
 }
@@ -58,14 +56,8 @@ func (b *HubPersistenceHelperBuilder) SetLogger(value *slog.Logger) *HubPersiste
 	return b
 }
 
-// SetObjectId sets the identifier of the object being reconciled (for logging).
-func (b *HubPersistenceHelperBuilder) SetObjectId(value string) *HubPersistenceHelperBuilder {
-	b.objectId = value
-	return b
-}
-
 // SetStatus sets the status object that carries the hub field. This is mandatory.
-func (b *HubPersistenceHelperBuilder) SetStatus(value statusWithHub) *HubPersistenceHelperBuilder {
+func (b *HubPersistenceHelperBuilder) SetStatus(value StatusWithHub) *HubPersistenceHelperBuilder {
 	b.status = value
 	return b
 }
@@ -98,7 +90,6 @@ func (b *HubPersistenceHelperBuilder) Build() (*HubPersistenceHelper, error) {
 	}
 	return &HubPersistenceHelper{
 		logger:     b.logger,
-		objectId:   b.objectId,
 		status:     b.status,
 		selectHub:  b.selectHub,
 		persistHub: b.persistHub,
@@ -107,10 +98,11 @@ func (b *HubPersistenceHelperBuilder) Build() (*HubPersistenceHelper, error) {
 
 // Run selects a hub and immediately persists it to the database.
 // If the hub is already set, it returns immediately.
-func (h *HubPersistenceHelper) Run(ctx context.Context) error {
+// The objectId parameter identifies the object being reconciled (for logging).
+func (h *HubPersistenceHelper) Run(ctx context.Context, objectId string) error {
 	if h.status.GetHub() != "" {
 		h.logger.DebugContext(ctx, "Hub already set, skipping persistence",
-			slog.String("object_id", h.objectId),
+			slog.String("object_id", objectId),
 			slog.String("hub_id", h.status.GetHub()),
 		)
 		return nil
@@ -118,20 +110,20 @@ func (h *HubPersistenceHelper) Run(ctx context.Context) error {
 
 	hubID, err := h.selectHub(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to select hub for %s: %w", h.objectId, err)
+		return fmt.Errorf("failed to select hub for %s: %w", objectId, err)
 	}
 	if hubID == "" {
-		return fmt.Errorf("selectHub returned empty hub ID for %s", h.objectId)
+		return fmt.Errorf("selectHub returned empty hub ID for %s", objectId)
 	}
 
 	h.status.SetHub(hubID)
 
 	if err := h.persistHub(ctx); err != nil {
-		return fmt.Errorf("failed to persist hub selection for %s: %w", h.objectId, err)
+		return fmt.Errorf("failed to persist hub selection for %s: %w", objectId, err)
 	}
 
 	h.logger.DebugContext(ctx, "Persisted hub selection",
-		slog.String("object_id", h.objectId),
+		slog.String("object_id", objectId),
 		slog.String("hub_id", hubID),
 	)
 

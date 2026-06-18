@@ -145,7 +145,6 @@ func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeIn
 		if computeInstance.GetStatus().GetHub() == "" {
 			helper, buildErr := controllers.NewHubPersistenceHelper().
 				SetLogger(r.logger).
-				SetObjectId(computeInstance.GetId()).
 				SetStatus(computeInstance.GetStatus()).
 				SetSelectHub(func(ctx context.Context) (string, error) {
 					selectErr := t.selectHub(ctx)
@@ -162,7 +161,7 @@ func (r *function) run(ctx context.Context, computeInstance *privatev1.ComputeIn
 			if buildErr != nil {
 				return buildErr
 			}
-			if runErr := helper.Run(ctx); runErr != nil {
+			if runErr := helper.Run(ctx, computeInstance.GetId()); runErr != nil {
 				return runErr
 			}
 		}

@@ -136,7 +136,6 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 		if cluster.GetStatus().GetHub() == "" {
 			helper, buildErr := controllers.NewHubPersistenceHelper().
 				SetLogger(r.logger).
-				SetObjectId(cluster.GetId()).
 				SetStatus(cluster.GetStatus()).
 				SetSelectHub(func(ctx context.Context) (string, error) {
 					if selectErr := t.selectHub(ctx); selectErr != nil {
@@ -163,7 +162,7 @@ func (r *function) run(ctx context.Context, cluster *privatev1.Cluster) error {
 			if buildErr != nil {
 				return buildErr
 			}
-			if runErr := helper.Run(ctx); runErr != nil {
+			if runErr := helper.Run(ctx, cluster.GetId()); runErr != nil {
 				if cluster.GetStatus().GetHub() != "" {
 					return runErr
 				}

@@ -134,7 +134,6 @@ func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNet
 		if virtualNetwork.GetStatus().GetHub() == "" {
 			helper, buildErr := controllers.NewHubPersistenceHelper().
 				SetLogger(r.logger).
-				SetObjectId(virtualNetwork.GetId()).
 				SetStatus(virtualNetwork.GetStatus()).
 				SetSelectHub(func(ctx context.Context) (string, error) {
 					selectErr := t.selectHub(ctx)
@@ -151,7 +150,7 @@ func (r *function) run(ctx context.Context, virtualNetwork *privatev1.VirtualNet
 			if buildErr != nil {
 				return buildErr
 			}
-			if runErr := helper.Run(ctx); runErr != nil {
+			if runErr := helper.Run(ctx, virtualNetwork.GetId()); runErr != nil {
 				return runErr
 			}
 		}
