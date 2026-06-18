@@ -36,6 +36,7 @@ import "osac/private/v1/public_ip_type.proto";
 import "osac/private/v1/role_binding_type.proto";
 import "osac/private/v1/role_type.proto";
 import "osac/private/v1/security_group_type.proto";
+import "osac/private/v1/storage_backend_type.proto";
 import "osac/private/v1/subnet_type.proto";
 import "osac/private/v1/user_type.proto";
 import "osac/private/v1/virtual_network_type.proto";
@@ -74,6 +75,7 @@ message Event {
     BareMetalInstance bare_metal_instance = 27;
     BareMetalInstanceTemplate bare_metal_instance_template = 28;
     BareMetalInstanceCatalogItem bare_metal_instance_catalog_item = 29;
+    StorageBackend storage_backend = 30;
   }
 }
 
