@@ -27,3 +27,8 @@ columns:
 - header: STATE
   value: this.status.state
   type: osac.private.v1.BareMetalInstanceState
+
+- header: HUB
+  value: this.status.hub
+  type: osac.private.v1.Hub
+  lookup: true
