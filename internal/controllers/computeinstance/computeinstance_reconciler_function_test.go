@@ -1135,8 +1135,14 @@ var _ = Describe("hub persistence", func() {
 			Build()
 
 		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{
+				Namespace: hubNamespace,
+				Client:    fakeClient,
+			}, nil).
+			AnyTimes()
 
-		// Mock the hubs list for selectHub
 		hubsClient := controllers.NewMockHubsClient(ctrl)
 		hubsClient.EXPECT().
 			List(gomock.Any(), gomock.Any()).
@@ -1146,7 +1152,6 @@ var _ = Describe("hub persistence", func() {
 				},
 			}, nil)
 
-		// Single update to persist hub selection, then early return
 		computeInstancesClient := NewMockComputeInstancesClient(ctrl)
 		computeInstancesClient.EXPECT().
 			Update(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -1164,7 +1169,7 @@ var _ = Describe("hub persistence", func() {
 			Spec: privatev1.ComputeInstanceSpec_builder{}.Build(),
 			Status: privatev1.ComputeInstanceStatus_builder{
 				State: privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_STARTING,
-				Hub:   "", // Empty - needs hub selection
+				Hub:   "",
 			}.Build(),
 		}.Build()
 
