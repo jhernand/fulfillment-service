@@ -748,7 +748,8 @@ var _ = Describe("buildSpec with subnetRef", func() {
 
 		spec, err := t.buildSpec(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.SubnetRef).To(BeEmpty())
+		Expect(spec.NetworkAttachments).To(HaveLen(1))
+		Expect(spec.NetworkAttachments[0].SubnetRef).To(Equal("test-sn"))
 	})
 
 	It("should populate two networkAttachments and omit top-level subnetRef for multi-NIC", func() {
@@ -797,7 +798,6 @@ var _ = Describe("buildSpec with subnetRef", func() {
 
 		spec, err := t.buildSpec(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.SubnetRef).To(BeEmpty())
 		Expect(spec.NetworkAttachments).To(HaveLen(2))
 		Expect(spec.NetworkAttachments[0].SubnetRef).To(Equal("sn-1"))
 		Expect(spec.NetworkAttachments[1].SubnetRef).To(Equal("sn-2"))
