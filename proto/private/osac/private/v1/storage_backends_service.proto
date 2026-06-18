@@ -104,6 +104,12 @@ message StorageBackendsDeleteRequest {
 
 message StorageBackendsDeleteResponse {}
 
+message StorageBackendsSignalRequest {
+  string id = 1;
+}
+
+message StorageBackendsSignalResponse {}
+
 service StorageBackends {
   // Retrieves the list of storage backends.
   rpc List(StorageBackendsListRequest) returns (StorageBackendsListResponse) {
@@ -139,5 +145,9 @@ service StorageBackends {
   // Deletes a storage backend.
   rpc Delete(StorageBackendsDeleteRequest) returns (StorageBackendsDeleteResponse) {
     option (google.api.http) = {delete: "/api/private/v1/storage_backends/{id}"};
+  }
+
+  // Signals a storage backend for reconciliation.
+  rpc Signal(StorageBackendsSignalRequest) returns (StorageBackendsSignalResponse) {
   }
 }

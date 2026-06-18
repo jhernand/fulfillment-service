@@ -891,6 +891,8 @@ func (s *GenericServer[O]) setPayload(event *privatev1.Event, object proto.Messa
 		event.SetBareMetalInstanceTemplate(object)
 	case *privatev1.BareMetalInstanceCatalogItem:
 		event.SetBareMetalInstanceCatalogItem(object)
+	case *privatev1.StorageBackend:
+		event.SetStorageBackend(object)
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)
 	}

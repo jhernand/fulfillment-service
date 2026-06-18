@@ -37,6 +37,7 @@ const (
 	StorageBackends_Create_FullMethodName = "/osac.private.v1.StorageBackends/Create"
 	StorageBackends_Update_FullMethodName = "/osac.private.v1.StorageBackends/Update"
 	StorageBackends_Delete_FullMethodName = "/osac.private.v1.StorageBackends/Delete"
+	StorageBackends_Signal_FullMethodName = "/osac.private.v1.StorageBackends/Signal"
 )
 
 // StorageBackendsClient is the client API for StorageBackends service.
@@ -53,6 +54,8 @@ type StorageBackendsClient interface {
 	Update(ctx context.Context, in *StorageBackendsUpdateRequest, opts ...grpc.CallOption) (*StorageBackendsUpdateResponse, error)
 	// Deletes a storage backend.
 	Delete(ctx context.Context, in *StorageBackendsDeleteRequest, opts ...grpc.CallOption) (*StorageBackendsDeleteResponse, error)
+	// Signals a storage backend for reconciliation.
+	Signal(ctx context.Context, in *StorageBackendsSignalRequest, opts ...grpc.CallOption) (*StorageBackendsSignalResponse, error)
 }
 
 type storageBackendsClient struct {
@@ -113,6 +116,16 @@ func (c *storageBackendsClient) Delete(ctx context.Context, in *StorageBackendsD
 	return out, nil
 }
 
+func (c *storageBackendsClient) Signal(ctx context.Context, in *StorageBackendsSignalRequest, opts ...grpc.CallOption) (*StorageBackendsSignalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StorageBackendsSignalResponse)
+	err := c.cc.Invoke(ctx, StorageBackends_Signal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StorageBackendsServer is the server API for StorageBackends service.
 // All implementations must embed UnimplementedStorageBackendsServer
 // for forward compatibility.
@@ -127,6 +140,8 @@ type StorageBackendsServer interface {
 	Update(context.Context, *StorageBackendsUpdateRequest) (*StorageBackendsUpdateResponse, error)
 	// Deletes a storage backend.
 	Delete(context.Context, *StorageBackendsDeleteRequest) (*StorageBackendsDeleteResponse, error)
+	// Signals a storage backend for reconciliation.
+	Signal(context.Context, *StorageBackendsSignalRequest) (*StorageBackendsSignalResponse, error)
 	mustEmbedUnimplementedStorageBackendsServer()
 }
 
@@ -151,6 +166,9 @@ func (UnimplementedStorageBackendsServer) Update(context.Context, *StorageBacken
 }
 func (UnimplementedStorageBackendsServer) Delete(context.Context, *StorageBackendsDeleteRequest) (*StorageBackendsDeleteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
+}
+func (UnimplementedStorageBackendsServer) Signal(context.Context, *StorageBackendsSignalRequest) (*StorageBackendsSignalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Signal not implemented")
 }
 func (UnimplementedStorageBackendsServer) mustEmbedUnimplementedStorageBackendsServer() {}
 func (UnimplementedStorageBackendsServer) testEmbeddedByValue()                         {}
@@ -263,6 +281,24 @@ func _StorageBackends_Delete_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StorageBackends_Signal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StorageBackendsSignalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StorageBackendsServer).Signal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StorageBackends_Signal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StorageBackendsServer).Signal(ctx, req.(*StorageBackendsSignalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StorageBackends_ServiceDesc is the grpc.ServiceDesc for StorageBackends service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -289,6 +325,10 @@ var StorageBackends_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Delete",
 			Handler:    _StorageBackends_Delete_Handler,
+		},
+		{
+			MethodName: "Signal",
+			Handler:    _StorageBackends_Signal_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
