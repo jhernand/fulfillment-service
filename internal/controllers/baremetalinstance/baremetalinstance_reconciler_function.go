@@ -218,6 +218,8 @@ func (t *task) update(ctx context.Context) error {
 		)
 	}
 
+	t.syncStatus(object)
+
 	if err := t.ensureUserDataSecret(ctx, object); err != nil {
 		return err
 	}
@@ -426,6 +428,78 @@ func (t *task) updateCondition(conditionType privatev1.BareMetalInstanceConditio
 		}.Build())
 	}
 	t.bareMetalInstance.GetStatus().SetConditions(conditions)
+}
+
+func (t *task) syncStatus(object *bmfov1alpha1.BareMetalInstance) {
+	if object == nil {
+		return
+	}
+
+	switch object.Status.Phase {
+	case bmfov1alpha1.BareMetalInstancePhaseAllocating,
+		bmfov1alpha1.BareMetalInstancePhaseProgressing:
+		t.bareMetalInstance.GetStatus().SetState(
+			privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING)
+	case bmfov1alpha1.BareMetalInstancePhaseReady:
+		t.bareMetalInstance.GetStatus().SetState(
+			privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_RUNNING)
+	case bmfov1alpha1.BareMetalInstancePhaseFailed:
+		t.bareMetalInstance.GetStatus().SetState(
+			privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_FAILED)
+	case bmfov1alpha1.BareMetalInstancePhaseDeleting:
+		t.bareMetalInstance.GetStatus().SetState(
+			privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_DELETING)
+	}
+
+	for _, cond := range object.Status.Conditions {
+		condType := bmfov1alpha1.BareMetalInstanceConditionType(cond.Type)
+		status := mapConditionStatus(cond.Status)
+
+		switch condType {
+		case bmfov1alpha1.HostConditionAllocated:
+			t.updateCondition(
+				privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_PROVISIONED,
+				status, cond.Reason, cond.Message)
+		case bmfov1alpha1.HostConditionProvisionTemplateComplete:
+			t.updateCondition(
+				privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_CONFIGURATION_APPLIED,
+				status, cond.Reason, cond.Message)
+		case bmfov1alpha1.HostConditionAvailable:
+			t.updateCondition(
+				privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_READY,
+				status, cond.Reason, cond.Message)
+		case bmfov1alpha1.HostConditionPowerSynced:
+			if cond.Status == metav1.ConditionFalse && cond.Reason == bmfov1alpha1.HostConditionReasonProgressing {
+				t.updateCondition(
+					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS,
+					privatev1.ConditionStatus_CONDITION_STATUS_TRUE, cond.Reason, cond.Message)
+			} else if cond.Status == metav1.ConditionFalse && cond.Reason == bmfov1alpha1.HostConditionReasonIronicAPIFailure {
+				t.updateCondition(
+					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED,
+					privatev1.ConditionStatus_CONDITION_STATUS_TRUE, cond.Reason, cond.Message)
+			} else if cond.Status == metav1.ConditionTrue {
+				t.updateCondition(
+					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS,
+					privatev1.ConditionStatus_CONDITION_STATUS_FALSE, cond.Reason, cond.Message)
+				t.updateCondition(
+					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED,
+					privatev1.ConditionStatus_CONDITION_STATUS_FALSE, cond.Reason, cond.Message)
+				t.bareMetalInstance.GetStatus().SetRestartTrigger(
+					t.bareMetalInstance.GetSpec().GetRestartTrigger())
+			}
+		}
+	}
+}
+
+func mapConditionStatus(status metav1.ConditionStatus) privatev1.ConditionStatus {
+	switch status {
+	case metav1.ConditionTrue:
+		return privatev1.ConditionStatus_CONDITION_STATUS_TRUE
+	case metav1.ConditionFalse:
+		return privatev1.ConditionStatus_CONDITION_STATUS_FALSE
+	default:
+		return privatev1.ConditionStatus_CONDITION_STATUS_UNSPECIFIED
+	}
 }
 
 // buildSpec constructs the spec for the Kubernetes BareMetalInstance object by resolving the
