@@ -14,10 +14,13 @@ language governing permissions and limitations under the License.
 package servers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/cel-go/cel"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -28,6 +31,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/database/dao"
 )
 
 var (
@@ -228,4 +232,54 @@ func setNestedValue(m map[string]any, path string, value any) {
 		}
 		current = currentMap
 	}
+}
+
+// validateInstanceTypeState looks up an instance type by name and validates its state.
+// Returns warnings for DEPRECATED types, error for OBSOLETE or not-found types.
+// The source parameter provides context for error messages (e.g., " in spec_defaults", " in field_definitions").
+// Pass an empty string for source when validating directly on a ComputeInstance.
+func validateInstanceTypeState(
+	ctx context.Context,
+	instanceTypesDao *dao.GenericDAO[*privatev1.InstanceType],
+	instanceTypeName string,
+	source string,
+) ([]string, error) {
+	getResponse, err := instanceTypesDao.Get().
+		SetId(instanceTypeName).
+		Do(ctx)
+	if err != nil {
+		var notFoundErr *dao.ErrNotFound
+		if errors.As(err, &notFoundErr) {
+			return nil, grpcstatus.Errorf(grpccodes.NotFound,
+				"instance type '%s'%s not found", instanceTypeName, source)
+		}
+		return nil, grpcstatus.Errorf(grpccodes.Internal,
+			"failed to retrieve instance type '%s'", instanceTypeName)
+	}
+
+	it := getResponse.GetObject()
+	state := it.GetSpec().GetState()
+	var warnings []string
+
+	switch state {
+	case privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_OBSOLETE:
+		return nil, grpcstatus.Errorf(grpccodes.FailedPrecondition,
+			"instance type '%s'%s is obsolete and cannot be used",
+			instanceTypeName, source)
+	case privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_DEPRECATED:
+		warning := fmt.Sprintf("Instance type '%s'%s is deprecated", instanceTypeName, source)
+		dep := it.GetSpec().GetDeprecation()
+		if dep != nil {
+			if dep.GetObsolescenceTimestamp() != nil {
+				warning += fmt.Sprintf(" and will become obsolete on %s",
+					dep.GetObsolescenceTimestamp().AsTime().Format(time.RFC3339))
+			}
+			if dep.GetReplacement() != "" {
+				warning += fmt.Sprintf(". Consider using '%s' instead", dep.GetReplacement())
+			}
+		}
+		warnings = append(warnings, warning)
+	}
+
+	return warnings, nil
 }

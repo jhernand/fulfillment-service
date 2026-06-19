@@ -246,6 +246,7 @@ func (s *ComputeInstanceTemplatesServer) Create(ctx context.Context,
 	// Create the public response:
 	response = &publicv1.ComputeInstanceTemplatesCreateResponse{}
 	response.SetObject(createdPublicComputeInstanceTemplate)
+	response.SetWarnings(privateResponse.GetWarnings())
 	return
 }
 
@@ -310,6 +311,7 @@ func (s *ComputeInstanceTemplatesServer) Update(ctx context.Context,
 	// Create the public response:
 	response = &publicv1.ComputeInstanceTemplatesUpdateResponse{}
 	response.SetObject(updatedPublicComputeInstanceTemplate)
+	response.SetWarnings(privateResponse.GetWarnings())
 	return
 }
 

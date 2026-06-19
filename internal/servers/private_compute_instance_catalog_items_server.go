@@ -19,9 +19,12 @@ import (
 	"log/slog"
 
 	"github.com/prometheus/client_golang/prometheus"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
+	"github.com/osac-project/fulfillment-service/internal/database/dao"
 	"github.com/osac-project/fulfillment-service/internal/events"
 )
 
@@ -37,8 +40,9 @@ var _ privatev1.ComputeInstanceCatalogItemsServer = (*PrivateComputeInstanceCata
 
 type PrivateComputeInstanceCatalogItemsServer struct {
 	privatev1.UnimplementedComputeInstanceCatalogItemsServer
-	logger  *slog.Logger
-	generic *GenericServer[*privatev1.ComputeInstanceCatalogItem]
+	logger           *slog.Logger
+	generic          *GenericServer[*privatev1.ComputeInstanceCatalogItem]
+	instanceTypesDao *dao.GenericDAO[*privatev1.InstanceType]
 }
 
 func NewPrivateComputeInstanceCatalogItemsServer() *PrivateComputeInstanceCatalogItemsServerBuilder {
@@ -80,6 +84,16 @@ func (b *PrivateComputeInstanceCatalogItemsServerBuilder) Build() (result *Priva
 		err = errors.New("tenancy logic is mandatory")
 		return
 	}
+	// Create the InstanceTypes DAO for field_definitions instance type validation:
+	instanceTypesDao, err := dao.NewGenericDAO[*privatev1.InstanceType]().
+		SetLogger(b.logger).
+		SetTenancyLogic(b.tenancyLogic).
+		SetMetricsRegisterer(b.metricsRegisterer).
+		Build()
+	if err != nil {
+		return
+	}
+
 	generic, err := NewGenericServer[*privatev1.ComputeInstanceCatalogItem]().
 		SetLogger(b.logger).
 		SetService(privatev1.ComputeInstanceCatalogItems_ServiceDesc.ServiceName).
@@ -93,8 +107,9 @@ func (b *PrivateComputeInstanceCatalogItemsServerBuilder) Build() (result *Priva
 	}
 
 	result = &PrivateComputeInstanceCatalogItemsServer{
-		logger:  b.logger,
-		generic: generic,
+		logger:           b.logger,
+		generic:          generic,
+		instanceTypesDao: instanceTypesDao,
 	}
 	return
 }
@@ -113,13 +128,41 @@ func (s *PrivateComputeInstanceCatalogItemsServer) Get(ctx context.Context,
 
 func (s *PrivateComputeInstanceCatalogItemsServer) Create(ctx context.Context,
 	request *privatev1.ComputeInstanceCatalogItemsCreateRequest) (response *privatev1.ComputeInstanceCatalogItemsCreateResponse, err error) {
+	// Validate instance type in field_definitions before creating.
+	var warnings []string
+	if request.GetObject() != nil {
+		warnings, err = s.validateFieldDefinitionsInstanceType(ctx, request.GetObject().GetFieldDefinitions())
+		if err != nil {
+			return
+		}
+	}
 	err = s.generic.Create(ctx, request, &response)
+	if err != nil {
+		return
+	}
+	if len(warnings) > 0 && response != nil {
+		response.SetWarnings(warnings)
+	}
 	return
 }
 
 func (s *PrivateComputeInstanceCatalogItemsServer) Update(ctx context.Context,
 	request *privatev1.ComputeInstanceCatalogItemsUpdateRequest) (response *privatev1.ComputeInstanceCatalogItemsUpdateResponse, err error) {
+	// Validate instance type in field_definitions before updating.
+	var warnings []string
+	if request.GetObject() != nil {
+		warnings, err = s.validateFieldDefinitionsInstanceType(ctx, request.GetObject().GetFieldDefinitions())
+		if err != nil {
+			return
+		}
+	}
 	err = s.generic.Update(ctx, request, &response)
+	if err != nil {
+		return
+	}
+	if len(warnings) > 0 && response != nil {
+		response.SetWarnings(warnings)
+	}
 	return
 }
 
@@ -133,4 +176,41 @@ func (s *PrivateComputeInstanceCatalogItemsServer) Signal(ctx context.Context,
 	request *privatev1.ComputeInstanceCatalogItemsSignalRequest) (response *privatev1.ComputeInstanceCatalogItemsSignalResponse, err error) {
 	err = s.generic.Signal(ctx, request, &response)
 	return
+}
+
+// validateFieldDefinitionsInstanceType validates instance_type constraints in field_definitions.
+// Rejects mutual exclusivity violations (D-19): field_definitions cannot control both
+// spec.instance_type and spec.cores/spec.memory_gib. Rejects OBSOLETE instance types, warns on DEPRECATED.
+func (s *PrivateComputeInstanceCatalogItemsServer) validateFieldDefinitionsInstanceType(
+	ctx context.Context,
+	fieldDefinitions []*privatev1.FieldDefinition,
+) ([]string, error) {
+	// Scan field_definitions once to check mutual exclusivity (D-19) and extract
+	// the spec.instance_type default value.
+	var hasInstanceTypePath, hasCoresOrMemoryPath bool
+	var instanceTypeName string
+	for _, fd := range fieldDefinitions {
+		switch fd.GetPath() {
+		case "spec.instance_type":
+			hasInstanceTypePath = true
+			defaultValue := fd.GetDefault()
+			if defaultValue != nil {
+				instanceTypeName = defaultValue.GetStringValue()
+			}
+		case "spec.cores", "spec.memory_gib":
+			hasCoresOrMemoryPath = true
+		}
+	}
+	if hasInstanceTypePath && hasCoresOrMemoryPath {
+		return nil, grpcstatus.Errorf(grpccodes.InvalidArgument,
+			"field_definitions cannot control both spec.instance_type and spec.cores/spec.memory_gib: "+
+				"they are mutually exclusive")
+	}
+
+	if instanceTypeName == "" {
+		return nil, nil
+	}
+
+	// Look up the instance type and validate its state.
+	return validateInstanceTypeState(ctx, s.instanceTypesDao, instanceTypeName, " in field_definitions")
 }

@@ -1255,6 +1255,160 @@ var _ = Describe("Private compute instances server", func() {
 					"cannot change spec.catalog_item from 'ci-cat-immut' to 'different-catalog-item': catalog item is immutable",
 				))
 			})
+
+			It("Validates instance_type from template spec_defaults via catalog item", func() {
+				// Create a template with instance_type in spec_defaults:
+				templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
+					SetLogger(logger).
+					SetTenancyLogic(tenancy).
+					Build()
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = templatesDao.Create().SetObject(
+					privatev1.ComputeInstanceTemplate_builder{
+						Id:    "ci-template-with-it",
+						Title: "Template with instance type",
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						SpecDefaults: privatev1.ComputeInstanceTemplateSpecDefaults_builder{
+							InstanceType: new("nonexistent-instance-type"),
+							Image: privatev1.ComputeInstanceImage_builder{
+								SourceType: "registry",
+								SourceRef:  "quay.io/containerdisks/fedora:latest",
+							}.Build(),
+							BootDisk: privatev1.ComputeInstanceDisk_builder{
+								SizeGib: 10,
+							}.Build(),
+							RunStrategy: new("Always"),
+						}.Build(),
+					}.Build(),
+				).Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create a catalog item pointing to that template:
+				_, err = catalogItemsDao.Create().SetObject(
+					privatev1.ComputeInstanceCatalogItem_builder{
+						Id: "ci-cat-with-it",
+						Metadata: privatev1.Metadata_builder{
+							Name:   "ci-cat-with-it-name",
+							Tenant: "shared",
+						}.Build(),
+						Title:     "Catalog Item with IT",
+						Published: true,
+						Template:  "ci-template-with-it",
+					}.Build(),
+				).Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create via catalog item — should fail because instance type doesn't exist:
+				_, err = server.Create(ctx, privatev1.ComputeInstancesCreateRequest_builder{
+					Object: privatev1.ComputeInstance_builder{
+						Spec: privatev1.ComputeInstanceSpec_builder{
+							CatalogItem: "ci-cat-with-it",
+							NetworkAttachments: []*privatev1.NetworkAttachment{
+								privatev1.NetworkAttachment_builder{
+									Subnet: "test-subnet",
+								}.Build(),
+							},
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.NotFound))
+				Expect(status.Message()).To(ContainSubstring("nonexistent-instance-type"))
+			})
+
+			It("Creates compute instance when template spec_defaults has valid instance_type", func() {
+				// Create an instance type:
+				instanceTypesDao, err := dao.NewGenericDAO[*privatev1.InstanceType]().
+					SetLogger(logger).
+					SetTenancyLogic(tenancy).
+					Build()
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = instanceTypesDao.Create().SetObject(
+					privatev1.InstanceType_builder{
+						Id: "standard-4-16",
+						Metadata: privatev1.Metadata_builder{
+							Name:   "standard-4-16",
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.InstanceTypeSpec_builder{
+							Cores:     4,
+							MemoryGib: 16,
+							State:     privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_ACTIVE,
+						}.Build(),
+					}.Build(),
+				).Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create a template with instance_type in spec_defaults:
+				templatesDao, err := dao.NewGenericDAO[*privatev1.ComputeInstanceTemplate]().
+					SetLogger(logger).
+					SetTenancyLogic(tenancy).
+					Build()
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = templatesDao.Create().SetObject(
+					privatev1.ComputeInstanceTemplate_builder{
+						Id:    "ci-template-valid-it",
+						Title: "Template with valid instance type",
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						SpecDefaults: privatev1.ComputeInstanceTemplateSpecDefaults_builder{
+							InstanceType: new("standard-4-16"),
+							Image: privatev1.ComputeInstanceImage_builder{
+								SourceType: "registry",
+								SourceRef:  "quay.io/containerdisks/fedora:latest",
+							}.Build(),
+							BootDisk: privatev1.ComputeInstanceDisk_builder{
+								SizeGib: 10,
+							}.Build(),
+							RunStrategy: new("Always"),
+						}.Build(),
+					}.Build(),
+				).Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create a catalog item pointing to that template:
+				_, err = catalogItemsDao.Create().SetObject(
+					privatev1.ComputeInstanceCatalogItem_builder{
+						Id: "ci-cat-valid-it",
+						Metadata: privatev1.Metadata_builder{
+							Name:   "ci-cat-valid-it-name",
+							Tenant: "shared",
+						}.Build(),
+						Title:     "Catalog Item with valid IT",
+						Published: true,
+						Template:  "ci-template-valid-it",
+					}.Build(),
+				).Do(ctx)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create via catalog item — should succeed:
+				response, err := server.Create(ctx, privatev1.ComputeInstancesCreateRequest_builder{
+					Object: privatev1.ComputeInstance_builder{
+						Spec: privatev1.ComputeInstanceSpec_builder{
+							CatalogItem: "ci-cat-valid-it",
+							NetworkAttachments: []*privatev1.NetworkAttachment{
+								privatev1.NetworkAttachment_builder{
+									Subnet: "test-subnet",
+								}.Build(),
+							},
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response).ToNot(BeNil())
+				object := response.GetObject()
+				Expect(object).ToNot(BeNil())
+				Expect(object.GetSpec().GetTemplate()).To(Equal("ci-template-valid-it"))
+				Expect(object.GetSpec().GetCatalogItem()).To(Equal("ci-cat-valid-it"))
+			})
 		})
 	})
 

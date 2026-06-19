@@ -27,6 +27,9 @@ var ClusterOrderUuid = fmt.Sprintf("%s/%s", group, "clusterorder-uuid")
 // ComputeInstanceUuid is the label where the fulfillment API will write the identifier of the compute instance.
 var ComputeInstanceUuid = fmt.Sprintf("%s/%s", group, "computeinstance-uuid")
 
+// InstanceTypeName is the label where the fulfillment API will write the name of the instance type.
+var InstanceTypeName = fmt.Sprintf("%s/%s", group, "instance-type-name")
+
 // SubnetUuid is the label where the fulfillment API will write the identifier of the subnet.
 var SubnetUuid = fmt.Sprintf("%s/%s", group, "subnet-uuid")
 
