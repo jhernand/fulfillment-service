@@ -64,6 +64,8 @@ var _ = Describe("Authorization rules", Ordered, func() {
 		// Create a temporary values file:
 		valuesFile := filepath.Join(tmpDir, "values.yaml")
 		valuesData := map[string]any{
+			"internalHostname": "internal.example.com",
+			"externalHostname": "external.example.com",
 			"certs": map[string]any{
 				"issuerRef": map[string]any{
 					"name": "my-ca",
