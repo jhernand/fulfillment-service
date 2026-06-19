@@ -756,6 +756,36 @@ func (c *Client) DeleteAuthorizationResource(ctx context.Context, resourceID str
 	return nil
 }
 
+// CreateIdentityProvider creates a new identity provider at the realm level.
+func (c *Client) CreateIdentityProvider(ctx context.Context, idpProvider *idp.IdentityProvider) (*idp.IdentityProvider, error) {
+	if idpProvider == nil {
+		return nil, fmt.Errorf("identity provider is nil")
+	}
+	c.logger.InfoContext(ctx, "Creating identity provider",
+		slog.String("realm", c.realmName),
+		slog.String("alias", idpProvider.Alias),
+		slog.String("type", idpProvider.Type),
+	)
+
+	path := fmt.Sprintf("/admin/realms/%s/identity-provider/instances", url.PathEscape(c.realmName))
+
+	kcIdp := toKeycloakIdentityProvider(idpProvider)
+
+	response, err := c.httpClient.DoRequest(ctx, http.MethodPost, path, kcIdp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create identity provider: %w", err)
+	}
+	defer response.Body.Close()
+
+	// Keycloak returns 201 Created with the created object in the response body
+	var createdKcIdp keycloakIdentityProvider
+	if err := json.NewDecoder(response.Body).Decode(&createdKcIdp); err != nil {
+		return nil, fmt.Errorf("failed to decode created identity provider response: %w", err)
+	}
+
+	return fromKeycloakIdentityProvider(&createdKcIdp), nil
+}
+
 // GetIdentityProvider retrieves an identity provider configuration by alias at the realm level.
 func (c *Client) GetIdentityProvider(ctx context.Context, alias string) (*idp.IdentityProvider, error) {
 	c.logger.InfoContext(ctx, "Getting identity provider",

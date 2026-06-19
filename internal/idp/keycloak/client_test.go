@@ -1406,6 +1406,130 @@ var _ = Describe("Keycloak Client", func() {
 	})
 
 	Describe("Identity Provider Operations", func() {
+		Describe("CreateIdentityProvider", func() {
+			It("creates an identity provider in Keycloak", func() {
+				var receivedIdp *keycloakIdentityProvider
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodPost && r.URL.Path == "/admin/realms/osac/identity-provider/instances" {
+						// Create request
+						receivedIdp = &keycloakIdentityProvider{}
+						err := json.NewDecoder(r.Body).Decode(receivedIdp)
+						if err != nil {
+							http.Error(w, err.Error(), http.StatusBadRequest)
+							return
+						}
+
+						// Return the created IdP
+						response := keycloakIdentityProvider{
+							Alias:       receivedIdp.Alias,
+							DisplayName: receivedIdp.DisplayName,
+							InternalID:  "idp-uuid-123",
+							ProviderID:  receivedIdp.ProviderID,
+							Enabled:     receivedIdp.Enabled,
+							Config:      receivedIdp.Config,
+						}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusCreated)
+						if err := json.NewEncoder(w).Encode(response); err != nil {
+							http.Error(w, err.Error(), http.StatusInternalServerError)
+							return
+						}
+						return
+					}
+					w.WriteHeader(http.StatusNotFound)
+				}))
+
+				client = createTestClient(server.URL)
+
+				idpProvider := &idp.IdentityProvider{
+					Alias:       "corporate-ldap",
+					DisplayName: "Corporate LDAP",
+					Type:        "ldap",
+					Enabled:     true,
+					Config: map[string]string{
+						"connectionUrl": "ldap://ldap.example.com:389",
+						"bindDn":        "cn=admin,dc=example,dc=com",
+					},
+				}
+				createdIdp, err := client.CreateIdentityProvider(ctx, idpProvider)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(receivedIdp).ToNot(BeNil(), "server handler should have set receivedIdp")
+				Expect(receivedIdp.Alias).To(Equal("corporate-ldap"))
+				Expect(receivedIdp.ProviderID).To(Equal("ldap"))
+				Expect(createdIdp).ToNot(BeNil())
+				Expect(createdIdp.Alias).To(Equal("corporate-ldap"))
+				Expect(createdIdp.DisplayName).To(Equal("Corporate LDAP"))
+				Expect(createdIdp.Type).To(Equal("ldap"))
+				Expect(createdIdp.Enabled).To(BeTrue())
+				Expect(createdIdp.Config).To(HaveKeyWithValue("connectionUrl", "ldap://ldap.example.com:389"))
+			})
+
+			It("creates an OIDC identity provider", func() {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodPost && r.URL.Path == "/admin/realms/osac/identity-provider/instances" {
+						var receivedIdp keycloakIdentityProvider
+						json.NewDecoder(r.Body).Decode(&receivedIdp)
+
+						response := keycloakIdentityProvider{
+							Alias:       receivedIdp.Alias,
+							DisplayName: receivedIdp.DisplayName,
+							InternalID:  "idp-uuid-456",
+							ProviderID:  receivedIdp.ProviderID,
+							Enabled:     receivedIdp.Enabled,
+							Config:      receivedIdp.Config,
+						}
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusCreated)
+						if err := json.NewEncoder(w).Encode(response); err != nil {
+							http.Error(w, err.Error(), http.StatusInternalServerError)
+							return
+						}
+						return
+					}
+					w.WriteHeader(http.StatusNotFound)
+				}))
+
+				client = createTestClient(server.URL)
+
+				idpProvider := &idp.IdentityProvider{
+					Alias:       "google-sso",
+					DisplayName: "Google SSO",
+					Type:        "oidc",
+					Enabled:     true,
+					Config: map[string]string{
+						"authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+						"tokenUrl":         "https://oauth2.googleapis.com/token",
+						"clientId":         "my-client-id",
+						"clientSecret":     "my-client-secret",
+					},
+				}
+				createdIdp, err := client.CreateIdentityProvider(ctx, idpProvider)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(createdIdp).ToNot(BeNil())
+				Expect(createdIdp.Alias).To(Equal("google-sso"))
+				Expect(createdIdp.Type).To(Equal("oidc"))
+				Expect(createdIdp.Config).To(HaveKeyWithValue("authorizationUrl", "https://accounts.google.com/o/oauth2/v2/auth"))
+			})
+
+			It("returns an error when creation fails", func() {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusConflict)
+					w.Write([]byte(`{"errorMessage":"Identity Provider with alias already exists"}`))
+				}))
+
+				client = createTestClient(server.URL)
+
+				idpProvider := &idp.IdentityProvider{
+					Alias:   "existing-idp",
+					Type:    "ldap",
+					Enabled: true,
+				}
+				_, err := client.CreateIdentityProvider(ctx, idpProvider)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to create identity provider"))
+			})
+		})
+
 		Describe("GetIdentityProvider", func() {
 			It("retrieves an identity provider by alias", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
