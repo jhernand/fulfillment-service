@@ -660,6 +660,12 @@ func (t *task) addExplicitFields(spec *osacv1alpha1.ComputeInstanceSpec) {
 		}
 		spec.AdditionalDisks = disks
 	}
+	// Map is_windows boolean to guestOSFamily string
+	if ciSpec.HasIsWindows() && ciSpec.GetIsWindows() {
+		spec.GuestOSFamily = "windows"
+	} else {
+		spec.GuestOSFamily = "linux"
+	}
 }
 
 // ensureUserDataSecret creates a Kubernetes Secret containing the cloud-init user data
