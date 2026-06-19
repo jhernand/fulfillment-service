@@ -22,13 +22,13 @@ OSAC CLI and API.
 List all available catalog items:
 
 ```bash
-osac get cluster-catalog-items
+osac get clustercatalogitems
 ```
 
 Inspect a specific catalog item to see its fields and defaults:
 
 ```bash
-osac get cluster-catalog-items <catalog-item-id> -o yaml
+osac get clustercatalogitems <catalog-item-id> -o yaml
 ```
 
 Key fields in a catalog item:
