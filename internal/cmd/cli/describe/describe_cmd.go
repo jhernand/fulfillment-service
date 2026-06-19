@@ -16,6 +16,7 @@ package describe
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/baremetalinstance"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/cluster"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/computeinstance"
 	"github.com/osac-project/fulfillment-service/internal/cmd/cli/describe/publicip"
@@ -31,6 +32,7 @@ func Cmd() *cobra.Command {
 		Short: shortHelp,
 		Long:  longHelp,
 	}
+	result.AddCommand(baremetalinstance.Cmd())
 	result.AddCommand(cluster.Cmd())
 	result.AddCommand(computeinstance.Cmd())
 	result.AddCommand(publicip.Cmd())
