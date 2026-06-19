@@ -113,6 +113,10 @@ func applyFieldDefinitions(
 					}
 				}
 			} else {
+				if defaultVal == nil {
+					return grpcstatus.Errorf(grpccodes.InvalidArgument,
+						"field '%s' is required but no value was provided and no default is defined", path)
+				}
 				if err := applyDefault(specMap, path, defaultVal); err != nil {
 					return err
 				}

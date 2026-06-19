@@ -18,7 +18,106 @@ import (
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
+
+	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 )
+
+var _ = Describe("applyFieldDefinitions", func() {
+	It("rejects editable field with no default and no user value", func() {
+		spec := &privatev1.ClusterSpec{}
+		fieldDefs := []*privatev1.FieldDefinition{{
+			Path:     "pull_secret",
+			Editable: true,
+		}}
+		err := applyFieldDefinitions(spec, fieldDefs)
+		Expect(err).To(HaveOccurred())
+		Expect(status.Code(err)).To(Equal(codes.InvalidArgument))
+		Expect(err.Error()).To(ContainSubstring("pull_secret"))
+	})
+
+	It("accepts editable field with no default when user provides value", func() {
+		pullSecret := "my-secret"
+		spec := &privatev1.ClusterSpec{
+			PullSecret: &pullSecret,
+		}
+		fieldDefs := []*privatev1.FieldDefinition{{
+			Path:     "pull_secret",
+			Editable: true,
+		}}
+		err := applyFieldDefinitions(spec, fieldDefs)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(spec.GetPullSecret()).To(Equal("my-secret"))
+	})
+
+	It("applies default for editable field when user provides no value", func() {
+		spec := &privatev1.ClusterSpec{}
+		defaultVal, err := structpb.NewValue("default-secret")
+		Expect(err).ToNot(HaveOccurred())
+		fieldDefs := []*privatev1.FieldDefinition{{
+			Path:     "pull_secret",
+			Editable: true,
+			Default:  defaultVal,
+		}}
+		err = applyFieldDefinitions(spec, fieldDefs)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(spec.GetPullSecret()).To(Equal("default-secret"))
+	})
+
+	It("overrides user value with default for non-editable field", func() {
+		userValue := "user-value"
+		spec := &privatev1.ClusterSpec{
+			PullSecret: &userValue,
+		}
+		defaultVal, err := structpb.NewValue("admin-value")
+		Expect(err).ToNot(HaveOccurred())
+		fieldDefs := []*privatev1.FieldDefinition{{
+			Path:     "pull_secret",
+			Editable: false,
+			Default:  defaultVal,
+		}}
+		err = applyFieldDefinitions(spec, fieldDefs)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(spec.GetPullSecret()).To(Equal("admin-value"))
+	})
+
+	It("returns no error for empty field definitions", func() {
+		pullSecret := "my-secret"
+		spec := &privatev1.ClusterSpec{
+			PullSecret: &pullSecret,
+		}
+		err := applyFieldDefinitions(spec, nil)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("rejects when any required field is missing among multiple fields", func() {
+		sshKey := "my-ssh-key"
+		spec := &privatev1.ClusterSpec{
+			SshPublicKey: &sshKey,
+		}
+		defaultRelease, err := structpb.NewValue("4.16")
+		Expect(err).ToNot(HaveOccurred())
+		fieldDefs := []*privatev1.FieldDefinition{
+			{
+				Path:     "release_image",
+				Editable: true,
+				Default:  defaultRelease,
+			},
+			{
+				Path:     "pull_secret",
+				Editable: true,
+			},
+			{
+				Path:     "ssh_public_key",
+				Editable: true,
+			},
+		}
+		err = applyFieldDefinitions(spec, fieldDefs)
+		Expect(err).To(HaveOccurred())
+		Expect(status.Code(err)).To(Equal(codes.InvalidArgument))
+		Expect(err.Error()).To(ContainSubstring("pull_secret"))
+	})
+})
 
 var _ = Describe("addPublishedFilter", func() {
 	var server *ClusterCatalogItemsServer
