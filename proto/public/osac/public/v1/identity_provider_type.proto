@@ -15,17 +15,14 @@ syntax = "proto3";
 
 package osac.public.v1;
 
-import "google/protobuf/timestamp.proto";
-import "osac/public/v1/condition_status_type.proto";
 import "osac/public/v1/metadata_type.proto";
 
 // IdentityProvider represents an external identity provider configuration.
 // Identity providers enable users to authenticate using their existing corporate credentials
 // (LDAP, Active Directory, OIDC, SAML, etc.) rather than managing separate credentials.
 message IdentityProvider {
-  // Unique name identifier for this IdP. Immutable after creation.
-  // Must be URL-safe and unique within the organization.
-  string name = 1;
+  // Unique identifier for this IdP. Immutable after creation.
+  string id = 1;
 
   // Metadata contains common object metadata.
   Metadata metadata = 2;

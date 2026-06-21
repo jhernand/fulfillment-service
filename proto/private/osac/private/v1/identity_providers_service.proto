@@ -16,6 +16,7 @@ syntax = "proto3";
 package osac.private.v1;
 
 import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
 import "osac/private/v1/identity_provider_type.proto";
 
 // Request to list all identity providers.
@@ -42,10 +43,10 @@ message IdentityProvidersListResponse {
   repeated IdentityProvider items = 3;
 }
 
-// Request to get an identity provider by name.
+// Request to get an identity provider by ID.
 message IdentityProvidersGetRequest {
-  // Name of the identity provider.
-  string name = 1;
+  // ID of the identity provider.
+  string id = 1;
 }
 
 // Response containing the identity provider.
@@ -68,11 +69,16 @@ message IdentityProvidersCreateResponse {
 
 // Request to update an identity provider.
 message IdentityProvidersUpdateRequest {
-  // Name of the identity provider to update.
-  string name = 1;
-
   // The updated identity provider object.
-  IdentityProvider object = 2;
+  IdentityProvider object = 1;
+
+  // Update mask indicating which fields to update.
+  google.protobuf.FieldMask update_mask = 2;
+
+  // Lock enables optimistic locking. When set to true, the server verifies that the current version of the object
+  // matches the value of the metadata.version field of the submitted object. If they differ the update will be
+  // rejected with a conflict error.
+  bool lock = 3;
 }
 
 // Response containing the updated identity provider.
@@ -83,8 +89,8 @@ message IdentityProvidersUpdateResponse {
 
 // Request to delete an identity provider.
 message IdentityProvidersDeleteRequest {
-  // Name of the identity provider to delete.
-  string name = 1;
+  // ID of the identity provider to delete.
+  string id = 1;
 }
 
 // Response for delete operation.
@@ -114,6 +120,14 @@ message IdentityProvidersUnassignRequest {
 // Response for unassign operation.
 message IdentityProvidersUnassignResponse {}
 
+// Request to signal that an identity provider needs reconciliation.
+message IdentityProvidersSignalRequest {
+  string id = 1;
+}
+
+// Response for signal operation.
+message IdentityProvidersSignalResponse {}
+
 // IdentityProviders service provides internal operations for managing identity providers.
 service IdentityProviders {
   // Creates a new identity provider.
@@ -135,7 +149,7 @@ service IdentityProviders {
   // Retrieves an identity provider by name.
   rpc Get(IdentityProvidersGetRequest) returns (IdentityProvidersGetResponse) {
     option (google.api.http) = {
-      get: "/api/private/v1/identity_providers/{name}"
+      get: "/api/private/v1/identity_providers/{id}"
       response_body: "object"
     };
   }
@@ -143,7 +157,7 @@ service IdentityProviders {
   // Updates an existing identity provider.
   rpc Update(IdentityProvidersUpdateRequest) returns (IdentityProvidersUpdateResponse) {
     option (google.api.http) = {
-      put: "/api/private/v1/identity_providers/{name}"
+      patch: "/api/private/v1/identity_providers/{object.id}"
       body: "object"
     };
   }
@@ -151,7 +165,7 @@ service IdentityProviders {
   // Deletes an identity provider.
   rpc Delete(IdentityProvidersDeleteRequest) returns (IdentityProvidersDeleteResponse) {
     option (google.api.http) = {
-      delete: "/api/private/v1/identity_providers/{name}"
+      delete: "/api/private/v1/identity_providers/{id}"
     };
   }
 
@@ -170,4 +184,7 @@ service IdentityProviders {
       body: "*"
     };
   }
+
+  // Indicates that something changed in the object or the system that may require reconciling the object.
+  rpc Signal(IdentityProvidersSignalRequest) returns (IdentityProvidersSignalResponse) {}
 }
