@@ -455,6 +455,39 @@ var _ = Describe("Private storage backends server", func() {
 					}.Build(),
 				}.Build())
 				Expect(err).To(HaveOccurred())
+				st, ok := status.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(st.Code()).ToNot(Equal(codes.OK))
+			})
+
+			It("Update with metadata.name in update_mask fails", func() {
+				created := createStorageBackend()
+
+				_, err := server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
+					Object: privatev1.StorageBackend_builder{
+						Id: created.GetId(),
+						Metadata: privatev1.Metadata_builder{
+							Name: "new-name",
+						}.Build(),
+					}.Build(),
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"metadata.name"}},
+				}.Build())
+				Expect(err).To(HaveOccurred())
+			})
+
+			It("Update with metadata.tenant in update_mask fails", func() {
+				created := createStorageBackend()
+
+				_, err := server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
+					Object: privatev1.StorageBackend_builder{
+						Id: created.GetId(),
+						Metadata: privatev1.Metadata_builder{
+							Tenant: "other-tenant",
+						}.Build(),
+					}.Build(),
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"metadata.tenant"}},
+				}.Build())
+				Expect(err).To(HaveOccurred())
 			})
 		})
 

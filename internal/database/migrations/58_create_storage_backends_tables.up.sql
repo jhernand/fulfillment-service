@@ -46,13 +46,12 @@ create index storage_backends_by_name on storage_backends (name);
 create index storage_backends_by_creator on storage_backends (creator);
 create index storage_backends_by_label on storage_backends using gin (labels);
 
--- Name uniqueness among active backends (FR-9). Permits name reuse after deletion.
-create unique index storage_backends_unique_active_name
-  on storage_backends (name)
-  where deletion_timestamp = 'epoch';
+-- Name uniqueness across all backends (active and soft-deleted). Names are permanently reserved.
+create unique index storage_backends_unique_name
+  on storage_backends (name);
 
 -- Enforce immutability of id and name columns at the database level.
 create trigger check_immutable_columns
   before update on storage_backends
   for each row
-  execute function check_immutable_columns('id', 'name');
+  execute function check_immutable_columns('id', 'name', 'tenant');

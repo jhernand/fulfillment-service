@@ -21,8 +21,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
@@ -118,7 +116,7 @@ func (s *PrivateStorageBackendsServer) Get(ctx context.Context,
 
 func (s *PrivateStorageBackendsServer) Create(ctx context.Context,
 	request *privatev1.StorageBackendsCreateRequest) (response *privatev1.StorageBackendsCreateResponse, err error) {
-	err = s.validateStorageBackend(ctx, request.GetObject(), nil)
+	err = s.validateStorageBackendCreate(ctx, request.GetObject())
 	if err != nil {
 		return
 	}
@@ -159,10 +157,7 @@ func (s *PrivateStorageBackendsServer) Update(ctx context.Context,
 
 	existingSB := getResponse.GetObject()
 
-	merged := cloneStorageBackend(existingSB)
-	applyStorageBackendUpdate(merged, request.GetObject(), request.GetUpdateMask())
-
-	err = s.validateStorageBackend(ctx, merged, existingSB)
+	err = s.validateStorageBackendUpdate(ctx, request.GetObject(), existingSB)
 	if err != nil {
 		return
 	}
@@ -177,76 +172,34 @@ func (s *PrivateStorageBackendsServer) Delete(ctx context.Context,
 	return
 }
 
-func (s *PrivateStorageBackendsServer) validateStorageBackend(_ context.Context,
-	newSB *privatev1.StorageBackend, existingSB *privatev1.StorageBackend) error {
+func (s *PrivateStorageBackendsServer) validateStorageBackendCreate(_ context.Context,
+	sb *privatev1.StorageBackend) error {
 
-	if newSB == nil {
+	if sb == nil {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "storage backend is mandatory")
 	}
-
-	if newSB.GetProvider() == "" {
+	if sb.GetProvider() == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'provider' is required")
 	}
-	if newSB.GetEndpoint() == "" {
+	if sb.GetEndpoint() == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'endpoint' is required")
 	}
-	if newSB.GetCredentials() == nil || newSB.GetCredentials().GetUsername() == "" {
+	if sb.GetCredentials() == nil || sb.GetCredentials().GetUsername() == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'credentials.username' is required")
 	}
-	if newSB.GetCredentials().GetPassword() == "" {
+	if sb.GetCredentials().GetPassword() == "" {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'credentials.password' is required")
 	}
-
-	if existingSB != nil {
-		if newSB.GetProvider() != existingSB.GetProvider() {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
-				"field 'provider' is immutable and cannot be changed from '%s' to '%s'",
-				existingSB.GetProvider(), newSB.GetProvider())
-		}
-		if newSB.GetMetadata().GetName() != existingSB.GetMetadata().GetName() {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
-				"field 'metadata.name' is immutable and cannot be changed from '%s' to '%s'",
-				existingSB.GetMetadata().GetName(), newSB.GetMetadata().GetName())
-		}
-		if newSB.GetMetadata().GetTenant() != existingSB.GetMetadata().GetTenant() {
-			return grpcstatus.Errorf(grpccodes.InvalidArgument,
-				"field 'metadata.tenant' is immutable and cannot be changed")
-		}
-	}
-
 	return nil
 }
 
-func cloneStorageBackend(sb *privatev1.StorageBackend) *privatev1.StorageBackend {
-	return proto.Clone(sb).(*privatev1.StorageBackend)
-}
+func (s *PrivateStorageBackendsServer) validateStorageBackendUpdate(_ context.Context,
+	newSB *privatev1.StorageBackend, existingSB *privatev1.StorageBackend) error {
 
-func applyStorageBackendUpdate(base, update *privatev1.StorageBackend, mask *fieldmaskpb.FieldMask) {
-	if mask == nil || len(mask.GetPaths()) == 0 {
-		proto.Merge(base, update)
-		return
+	if newSB.GetProvider() != "" && newSB.GetProvider() != existingSB.GetProvider() {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument,
+			"field 'provider' is immutable and cannot be changed from '%s' to '%s'",
+			existingSB.GetProvider(), newSB.GetProvider())
 	}
-	for _, path := range mask.GetPaths() {
-		switch path {
-		case "description":
-			base.SetDescription(update.GetDescription())
-		case "endpoint":
-			base.SetEndpoint(update.GetEndpoint())
-		case "credentials":
-			base.SetCredentials(update.GetCredentials())
-		case "provider":
-			base.SetProvider(update.GetProvider())
-		case "status.state":
-			if base.GetStatus() == nil {
-				base.SetStatus(&privatev1.StorageBackendStatus{})
-			}
-			base.GetStatus().SetState(update.GetStatus().GetState())
-		case "status.message":
-			if base.GetStatus() == nil {
-				base.SetStatus(&privatev1.StorageBackendStatus{})
-			}
-			base.GetStatus().SetMessage(update.GetStatus().GetMessage())
-		default:
-		}
-	}
+	return nil
 }

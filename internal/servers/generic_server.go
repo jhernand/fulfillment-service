@@ -892,6 +892,10 @@ func (s *GenericServer[O]) setPayload(event *privatev1.Event, object proto.Messa
 	case *privatev1.BareMetalInstanceCatalogItem:
 		event.SetBareMetalInstanceCatalogItem(object)
 	case *privatev1.StorageBackend:
+		object = proto.Clone(object).(*privatev1.StorageBackend)
+		if object.GetCredentials() != nil {
+			object.GetCredentials().SetPassword("")
+		}
 		event.SetStorageBackend(object)
 	default:
 		return fmt.Errorf("unknown object type '%T'", object)
