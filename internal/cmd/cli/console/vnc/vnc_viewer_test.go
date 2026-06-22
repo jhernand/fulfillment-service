@@ -14,18 +14,43 @@ language governing permissions and limitations under the License.
 package vnc
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/osac-project/fulfillment-service/internal/terminal"
 )
 
 var _ = Describe("Viewer detection", func() {
+	var (
+		c   *runnerContext
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		console, err := terminal.NewConsole().
+			SetLogger(slog.Default()).
+			SetStdout(io.Discard).
+			SetStderr(io.Discard).
+			Build()
+		Expect(err).NotTo(HaveOccurred())
+		err = console.AddTemplates(templatesFS, "templates")
+		Expect(err).NotTo(HaveOccurred())
+		c = &runnerContext{
+			logger:  slog.Default(),
+			console: console,
+		}
+	})
+
 	Describe("resolveExplicit", func() {
 		It("should resolve a path containing /", func() {
-			v, err := resolveExplicit("/bin/sh")
+			v, err := c.resolveExplicit(ctx, "/bin/sh")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(v.name).To(Equal("sh"))
 			args := v.argsFunc("test-addr")
@@ -33,20 +58,20 @@ var _ = Describe("Viewer detection", func() {
 		})
 
 		It("should fail for a non-existent path", func() {
-			_, err := resolveExplicit("/nonexistent/viewer")
+			_, err := c.resolveExplicit(ctx, "/nonexistent/viewer")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("viewer not found"))
 		})
 
 		It("should resolve a name on PATH", func() {
 			// "sh" should be on PATH in any test environment.
-			v, err := resolveExplicit("sh")
+			v, err := c.resolveExplicit(ctx, "sh")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(v.name).To(Equal("sh"))
 		})
 
 		It("should fail for a name not on PATH", func() {
-			_, err := resolveExplicit("nonexistent-vnc-viewer-binary")
+			_, err := c.resolveExplicit(ctx, "nonexistent-vnc-viewer-binary")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not found on PATH"))
 		})
@@ -77,26 +102,36 @@ var _ = Describe("Viewer detection", func() {
 		}
 
 		It("should use vncURI for remote-viewer", func() {
-			path := createFakeBinary("remote-viewer")
-			v, err := resolveExplicit(path)
+			path := createFakeBinary(binRemoteViewer)
+			v, err := c.resolveExplicit(ctx, path)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(v.name).To(Equal("remote-viewer"))
+			Expect(v.name).To(Equal(binRemoteViewer))
+			Expect(v.addrFunc("127.0.0.1", 5900)).To(Equal("vnc://127.0.0.1:5900"))
+			args := v.argsFunc("vnc://127.0.0.1:5900")
+			Expect(args).To(Equal([]string{path, "vnc://127.0.0.1:5900"}))
+		})
+
+		It("should use vncURI for remmina", func() {
+			path := createFakeBinary(binRemmina)
+			v, err := c.resolveExplicit(ctx, path)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(v.name).To(Equal(binRemmina))
 			Expect(v.addrFunc("127.0.0.1", 5900)).To(Equal("vnc://127.0.0.1:5900"))
 			args := v.argsFunc("vnc://127.0.0.1:5900")
 			Expect(args).To(Equal([]string{path, "vnc://127.0.0.1:5900"}))
 		})
 
 		It("should use plainAddr for vncviewer", func() {
-			path := createFakeBinary("vncviewer")
-			v, err := resolveExplicit(path)
+			path := createFakeBinary(binVNCViewer)
+			v, err := c.resolveExplicit(ctx, path)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(v.name).To(Equal("vncviewer"))
+			Expect(v.name).To(Equal(binVNCViewer))
 			Expect(v.addrFunc("127.0.0.1", 5900)).To(Equal("127.0.0.1:5900"))
 		})
 
 		It("should add -WarnUnencrypted=0 for vncviewer on macOS only", func() {
-			path := createFakeBinary("vncviewer")
-			v, err := resolveExplicit(path)
+			path := createFakeBinary(binVNCViewer)
+			v, err := c.resolveExplicit(ctx, path)
 			Expect(err).NotTo(HaveOccurred())
 			args := v.argsFunc("127.0.0.1:5900")
 			if runtime.GOOS == "darwin" {
@@ -108,7 +143,7 @@ var _ = Describe("Viewer detection", func() {
 
 		It("should fall back to generic for unknown viewer", func() {
 			path := createFakeBinary("my-custom-vnc")
-			v, err := resolveExplicit(path)
+			v, err := c.resolveExplicit(ctx, path)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(v.name).To(Equal("my-custom-vnc"))
 			Expect(v.addrFunc("127.0.0.1", 5900)).To(Equal("127.0.0.1:5900"))
@@ -124,7 +159,7 @@ var _ = Describe("Viewer detection", func() {
 			err := os.WriteFile(fakeBin, []byte("#!/bin/sh\n"), 0755)
 			Expect(err).NotTo(HaveOccurred())
 
-			v, err := detectViewer(fakeBin)
+			v, err := c.detectViewer(ctx, fakeBin)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(v.name).To(Equal("fake-viewer"))
 			args := v.argsFunc("test-addr")
@@ -132,7 +167,7 @@ var _ = Describe("Viewer detection", func() {
 		})
 
 		It("should return error for explicit viewer that does not exist", func() {
-			_, err := detectViewer("/tmp/nonexistent-vnc-viewer-binary")
+			_, err := c.detectViewer(ctx, "/tmp/nonexistent-vnc-viewer-binary")
 			Expect(err).To(HaveOccurred())
 		})
 	})

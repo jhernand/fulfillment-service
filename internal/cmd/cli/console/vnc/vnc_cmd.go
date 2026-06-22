@@ -15,6 +15,7 @@ package vnc
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +32,9 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 )
+
+//go:embed templates
+var templatesFS embed.FS
 
 // Cmd returns the `console vnc` command.
 func Cmd() *cobra.Command {
@@ -104,6 +108,11 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	c.logger = logging.LoggerFromContext(ctx)
 	c.console = terminal.ConsoleFromContext(ctx)
 
+	// Load the templates for the console messages:
+	if err := c.console.AddTemplates(templatesFS, "templates"); err != nil {
+		return fmt.Errorf("failed to load templates: %w", err)
+	}
+
 	cfg := config.SettingsFromContext(ctx)
 	if !cfg.Armed() {
 		c.console.Errorf(ctx, "Not logged in. Run 'osac login' first.\n")
@@ -129,11 +138,9 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	if !c.args.proxyOnly {
-		c.v, err = detectViewer(c.args.viewer)
+		c.v, err = c.detectViewer(ctx, c.args.viewer)
 		if err != nil {
-			c.console.Errorf(ctx, "%v\n", err)
-			c.console.Infof(ctx, "Use --proxy-only to start the proxy without a viewer.\n")
-			return exit.Error(1)
+			return err
 		}
 	}
 
@@ -155,7 +162,9 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		defer cancel()
 	}
 
-	c.console.Infof(ctx, "VNC proxy listening on %s\n", c.listener.Addr())
+	c.console.Render(ctx, "proxy_listening.txt", map[string]any{
+		"Address": c.listener.Addr(),
+	})
 
 	opts := connect.Options{
 		Logger:      c.logger,
@@ -166,14 +175,18 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		InstanceID:  instanceID,
 		ConsoleType: publicv1.ConsoleType_CONSOLE_TYPE_VNC,
 		OnConnected: func(ctx context.Context) {
-			c.console.Infof(ctx, "Connected to %s.\n", instanceID)
+			c.console.Render(ctx, "connected.txt", map[string]any{
+				"Instance": instanceID,
+			})
 		},
 	}
 
 	err = connect.WithRetry(ctx, opts, c.proxyVNC)
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		c.console.Errorf(ctx, "\nSession timed out after %s.\n", c.args.timeout)
+		c.console.Render(ctx, "session_timeout.txt", map[string]any{
+			"Timeout": c.args.timeout,
+		})
 		return nil
 	case errors.Is(err, context.Canceled):
 		err = nil
