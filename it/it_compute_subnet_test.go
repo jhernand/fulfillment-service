@@ -16,6 +16,7 @@ package it
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2/dsl/core"
 	. "github.com/onsi/gomega"
@@ -87,6 +88,17 @@ var _ = Describe("ComputeInstance with Subnet attachment", func() {
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 
+		// Wait for the VN reconciler to finish initial processing before
+		// overriding state, same as the subnet wait below.
+		Eventually(func(g Gomega) {
+			resp, err := virtualNetworksClient.Get(ctx, privatev1.VirtualNetworksGetRequest_builder{
+				Id: virtualNetworkId,
+			}.Build())
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(resp.GetObject().GetStatus().GetState()).To(
+				Equal(privatev1.VirtualNetworkState_VIRTUAL_NETWORK_STATE_PENDING))
+		}, time.Minute, time.Second).Should(Succeed())
+
 		// Set VirtualNetwork to READY state via private Update API
 		// In IT environment there is no osac-operator/feedback controller to reconcile state
 		vnGetResp, err := virtualNetworksClient.Get(ctx, privatev1.VirtualNetworksGetRequest_builder{
@@ -115,6 +127,18 @@ var _ = Describe("ComputeInstance with Subnet attachment", func() {
 			}.Build(),
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
+
+		// Wait for the subnet reconciler to finish initial processing before
+		// overriding state. The reconciler sets state from UNSPECIFIED to PENDING;
+		// without this wait, a stale reconciler event can overwrite our READY state.
+		Eventually(func(g Gomega) {
+			resp, err := subnetsClient.Get(ctx, privatev1.SubnetsGetRequest_builder{
+				Id: subnetId,
+			}.Build())
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(resp.GetObject().GetStatus().GetState()).To(
+				Equal(privatev1.SubnetState_SUBNET_STATE_PENDING))
+		}, time.Minute, time.Second).Should(Succeed())
 
 		// Set Subnet to READY state via private Update API
 		subGetResp, err := subnetsClient.Get(ctx, privatev1.SubnetsGetRequest_builder{
