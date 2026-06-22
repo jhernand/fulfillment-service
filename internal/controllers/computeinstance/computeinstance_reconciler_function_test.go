@@ -183,6 +183,142 @@ var _ = Describe("buildSpec", func() {
 			Expect(spec.UserDataSecretRef.Name).To(Equal("test-explicit-fields-user-data"))
 		})
 
+		Describe("Guest OS Family Mapping", func() {
+			It("Maps is_windows=true to GuestOSFamily='windows'", func() {
+				ctx := context.Background()
+				template := "osac.templates.ocp_virt_vm"
+
+				// Set up fake client with subnet CR
+				hubNamespace := "test-hub"
+				subnetID := "test-subnet"
+				subnetCR := &osacv1alpha1.Subnet{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: hubNamespace,
+						Name:      "test-sn",
+						Labels:    map[string]string{labels.SubnetUuid: subnetID},
+					},
+				}
+				scheme := runtime.NewScheme()
+				Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+				Expect(corev1.AddToScheme(scheme)).To(Succeed())
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(subnetCR).
+					Build()
+
+				// Create task with is_windows=true
+				isWindows := true
+				task := &task{
+					r: &function{logger: logger},
+					computeInstance: privatev1.ComputeInstance_builder{
+						Id: "test-windows-vm",
+						Spec: privatev1.ComputeInstanceSpec_builder{
+							Template:  template,
+							IsWindows: &isWindows,
+							NetworkAttachments: []*privatev1.NetworkAttachment{
+								privatev1.NetworkAttachment_builder{Subnet: subnetID}.Build(),
+							},
+						}.Build(),
+					}.Build(),
+					hubNamespace: hubNamespace,
+					hubClient:    fakeClient,
+				}
+
+				spec, err := task.buildSpec(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(spec.GuestOSFamily).To(Equal("windows"))
+			})
+
+			It("Maps is_windows=false to GuestOSFamily='linux'", func() {
+				ctx := context.Background()
+				template := "osac.templates.ocp_virt_vm"
+
+				// Set up fake client with subnet CR
+				hubNamespace := "test-hub"
+				subnetID := "test-subnet"
+				subnetCR := &osacv1alpha1.Subnet{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: hubNamespace,
+						Name:      "test-sn",
+						Labels:    map[string]string{labels.SubnetUuid: subnetID},
+					},
+				}
+				scheme := runtime.NewScheme()
+				Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+				Expect(corev1.AddToScheme(scheme)).To(Succeed())
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(subnetCR).
+					Build()
+
+				// Create task with is_windows=false
+				isWindows := false
+				task := &task{
+					r: &function{logger: logger},
+					computeInstance: privatev1.ComputeInstance_builder{
+						Id: "test-linux-vm",
+						Spec: privatev1.ComputeInstanceSpec_builder{
+							Template:  template,
+							IsWindows: &isWindows,
+							NetworkAttachments: []*privatev1.NetworkAttachment{
+								privatev1.NetworkAttachment_builder{Subnet: subnetID}.Build(),
+							},
+						}.Build(),
+					}.Build(),
+					hubNamespace: hubNamespace,
+					hubClient:    fakeClient,
+				}
+
+				spec, err := task.buildSpec(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(spec.GuestOSFamily).To(Equal("linux"))
+			})
+
+			It("Maps is_windows not set (omitted) to GuestOSFamily='linux'", func() {
+				ctx := context.Background()
+				template := "osac.templates.ocp_virt_vm"
+
+				// Set up fake client with subnet CR
+				hubNamespace := "test-hub"
+				subnetID := "test-subnet"
+				subnetCR := &osacv1alpha1.Subnet{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: hubNamespace,
+						Name:      "test-sn",
+						Labels:    map[string]string{labels.SubnetUuid: subnetID},
+					},
+				}
+				scheme := runtime.NewScheme()
+				Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+				Expect(corev1.AddToScheme(scheme)).To(Succeed())
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(subnetCR).
+					Build()
+
+				// Create task WITHOUT is_windows field (omitted entirely)
+				task := &task{
+					r: &function{logger: logger},
+					computeInstance: privatev1.ComputeInstance_builder{
+						Id: "test-default-linux-vm",
+						Spec: privatev1.ComputeInstanceSpec_builder{
+							Template: template,
+							// IsWindows is NOT set - omitted
+							NetworkAttachments: []*privatev1.NetworkAttachment{
+								privatev1.NetworkAttachment_builder{Subnet: subnetID}.Build(),
+							},
+						}.Build(),
+					}.Build(),
+					hubNamespace: hubNamespace,
+					hubClient:    fakeClient,
+				}
+
+				spec, err := task.buildSpec(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(spec.GuestOSFamily).To(Equal("linux"))
+			})
+		})
+
 		It("Excludes explicit fields from spec map when not set", func() {
 			ctx := context.Background()
 			template := "osac.templates.ocp_virt_vm"
