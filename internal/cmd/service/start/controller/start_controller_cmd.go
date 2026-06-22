@@ -914,7 +914,7 @@ func (r *runnerContext) waitForServer(ctx context.Context) error {
 			ctx,
 			"Server not yet ready",
 			slog.Duration("elapsed", time.Since(start)),
-			slog.Any("error", err),
+			slog.String("error", err.Error()),
 		)
 		select {
 		case <-ctx.Done():

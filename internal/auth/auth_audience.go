@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2025 Red Hat Inc.
+Copyright (c) 2026 Red Hat, Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
 License. You may obtain a copy of the License at
@@ -13,7 +13,6 @@ language governing permissions and limitations under the License.
 
 package auth
 
-// Names of frequently used authentication and authorization headers.
-const (
-	Authorization = "authorization"
-)
+// Audience is the expected value of the 'aud' claim in JWT tokens issued for this service. Identity providers (for
+// example Keycloak) should be configured to include this value in the audience claim of tokens intended for the API.
+const Audience = "osac-api"
