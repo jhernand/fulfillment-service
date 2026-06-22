@@ -28,6 +28,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	bmfov1alpha1 "github.com/osac-project/bare-metal-fulfillment-operator/api/v1alpha1"
 
@@ -174,49 +175,27 @@ func (t *task) update(ctx context.Context) error {
 		t.userDataSecretName = fmt.Sprintf("%s%s", t.bareMetalInstance.GetId(), userDataSecretSuffix)
 	}
 
-	spec, err := t.buildSpec(ctx)
-	if err != nil {
-		return err
-	}
-
 	if object == nil {
 		object = &bmfov1alpha1.BareMetalInstance{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace:    t.hubNamespace,
-				GenerateName: objectPrefix,
-				Labels: map[string]string{
-					labels.BareMetalInstanceUuid: t.bareMetalInstance.GetId(),
-				},
-				Annotations: map[string]string{
-					annotations.Tenant: t.bareMetalInstance.GetMetadata().GetTenant(),
-				},
+				Namespace: t.hubNamespace,
+				Name:      fmt.Sprintf("%s%s", objectPrefix, t.bareMetalInstance.GetId()),
 			},
-			Spec: spec,
 		}
-		err = t.hubClient.Create(ctx, object)
-		if err != nil {
-			return err
-		}
-		t.r.logger.DebugContext(
-			ctx,
-			"Created bare metal instance",
-			slog.String("namespace", object.GetNamespace()),
-			slog.String("name", object.GetName()),
-		)
-	} else {
-		update := object.DeepCopy()
-		update.Spec = spec
-		err = t.hubClient.Patch(ctx, update, clnt.MergeFrom(object))
-		if err != nil {
-			return err
-		}
-		t.r.logger.DebugContext(
-			ctx,
-			"Updated bare metal instance",
-			slog.String("namespace", object.GetNamespace()),
-			slog.String("name", object.GetName()),
-		)
 	}
+
+	result, err := controllerutil.CreateOrPatch(ctx, t.hubClient, object, func() error {
+		return t.mutateBMI(ctx, object)
+	})
+	if err != nil {
+		return err
+	}
+	t.r.logger.DebugContext(
+		ctx,
+		fmt.Sprintf("%s bare metal instance", result),
+		slog.String("namespace", object.GetNamespace()),
+		slog.String("name", object.GetName()),
+	)
 
 	t.syncStatus(object)
 
@@ -502,23 +481,30 @@ func mapConditionStatus(status metav1.ConditionStatus) privatev1.ConditionStatus
 	}
 }
 
-// buildSpec constructs the spec for the Kubernetes BareMetalInstance object by resolving the
-// catalog item to a template and mapping fulfillment fields to CRD fields.
-func (t *task) buildSpec(ctx context.Context) (bmfov1alpha1.BareMetalInstanceSpec, error) {
-	catalogItemID := t.bareMetalInstance.GetSpec().GetCatalogItem()
+// mutateBMI sets the fulfillment-service-owned metadata and spec fields, leaving
+// operator-managed fields (ExternalHostID, HostClass, NetworkClass, etc.) untouched.
+func (t *task) mutateBMI(ctx context.Context, object *bmfov1alpha1.BareMetalInstance) error {
+	if object.Labels == nil {
+		object.Labels = make(map[string]string)
+	}
+	object.Labels[labels.BareMetalInstanceUuid] = t.bareMetalInstance.GetId()
+	if object.Annotations == nil {
+		object.Annotations = make(map[string]string)
+	}
+	object.Annotations[annotations.Tenant] = t.bareMetalInstance.GetMetadata().GetTenant()
 
+	catalogItemID := t.bareMetalInstance.GetSpec().GetCatalogItem()
 	catalogItemResp, err := t.r.bareMetalInstanceCatalogItemsClient.Get(ctx, privatev1.BareMetalInstanceCatalogItemsGetRequest_builder{
 		Id: catalogItemID,
 	}.Build())
 	if err != nil {
-		return bmfov1alpha1.BareMetalInstanceSpec{}, fmt.Errorf(
-			"failed to get catalog item '%s': %w", catalogItemID, err)
+		return fmt.Errorf("failed to get catalog item '%s': %w", catalogItemID, err)
 	}
 
-	spec := bmfov1alpha1.BareMetalInstanceSpec{
-		HostType:   defaultHostType,
-		TemplateID: catalogItemResp.GetObject().GetTemplate(),
-	}
+	object.Spec.HostType = defaultHostType
+	object.Spec.TemplateID = catalogItemResp.GetObject().GetTemplate()
+	object.Spec.TemplateParameters = ""
+	object.Spec.RunStrategy = bmfov1alpha1.RunStrategyUnspecified
 
 	params := map[string]string{}
 	if t.bareMetalInstance.GetSpec().HasSshKey() {
@@ -530,22 +516,21 @@ func (t *task) buildSpec(ctx context.Context) (bmfov1alpha1.BareMetalInstanceSpe
 	if len(params) > 0 {
 		paramsJSON, err := json.Marshal(params)
 		if err != nil {
-			return bmfov1alpha1.BareMetalInstanceSpec{}, fmt.Errorf(
-				"failed to marshal template parameters: %w", err)
+			return fmt.Errorf("failed to marshal template parameters: %w", err)
 		}
-		spec.TemplateParameters = string(paramsJSON)
+		object.Spec.TemplateParameters = string(paramsJSON)
 	}
 
 	if t.bareMetalInstance.GetSpec().HasRunStrategy() {
 		switch t.bareMetalInstance.GetSpec().GetRunStrategy() {
 		case privatev1.BareMetalInstanceRunStrategy_BARE_METAL_INSTANCE_RUN_STRATEGY_ALWAYS:
-			spec.RunStrategy = bmfov1alpha1.RunStrategyAlways
+			object.Spec.RunStrategy = bmfov1alpha1.RunStrategyAlways
 		case privatev1.BareMetalInstanceRunStrategy_BARE_METAL_INSTANCE_RUN_STRATEGY_HALTED:
-			spec.RunStrategy = bmfov1alpha1.RunStrategyHalted
+			object.Spec.RunStrategy = bmfov1alpha1.RunStrategyHalted
 		}
 	}
 
-	return spec, nil
+	return nil
 }
 
 // ensureUserDataSecret creates a Kubernetes Secret containing the cloud-init user data
