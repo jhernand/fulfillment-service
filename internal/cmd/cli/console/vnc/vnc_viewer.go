@@ -14,12 +14,15 @@ language governing permissions and limitations under the License.
 package vnc
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/osac-project/fulfillment-service/internal/exit"
 )
 
 // viewer describes a VNC viewer binary and how to format its connection address.
@@ -29,23 +32,50 @@ type viewer struct {
 	argsFunc func(addr string) []string
 }
 
+// Binary names of supported VNC viewers.
+const (
+	binRemoteViewer = "remote-viewer"
+	binVNCViewer    = "vncviewer"
+	binRemmina      = "remmina"
+)
+
 // detectViewer finds a VNC viewer binary. If explicit is non-empty, it is
 // resolved as a path (if it contains /) or looked up on PATH. Otherwise,
 // platform-specific auto-detection is used.
-func detectViewer(explicit string) (*viewer, error) {
+func (c *runnerContext) detectViewer(ctx context.Context, explicit string) (*viewer, error) {
 	if explicit != "" {
-		return resolveExplicit(explicit)
+		v, err := c.resolveExplicit(ctx, explicit)
+		if err != nil {
+			c.console.Render(ctx, "viewer_error.txt", map[string]any{
+				"Error": err.Error(),
+			})
+			return nil, exit.Error(1)
+		}
+		return v, nil
 	}
+	var v *viewer
+	var err error
 	switch runtime.GOOS {
 	case "darwin":
-		return autoDetectDarwin()
+		v, err = autoDetectDarwin()
 	default:
-		return autoDetectLinux()
+		v, err = autoDetectLinux()
 	}
+	if err != nil {
+		viewers := "virt-viewer, TigerVNC, or Remmina"
+		if runtime.GOOS == "darwin" {
+			viewers = "TigerVNC or another VNC viewer"
+		}
+		c.console.Render(ctx, "no_viewer_found.txt", map[string]any{
+			"Viewers": viewers,
+		})
+		return nil, exit.Error(1)
+	}
+	return v, nil
 }
 
 // resolveExplicit resolves s as a path (if it contains a separator) or as a binary name on PATH.
-func resolveExplicit(s string) (*viewer, error) {
+func (c *runnerContext) resolveExplicit(ctx context.Context, s string) (*viewer, error) {
 	var path string
 	if strings.ContainsRune(s, os.PathSeparator) {
 		if _, err := os.Stat(s); err != nil {
@@ -61,6 +91,10 @@ func resolveExplicit(s string) (*viewer, error) {
 	}
 	af, argf := knownViewerOverrides(path)
 	if af == nil {
+		c.console.Render(ctx, "unrecognized_viewer.txt", map[string]any{
+			"Viewer":    filepath.Base(path),
+			"Supported": strings.Join([]string{binRemoteViewer, binVNCViewer, binRemmina}, ", "),
+		})
 		af = plainAddr
 		argf = func(addr string) []string { return []string{path, addr} }
 	}
@@ -78,9 +112,9 @@ func knownViewerOverrides(path string) (
 	func(string) []string,
 ) {
 	switch filepath.Base(path) {
-	case "remote-viewer":
+	case binRemoteViewer, binRemmina:
 		return vncURI, func(addr string) []string { return []string{path, addr} }
-	case "vncviewer":
+	case binVNCViewer:
 		if runtime.GOOS == "darwin" {
 			return plainAddr, func(addr string) []string {
 				return []string{path, "-WarnUnencrypted=0", addr}
@@ -93,23 +127,30 @@ func knownViewerOverrides(path string) (
 }
 
 // Auto-detect: Linux
-// Priority: 1. remote-viewer (virt-viewer), 2. vncviewer (TigerVNC)
+// Priority: 1. remote-viewer (virt-viewer), 2. vncviewer (TigerVNC), 3. remmina
 func autoDetectLinux() (*viewer, error) {
-	if path, err := exec.LookPath("remote-viewer"); err == nil {
+	if path, err := exec.LookPath(binRemoteViewer); err == nil {
 		return &viewer{
-			name:     "remote-viewer",
+			name:     binRemoteViewer,
 			addrFunc: vncURI,
 			argsFunc: func(addr string) []string { return []string{path, addr} },
 		}, nil
 	}
-	if path, err := exec.LookPath("vncviewer"); err == nil {
+	if path, err := exec.LookPath(binVNCViewer); err == nil {
 		return &viewer{
-			name:     "vncviewer",
+			name:     binVNCViewer,
 			addrFunc: plainAddr,
 			argsFunc: func(addr string) []string { return []string{path, addr} },
 		}, nil
 	}
-	return nil, fmt.Errorf("no VNC viewer found; install virt-viewer or tigervnc")
+	if path, err := exec.LookPath(binRemmina); err == nil {
+		return &viewer{
+			name:     binRemmina,
+			addrFunc: vncURI,
+			argsFunc: func(addr string) []string { return []string{path, addr} },
+		}, nil
+	}
+	return nil, fmt.Errorf("no VNC viewer found; install virt-viewer, tigervnc, or remmina")
 }
 
 // Auto-detect: macOS
@@ -154,7 +195,7 @@ func autoDetectDarwin() (*viewer, error) {
 	}
 
 	// 4. RealVNC Viewer
-	if path, err := exec.LookPath("vncviewer"); err == nil {
+	if path, err := exec.LookPath(binVNCViewer); err == nil {
 		return &viewer{
 			name:     "RealVNC Viewer",
 			addrFunc: plainAddr,
@@ -165,9 +206,9 @@ func autoDetectDarwin() (*viewer, error) {
 	}
 
 	// 5. remote-viewer (Homebrew)
-	if path, err := exec.LookPath("remote-viewer"); err == nil {
+	if path, err := exec.LookPath(binRemoteViewer); err == nil {
 		return &viewer{
-			name:     "remote-viewer",
+			name:     binRemoteViewer,
 			addrFunc: vncURI,
 			argsFunc: func(addr string) []string { return []string{path, addr} },
 		}, nil
