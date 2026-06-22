@@ -22,7 +22,7 @@ import (
 
 var _ = DescribeMigration("Rename organizations to tenants", func() {
 	It("Renames the organizations table to tenants", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 57)
+		err := tool.Migrate(ctx, 58)
 		Expect(err).ToNot(HaveOccurred())
 
 		_, err = conn.Exec(ctx, `
@@ -33,7 +33,7 @@ var _ = DescribeMigration("Rename organizations to tenants", func() {
 	})
 
 	It("Removes the organizations table", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 57)
+		err := tool.Migrate(ctx, 58)
 		Expect(err).ToNot(HaveOccurred())
 
 		var count int
@@ -47,7 +47,7 @@ var _ = DescribeMigration("Rename organizations to tenants", func() {
 	})
 
 	It("Renames the archived table", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 57)
+		err := tool.Migrate(ctx, 58)
 		Expect(err).ToNot(HaveOccurred())
 
 		var count int
@@ -61,7 +61,7 @@ var _ = DescribeMigration("Rename organizations to tenants", func() {
 	})
 
 	It("Preserves tenant foreign key constraints", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 57)
+		err := tool.Migrate(ctx, 58)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Insert a valid tenant first:
@@ -81,7 +81,7 @@ var _ = DescribeMigration("Rename organizations to tenants", func() {
 	})
 
 	It("Preserves the immutable column trigger", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 57)
+		err := tool.Migrate(ctx, 58)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Insert a tenant:
