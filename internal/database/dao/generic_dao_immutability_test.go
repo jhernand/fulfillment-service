@@ -77,6 +77,7 @@ var _ = Describe("Immutable fields", func() {
 		// Create the DAO:
 		generic, err = NewGenericDAO[*privatev1.Organization]().
 			SetLogger(logger).
+			SetTableName("tenants").
 			SetTenancyLogic(tenancy).
 			Build()
 		Expect(err).ToNot(HaveOccurred())

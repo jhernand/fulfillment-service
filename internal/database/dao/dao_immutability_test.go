@@ -48,7 +48,7 @@ var _ = Describe("Immutable columns", func() {
 
 		// Create a test object:
 		_, err = conn.Exec(ctx, `
-			insert into organizations (
+			insert into tenants (
 				id,
 				name,
 				tenant,
@@ -67,7 +67,7 @@ var _ = Describe("Immutable columns", func() {
 	Describe("Database trigger", func() {
 		It("Rejects update that changes the one immutable column", func() {
 			_, err := conn.Exec(ctx, `
-				update organizations set
+				update tenants set
 					name = 'your-tenant'
 				where
 					id = 'my-tenant'
@@ -80,13 +80,13 @@ var _ = Describe("Immutable columns", func() {
 				"name"
 			]`))
 			Expect(pgErr.Message).To(Equal(
-				`column 'name' of table 'organizations' is immutable`,
+				`column 'name' of table 'tenants' is immutable`,
 			))
 		})
 
 		It("Rejects update that changes two immutable columns", func() {
 			_, err := conn.Exec(ctx, `
-				update organizations set
+				update tenants set
 					name = 'your-name',
 					tenant = 'your-tenant'
 				where
@@ -100,12 +100,12 @@ var _ = Describe("Immutable columns", func() {
 				"name",
 				"tenant"
 			]`))
-			Expect(pgErr.Message).To(Equal(`columns 'name' and 'tenant' of table 'organizations' are immutable`))
+			Expect(pgErr.Message).To(Equal(`columns 'name' and 'tenant' of table 'tenants' are immutable`))
 		})
 
 		It("Allows update that includes but doesn't change an i the immutable column", func() {
 			_, err := conn.Exec(ctx, `
-				update organizations set
+				update tenants set
 					name = 'my-tenant'
 				where
 					id = 'my-tenant'
@@ -115,7 +115,7 @@ var _ = Describe("Immutable columns", func() {
 
 		It("Allows update of other columns", func() {
 			_, err := conn.Exec(ctx, `
-				update organizations set
+				update tenants set
 					labels = '{"my-label": "my-value"}'::jsonb
 				where
 					id = 'my-tenant'

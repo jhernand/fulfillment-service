@@ -91,6 +91,7 @@ func (b *PrivateOrganizationsServerBuilder) Build() (result *PrivateOrganization
 	generic, err := NewGenericServer[*privatev1.Organization]().
 		SetLogger(b.logger).
 		SetService(privatev1.Organizations_ServiceDesc.ServiceName).
+		SetTableName("tenants").
 		SetNotifier(b.notifier).
 		SetAttributionLogic(b.attributionLogic).
 		SetTenancyLogic(b.tenancyLogic).
@@ -103,6 +104,7 @@ func (b *PrivateOrganizationsServerBuilder) Build() (result *PrivateOrganization
 	// Create the DAO:
 	dao, err := dao.NewGenericDAO[*privatev1.Organization]().
 		SetLogger(b.logger).
+		SetTableName("tenants").
 		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
 		Build()

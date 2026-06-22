@@ -43,6 +43,7 @@ import (
 type GenericServerBuilder[O dao.Object] struct {
 	logger            *slog.Logger
 	service           string
+	table             string
 	ignoredFields     []any
 	notifier          events.Notifier
 	attributionLogic  auth.AttributionLogic
@@ -104,6 +105,13 @@ func (b *GenericServerBuilder[O]) SetLogger(value *slog.Logger) *GenericServerBu
 // SetService sets the service description. This is mandatory.
 func (b *GenericServerBuilder[O]) SetService(value string) *GenericServerBuilder[O] {
 	b.service = value
+	return b
+}
+
+// SetTableName overrides the database table name. By default the table name is derived from the
+// protobuf message type name. Use this when the table name does not match the type name.
+func (b *GenericServerBuilder[O]) SetTableName(value string) *GenericServerBuilder[O] {
+	b.table = value
 	return b
 }
 
@@ -193,6 +201,9 @@ func (b *GenericServerBuilder[O]) Build() (result *GenericServer[O], err error) 
 	// Create the DAO:
 	daoBuilder := dao.NewGenericDAO[O]()
 	daoBuilder.SetLogger(b.logger)
+	if b.table != "" {
+		daoBuilder.SetTableName(b.table)
+	}
 	daoBuilder.SetTenancyLogic(b.tenancyLogic)
 	if b.notifier != nil {
 		daoBuilder.AddEventCallback(s.notifyEvent)

@@ -44,7 +44,7 @@ var _ = Describe("Referential integrity", func() {
 		ctrl = gomock.NewController(GinkgoT())
 		DeferCleanup(ctrl.Finish)
 
-		// Prepare the database pool (all migrations are applied, so the clusters and organizations
+		// Prepare the database pool (all migrations are applied, so the clusters and tenants
 		// tables exist with the tenant FK constraint already in place):
 		db, err := server.NewInstance().Build()
 		Expect(err).ToNot(HaveOccurred())

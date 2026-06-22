@@ -719,7 +719,7 @@ func (t *tool) checkTableExists(ctx context.Context, pool *pgxpool.Pool, table s
 }
 
 // checkTenantForeignKey verifies that the given table has a foreign key constraint on the 'tenant' column referencing
-// the 'id' column of the 'organizations' table. Returns the number of issues found.
+// the 'id' column of the 'tenants' table. Returns the number of issues found.
 func (t *tool) checkTenantForeignKey(ctx context.Context, pool *pgxpool.Pool, table string) int {
 	constraint := table + "_tenant_fk"
 	var count int
@@ -749,7 +749,7 @@ func (t *tool) checkTenantForeignKey(ctx context.Context, pool *pgxpool.Pool, ta
 			con.contype = 'f' and
 			a.attname = 'tenant' and
 			fn.nspname = 'public' and
-			fc.relname = 'organizations' and
+			fc.relname = 'tenants' and
 			fa.attname = 'id'`,
 		table,
 		constraint,
