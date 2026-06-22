@@ -123,13 +123,13 @@ var _ = Describe("Private bare metal instances server", func() {
 			response, err := server.Create(ctx, privatev1.BareMetalInstancesCreateRequest_builder{
 				Object: privatev1.BareMetalInstance_builder{
 					Spec: privatev1.BareMetalInstanceSpec_builder{
-						CatalogItem: catalogItemID,
-						SshKey:      new(testSSHPublicKey),
+						CatalogItem:  catalogItemID,
+						SshPublicKey: new(testSSHPublicKey),
 					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(response.GetObject().GetSpec().GetSshKey()).To(Equal(testSSHPublicKey))
+			Expect(response.GetObject().GetSpec().GetSshPublicKey()).To(Equal(testSSHPublicKey))
 		})
 
 		It("Rejects nonexistent catalog item", func() {
@@ -178,8 +178,8 @@ var _ = Describe("Private bare metal instances server", func() {
 			_, err := server.Create(ctx, privatev1.BareMetalInstancesCreateRequest_builder{
 				Object: privatev1.BareMetalInstance_builder{
 					Spec: privatev1.BareMetalInstanceSpec_builder{
-						CatalogItem: catalogItemID,
-						SshKey:      new("not-a-valid-ssh-key"),
+						CatalogItem:  catalogItemID,
+						SshPublicKey: new("not-a-valid-ssh-key"),
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -187,7 +187,7 @@ var _ = Describe("Private bare metal instances server", func() {
 			status, ok := grpcstatus.FromError(err)
 			Expect(ok).To(BeTrue())
 			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
-			Expect(status.Message()).To(ContainSubstring("spec.ssh_key"))
+			Expect(status.Message()).To(ContainSubstring("spec.ssh_public_key"))
 		})
 
 		It("Rejects user data exceeding 64 KB at create time", func() {
@@ -260,12 +260,12 @@ var _ = Describe("Private bare metal instances server", func() {
 			Expect(status.Message()).To(ContainSubstring("catalog_item is immutable"))
 		})
 
-		It("Rejects PATCH that changes ssh_key", func() {
+		It("Rejects PATCH that changes ssh_public_key", func() {
 			createResponse, err := server.Create(ctx, privatev1.BareMetalInstancesCreateRequest_builder{
 				Object: privatev1.BareMetalInstance_builder{
 					Spec: privatev1.BareMetalInstanceSpec_builder{
-						CatalogItem: catalogItemID,
-						SshKey:      new(testSSHPublicKey),
+						CatalogItem:  catalogItemID,
+						SshPublicKey: new(testSSHPublicKey),
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -277,19 +277,19 @@ var _ = Describe("Private bare metal instances server", func() {
 				Object: privatev1.BareMetalInstance_builder{
 					Id: object.GetId(),
 					Spec: privatev1.BareMetalInstanceSpec_builder{
-						CatalogItem: catalogItemID,
-						SshKey:      new(otherKey),
+						CatalogItem:  catalogItemID,
+						SshPublicKey: new(otherKey),
 					}.Build(),
 				}.Build(),
 				UpdateMask: &fieldmaskpb.FieldMask{
-					Paths: []string{"spec.ssh_key"},
+					Paths: []string{"spec.ssh_public_key"},
 				},
 			}.Build())
 			Expect(err).To(HaveOccurred())
 			status, ok := grpcstatus.FromError(err)
 			Expect(ok).To(BeTrue())
 			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
-			Expect(status.Message()).To(ContainSubstring("ssh_key is immutable"))
+			Expect(status.Message()).To(ContainSubstring("ssh_public_key is immutable"))
 		})
 
 		It("Rejects PATCH that changes user_data", func() {

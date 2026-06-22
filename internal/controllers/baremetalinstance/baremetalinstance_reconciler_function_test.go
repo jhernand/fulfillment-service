@@ -204,8 +204,8 @@ var _ = Describe("buildSpec", func() {
 			bareMetalInstance: privatev1.BareMetalInstance_builder{
 				Id: "bmi-test",
 				Spec: privatev1.BareMetalInstanceSpec_builder{
-					CatalogItem: "catalog-1",
-					SshKey:      new("ssh-ed25519 AAAA... test@example.com"),
+					CatalogItem:  "catalog-1",
+					SshPublicKey: new("ssh-ed25519 AAAA... test@example.com"),
 				}.Build(),
 			}.Build(),
 			userDataSecretName: "bmi-test-user-data",
@@ -232,8 +232,8 @@ var _ = Describe("buildSpec", func() {
 			bareMetalInstance: privatev1.BareMetalInstance_builder{
 				Id: "bmi-test",
 				Spec: privatev1.BareMetalInstanceSpec_builder{
-					CatalogItem: "catalog-1",
-					SshKey:      new(sshKey),
+					CatalogItem:  "catalog-1",
+					SshPublicKey: new(sshKey),
 				}.Build(),
 			}.Build(),
 		}
@@ -248,7 +248,7 @@ var _ = Describe("buildSpec", func() {
 		Expect(params).ToNot(HaveKey("userDataSecret"))
 	})
 
-	It("should leave templateParameters empty when no ssh_key or user_data", func() {
+	It("should leave templateParameters empty when no ssh_public_key or user_data", func() {
 		catalogItemsClient := defaultFakeCatalogItemsClient()
 
 		t := &task{

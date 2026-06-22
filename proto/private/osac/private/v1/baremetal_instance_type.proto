@@ -41,7 +41,7 @@ message BareMetalInstanceSpec {
   // SSH public key injected into the OS at provisioning time. Immutable after creation.
   // Must be a valid SSH public key in OpenSSH format (ssh-rsa, ssh-ed25519, etc.).
   // Invalid keys are rejected at create time with a 400 error.
-  optional string ssh_key = 2 [(google.api.field_behavior) = IMMUTABLE];
+  optional string ssh_public_key = 2 [(google.api.field_behavior) = IMMUTABLE];
 
   // User data (e.g. cloud-init). Passed to the OS at first boot. Immutable after creation.
   // Maximum size: 64 KB.

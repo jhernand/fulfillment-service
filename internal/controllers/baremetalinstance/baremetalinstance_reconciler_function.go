@@ -521,8 +521,8 @@ func (t *task) buildSpec(ctx context.Context) (bmfov1alpha1.BareMetalInstanceSpe
 	}
 
 	params := map[string]string{}
-	if t.bareMetalInstance.GetSpec().HasSshKey() {
-		params["sshKey"] = t.bareMetalInstance.GetSpec().GetSshKey()
+	if t.bareMetalInstance.GetSpec().HasSshPublicKey() {
+		params["sshKey"] = t.bareMetalInstance.GetSpec().GetSshPublicKey()
 	}
 	if t.userDataSecretName != "" {
 		params["userDataSecret"] = t.userDataSecretName
