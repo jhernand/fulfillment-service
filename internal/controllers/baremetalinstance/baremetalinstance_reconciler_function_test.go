@@ -89,7 +89,7 @@ func newFakeScheme() *runtime.Scheme {
 	return scheme
 }
 
-var _ = Describe("buildSpec", func() {
+var _ = Describe("mutateBMI", func() {
 	var ctx context.Context
 
 	BeforeEach(func() {
@@ -122,10 +122,11 @@ var _ = Describe("buildSpec", func() {
 			}.Build(),
 		}
 
-		spec, err := t.buildSpec(ctx)
+		var obj bmfov1alpha1.BareMetalInstance
+		err := t.mutateBMI(ctx, &obj)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.TemplateID).To(Equal(templateID))
-		Expect(spec.HostType).To(Equal("default"))
+		Expect(obj.Spec.TemplateID).To(Equal(templateID))
+		Expect(obj.Spec.HostType).To(Equal("default"))
 	})
 
 	It("should map run_strategy ALWAYS to RunStrategy Always", func() {
@@ -145,9 +146,10 @@ var _ = Describe("buildSpec", func() {
 			}.Build(),
 		}
 
-		spec, err := t.buildSpec(ctx)
+		var obj bmfov1alpha1.BareMetalInstance
+		err := t.mutateBMI(ctx, &obj)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyAlways))
+		Expect(obj.Spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyAlways))
 	})
 
 	It("should map run_strategy HALTED to RunStrategy Halted", func() {
@@ -167,9 +169,10 @@ var _ = Describe("buildSpec", func() {
 			}.Build(),
 		}
 
-		spec, err := t.buildSpec(ctx)
+		var obj bmfov1alpha1.BareMetalInstance
+		err := t.mutateBMI(ctx, &obj)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyHalted))
+		Expect(obj.Spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyHalted))
 	})
 
 	It("should leave RunStrategy empty when run_strategy is not set", func() {
@@ -188,9 +191,10 @@ var _ = Describe("buildSpec", func() {
 			}.Build(),
 		}
 
-		spec, err := t.buildSpec(ctx)
+		var obj bmfov1alpha1.BareMetalInstance
+		err := t.mutateBMI(ctx, &obj)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyUnspecified))
+		Expect(obj.Spec.RunStrategy).To(Equal(bmfov1alpha1.RunStrategyUnspecified))
 	})
 
 	It("should include sshKey and userDataSecret in templateParameters", func() {
@@ -211,11 +215,12 @@ var _ = Describe("buildSpec", func() {
 			userDataSecretName: "bmi-test-user-data",
 		}
 
-		spec, err := t.buildSpec(ctx)
+		var obj bmfov1alpha1.BareMetalInstance
+		err := t.mutateBMI(ctx, &obj)
 		Expect(err).ToNot(HaveOccurred())
 
 		var params map[string]string
-		Expect(json.Unmarshal([]byte(spec.TemplateParameters), &params)).To(Succeed())
+		Expect(json.Unmarshal([]byte(obj.Spec.TemplateParameters), &params)).To(Succeed())
 		Expect(params["sshKey"]).To(Equal("ssh-ed25519 AAAA... test@example.com"))
 		Expect(params["userDataSecret"]).To(Equal("bmi-test-user-data"))
 	})
@@ -238,11 +243,12 @@ var _ = Describe("buildSpec", func() {
 			}.Build(),
 		}
 
-		spec, err := t.buildSpec(ctx)
+		var obj bmfov1alpha1.BareMetalInstance
+		err := t.mutateBMI(ctx, &obj)
 		Expect(err).ToNot(HaveOccurred())
 
 		var params map[string]string
-		Expect(json.Unmarshal([]byte(spec.TemplateParameters), &params)).To(Succeed())
+		Expect(json.Unmarshal([]byte(obj.Spec.TemplateParameters), &params)).To(Succeed())
 		Expect(params).To(HaveKey("sshKey"))
 		Expect(params["sshKey"]).To(Equal(sshKey))
 		Expect(params).ToNot(HaveKey("userDataSecret"))
@@ -264,9 +270,10 @@ var _ = Describe("buildSpec", func() {
 			}.Build(),
 		}
 
-		spec, err := t.buildSpec(ctx)
+		var obj bmfov1alpha1.BareMetalInstance
+		err := t.mutateBMI(ctx, &obj)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(spec.TemplateParameters).To(BeEmpty())
+		Expect(obj.Spec.TemplateParameters).To(BeEmpty())
 	})
 
 	It("should return error when catalog item fetch fails", func() {
@@ -287,10 +294,96 @@ var _ = Describe("buildSpec", func() {
 			}.Build(),
 		}
 
-		_, err := t.buildSpec(ctx)
+		var obj bmfov1alpha1.BareMetalInstance
+		err := t.mutateBMI(ctx, &obj)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("failed to get catalog item"))
 		Expect(err.Error()).To(ContainSubstring("missing-catalog"))
+	})
+})
+
+var _ = Describe("update", func() {
+	It("should preserve operator-managed spec fields when patching an existing CR", func() {
+		ctx := context.Background()
+		ctrl := gomock.NewController(GinkgoT())
+		DeferCleanup(ctrl.Finish)
+
+		const (
+			bmiID        = "bmi-test-id"
+			hubID        = "hub-1"
+			hubNamespace = "test-ns"
+		)
+
+		existingCR := &bmfov1alpha1.BareMetalInstance{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hubNamespace,
+				Name:      "bmi-existing",
+				Labels: map[string]string{
+					labels.BareMetalInstanceUuid: bmiID,
+				},
+			},
+			Spec: bmfov1alpha1.BareMetalInstanceSpec{
+				HostType:       "default",
+				TemplateID:     "osac.templates.default",
+				ExternalHostID: "host-42",
+				HostClass:      "openstack",
+				NetworkClass:   "openstack",
+			},
+		}
+
+		scheme := newFakeScheme()
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(existingCR).
+			Build()
+
+		hubCache := controllers.NewMockHubCache(ctrl)
+		hubCache.EXPECT().
+			Get(gomock.Any(), hubID).
+			Return(&controllers.HubEntry{
+				Namespace: hubNamespace,
+				Client:    fakeClient,
+			}, nil)
+
+		catalogItemsClient := defaultFakeCatalogItemsClient()
+
+		t := &task{
+			r: &function{
+				logger:                              logger,
+				hubCache:                            hubCache,
+				bareMetalInstanceCatalogItemsClient: catalogItemsClient,
+			},
+			bareMetalInstance: privatev1.BareMetalInstance_builder{
+				Id: bmiID,
+				Metadata: privatev1.Metadata_builder{
+					Finalizers: []string{finalizers.Controller},
+					Tenant:     "test-tenant",
+				}.Build(),
+				Spec: privatev1.BareMetalInstanceSpec_builder{
+					CatalogItem: "catalog-1",
+				}.Build(),
+				Status: privatev1.BareMetalInstanceStatus_builder{
+					Hub:   hubID,
+					State: privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING,
+				}.Build(),
+			}.Build(),
+		}
+
+		err := t.update(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		var updatedCR bmfov1alpha1.BareMetalInstance
+		err = fakeClient.Get(ctx, clnt.ObjectKey{
+			Namespace: hubNamespace,
+			Name:      "bmi-existing",
+		}, &updatedCR)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(updatedCR.Spec.ExternalHostID).To(Equal("host-42"),
+			"ExternalHostID must be preserved — it is managed by the bare-metal-fulfillment-operator")
+		Expect(updatedCR.Spec.HostClass).To(Equal("openstack"),
+			"HostClass must be preserved — it is managed by the bare-metal-fulfillment-operator")
+		Expect(updatedCR.Spec.NetworkClass).To(Equal("openstack"),
+			"NetworkClass must be preserved — it is managed by the bare-metal-fulfillment-operator")
 	})
 })
 
