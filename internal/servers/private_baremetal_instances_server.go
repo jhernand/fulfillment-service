@@ -177,11 +177,11 @@ func (s *PrivateBareMetalInstancesServer) validateSpec(bmi *privatev1.BareMetalI
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "bare metal instance spec is mandatory")
 	}
 
-	if spec.HasSshKey() {
-		sshKey := spec.GetSshKey()
-		if sshKey != "" {
-			if err := validateOpenSSHPublicKey(sshKey); err != nil {
-				return grpcstatus.Errorf(grpccodes.InvalidArgument, "spec.ssh_key: %s", err.Error())
+	if spec.HasSshPublicKey() {
+		sshPublicKey := spec.GetSshPublicKey()
+		if sshPublicKey != "" {
+			if err := validateOpenSSHPublicKey(sshPublicKey); err != nil {
+				return grpcstatus.Errorf(grpccodes.InvalidArgument, "spec.ssh_public_key: %s", err.Error())
 			}
 		}
 	}
@@ -237,12 +237,12 @@ func (s *PrivateBareMetalInstancesServer) validateAndApplyCatalogItem(ctx contex
 	return applyFieldDefinitions(bmi.GetSpec(), item.GetFieldDefinitions())
 }
 
-// validateImmutability ensures catalog_item, ssh_key, and user_data cannot be changed after creation.
+// validateImmutability ensures catalog_item, ssh_public_key, and user_data cannot be changed after creation.
 func (s *PrivateBareMetalInstancesServer) validateImmutability(ctx context.Context,
 	request *privatev1.BareMetalInstancesUpdateRequest) error {
 	mask := request.GetUpdateMask()
 	updatingCatalogItem := updateIncludesField(mask, "spec.catalog_item")
-	updatingSshKey := updateIncludesField(mask, "spec.ssh_key")
+	updatingSshKey := updateIncludesField(mask, "spec.ssh_public_key")
 	updatingUserData := updateIncludesField(mask, "spec.user_data")
 
 	bmi := request.GetObject()
@@ -280,9 +280,9 @@ func (s *PrivateBareMetalInstancesServer) validateImmutability(ctx context.Conte
 			existingSpec.GetCatalogItem(), newSpec.GetCatalogItem())
 	}
 
-	if updatingSshKey && existingSpec.GetSshKey() != newSpec.GetSshKey() {
+	if updatingSshKey && existingSpec.GetSshPublicKey() != newSpec.GetSshPublicKey() {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"cannot change spec.ssh_key: ssh_key is immutable after creation")
+			"cannot change spec.ssh_public_key: ssh_public_key is immutable after creation")
 	}
 
 	if updatingUserData && existingSpec.GetUserData() != newSpec.GetUserData() {

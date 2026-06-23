@@ -120,7 +120,7 @@ func (c *runnerContext) run(cmd *cobra.Command, _ []string) error {
 	}
 	if c.args.sshKey != "" {
 		sshKey := c.args.sshKey
-		spec.SshKey = &sshKey
+		spec.SshPublicKey = &sshKey
 	}
 	if c.args.userData != "" {
 		userData := c.args.userData
