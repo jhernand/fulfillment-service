@@ -22,5 +22,17 @@ columns:
 - header: TITLE
   value: this.title
 
+- header: DESCRIPTION
+  value: "this.description != ''? this.description: '-'"
+
+- header: IPV4
+  value: "has(this.capabilities)? (this.capabilities.supports_ipv4? 'yes': 'no'): '-'"
+
+- header: IPV6
+  value: "has(this.capabilities)? (this.capabilities.supports_ipv6? 'yes': 'no'): '-'"
+
+- header: DUAL STACK
+  value: "has(this.capabilities)? (this.capabilities.supports_dual_stack? 'yes': 'no'): '-'"
+
 - header: DEFAULT
   value: "has(this.is_default) && this.is_default? 'yes': '-'"
