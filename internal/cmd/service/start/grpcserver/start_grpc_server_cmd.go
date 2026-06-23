@@ -147,6 +147,17 @@ func Cmd() *cobra.Command {
 		"",
 		tokenIssuerFlagHelp,
 	)
+	flags.StringSliceVar(
+		&runner.args.emergencyServiceAccounts,
+		"emergency-service-accounts",
+		[]string{
+			"admin",
+			"osac-operator",
+			"osac-operator-controller-manager",
+			"template-publisher",
+		},
+		emergencyServiceAccountsFlagHelp,
+	)
 	network.AddGrpcKeepaliveFlags(flags)
 	return command
 }
@@ -156,15 +167,16 @@ type runnerContext struct {
 	logger *slog.Logger
 	flags  *pflag.FlagSet
 	args   struct {
-		caFiles             []string
-		authType            string
-		externalAuthAddress string
-		trustedTokenIssuers []string
-		tenancyLogic        string
-		tokenSignerCrt      string
-		tokenSignerKey      string
-		tokenEncryptionCrt  string
-		tokenIssuer         string
+		caFiles                  []string
+		authType                 string
+		externalAuthAddress      string
+		trustedTokenIssuers      []string
+		tenancyLogic             string
+		tokenSignerCrt           string
+		tokenSignerKey           string
+		tokenEncryptionCrt       string
+		tokenIssuer              string
+		emergencyServiceAccounts []string
 	}
 }
 
@@ -302,6 +314,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 		SetLogger(c.logger).
 		AddAnonymousMethodRegex(anonymousMethodsRegex).
 		SetMetadataFetcher(metadataFetcher).
+		AddEmergencyServiceAccounts(c.args.emergencyServiceAccounts...).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create Rego authorization interceptor: %w", err)
@@ -1358,4 +1371,10 @@ of the token recipient. Used to encrypt the JWE envelope of issued tokens.
 const tokenIssuerFlagHelp = `
 _URL_ - Issuer URL for JWT tokens. Used as the iss claim. Token
 consumers derive the JWKS endpoint as <issuer>/.well-known/jwks.json.
+`
+
+const emergencyServiceAccountsFlagHelp = `
+_NAMES_ - Comma-separated list of Kubernetes service account names that are allowed to access the private API with
+administrator permissions. These are intended only for emergency situations, for example when the regular authentication
+mechanisms are not working. The service accounts are expected to be in the namespace where the service is deployed.
 `

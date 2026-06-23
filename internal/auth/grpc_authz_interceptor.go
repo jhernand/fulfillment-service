@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/osac-project/fulfillment-service/internal/collections"
 	k8sfiles "github.com/osac-project/fulfillment-service/internal/kubernetes/files"
@@ -47,10 +48,11 @@ type MetadataFetcher func(ctx context.Context, id string) (tenant, project strin
 // using an embedded Rego policy evaluated with the OPA library. Don't create instances of this type directly, use the
 // NewGrpcAuthzInterceptor function instead.
 type GrpcAuthzInterceptorBuilder struct {
-	logger           *slog.Logger
-	anonymousMethods []string
-	inputCallback    func(ctx context.Context, input map[string]any) error
-	metadataFetcher  MetadataFetcher
+	logger                   *slog.Logger
+	anonymousMethods         []string
+	inputCallback            func(ctx context.Context, input map[string]any) error
+	metadataFetcher          MetadataFetcher
+	emergencyServiceAccounts []string
 }
 
 // GrpcAuthzInterceptor is a gRPC interceptor that evaluates an embedded Rego policy for authorization. It reads the
@@ -104,6 +106,15 @@ func (b *GrpcAuthzInterceptorBuilder) SetMetadataFetcher(value MetadataFetcher) 
 	return b
 }
 
+// AddEmergencyServiceAccounts adds Kubernetes service account names that are allowed to access the private API with
+// administrator permissions. These are intended only for emergency situations, for example when the regular
+// authentication mechanisms are not working.
+func (b *GrpcAuthzInterceptorBuilder) AddEmergencyServiceAccounts(
+	values ...string) *GrpcAuthzInterceptorBuilder {
+	b.emergencyServiceAccounts = append(b.emergencyServiceAccounts, values...)
+	return b
+}
+
 // Build uses the data stored in the builder to create and configure a new interceptor.
 func (b *GrpcAuthzInterceptorBuilder) Build() (result *GrpcAuthzInterceptor, err error) {
 	if b.logger == nil {
@@ -141,9 +152,29 @@ func (b *GrpcAuthzInterceptorBuilder) Build() (result *GrpcAuthzInterceptor, err
 		}
 	}
 
+	// Validate and build the full Kubernetes service account names for the emergency accounts:
+	emergencyServiceAccounts := make([]any, 0, len(b.emergencyServiceAccounts))
+	for _, emergencyServiceAccount := range b.emergencyServiceAccounts {
+		emergencyServiceAccount = strings.TrimSpace(emergencyServiceAccount)
+		errs := validation.IsDNS1123Subdomain(emergencyServiceAccount)
+		if len(errs) > 0 {
+			err = fmt.Errorf(
+				"emergency service account name '%s' is not a valid Kubernetes service account name",
+				emergencyServiceAccount,
+			)
+			return
+		}
+
+		emergencyServiceAccountName := fmt.Sprintf(
+			"system:serviceaccount:%s:%s",
+			nsName, emergencyServiceAccount,
+		)
+		emergencyServiceAccounts = append(emergencyServiceAccounts, emergencyServiceAccountName)
+	}
+
 	// Build external data for the policy:
 	policyData := inmem.NewFromObject(map[string]any{
-		"namespace": nsName,
+		"emergency_service_accounts": emergencyServiceAccounts,
 	})
 
 	// Prepare the Rego query by compiling the embedded policy once. The query evaluates all exported variables in

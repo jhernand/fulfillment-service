@@ -18,20 +18,9 @@ import rego.v1
 default allow := false
 
 # Emergency service accounts are Kubernetes service accounts that are allowed to act as administrators in case of
-# emergency situations where it isn't possible to get a valid JWT token from the identity provider.
-#
-# TODO: The 'template-publisher' 'osac-operator' and 'osac-operator-controller-manager' service accounts are used by the
-# template publisher and by the OSAC operator. That assumes that they are in the same Kubernetes clusters, which is
-# wrong, but we need it for now. They should be replaced with Keycloak service accounts.
-emergency_service_account_names := {
-  "admin",
-  "osac-operator",
-  "osac-operator-controller-manager",
-  "template-publisher",
-}
-emergency_service_accounts contains sprintf("system:serviceaccount:%s:%s", [data.namespace, name]) if {
-  some name in emergency_service_account_names
-}
+# emergency situations where it isn't possible to get a valid JWT token from the identity provider. The full service
+# account names are provided via the external data passed to the policy.
+emergency_service_accounts := {name | some name in data.emergency_service_accounts}
 
 # Admin service accounts are service accounts that are allowed to act as administrators.
 admin_service_accounts := {
