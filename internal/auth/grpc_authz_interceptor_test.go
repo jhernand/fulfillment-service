@@ -48,6 +48,51 @@ var _ = Describe("Rego authorization interceptor", func() {
 			Expect(err.Error()).To(ContainSubstring("logger is mandatory"))
 			Expect(interceptor).To(BeNil())
 		})
+
+		It("Rejects empty emergency service account name", func() {
+			_, err := NewGrpcAuthzInterceptor().
+				SetLogger(logger).
+				AddEmergencyServiceAccounts("").
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a valid Kubernetes service account name"))
+		})
+
+		It("Rejects whitespace-only emergency service account name", func() {
+			_, err := NewGrpcAuthzInterceptor().
+				SetLogger(logger).
+				AddEmergencyServiceAccounts("  ").
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a valid Kubernetes service account name"))
+		})
+
+		It("Rejects emergency service account name with colon", func() {
+			_, err := NewGrpcAuthzInterceptor().
+				SetLogger(logger).
+				AddEmergencyServiceAccounts("system:admin").
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a valid Kubernetes service account name"))
+		})
+
+		It("Rejects emergency service account name with uppercase", func() {
+			_, err := NewGrpcAuthzInterceptor().
+				SetLogger(logger).
+				AddEmergencyServiceAccounts("Admin").
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a valid Kubernetes service account name"))
+		})
+
+		It("Rejects emergency service account name starting with hyphen", func() {
+			_, err := NewGrpcAuthzInterceptor().
+				SetLogger(logger).
+				AddEmergencyServiceAccounts("-admin").
+				Build()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not a valid Kubernetes service account name"))
+		})
 	})
 
 	Describe("Permission checks", func() {
@@ -132,6 +177,12 @@ var _ = Describe("Rego authorization interceptor", func() {
 				AddAnonymousMethodRegex(`^/grpc\.health\.v1\.Health/.*$`).
 				AddAnonymousMethodRegex(`^/grpc\.reflection\.v1\.ServerReflection/.*$`).
 				AddAnonymousMethodRegex(`^/osac\.public\.v1\.Capabilities/.*$`).
+				AddEmergencyServiceAccounts(
+					"admin",
+					"osac-operator",
+					"osac-operator-controller-manager",
+					"template-publisher",
+				).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -249,6 +300,10 @@ var _ = Describe("Rego authorization interceptor", func() {
 			),
 			Entry(
 				"Controller manager",
+				"osac", "osac-operator",
+			),
+			Entry(
+				"Alternative controller manager",
 				"osac", "osac-operator-controller-manager",
 			),
 		)

@@ -80,6 +80,12 @@ auth:
   # identifier is in an `id` key but the credential parameter name is `client-id`.
   controllerCredentials:
 
+  # List of names of Kubernetes service accounts that are allowed to access the private API with administrator
+  # permissions. These are intended only for emergency situations, for example when the regular authentication
+  # mechanisms are not working. The service accounts are expected to be in the namespace where the service is deployed.
+  emergencyServiceAccounts:
+  - admin
+
 # Logging configuration:
 log:
 
