@@ -159,6 +159,8 @@ spec:
             - --grpc-server-timeout=1s
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
         readinessProbe:
           exec:
             command:
@@ -170,4 +172,6 @@ spec:
             - --grpc-server-timeout=1s
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
         {{ end }}
