@@ -150,6 +150,12 @@ func Cmd() *cobra.Command {
 		nil,
 		networkAttachmentFlagHelp,
 	)
+	flags.BoolVar(
+		&runner.args.windows,
+		"windows",
+		false,
+		windowsFlagHelp,
+	)
 
 	result.MarkFlagsMutuallyExclusive("catalog-item", "template")
 	result.MarkFlagsOneRequired("catalog-item", "template")
@@ -173,6 +179,7 @@ type runnerContext struct {
 		runStrategy             string
 		userData                string
 		networkAttachments      []string
+		windows                 bool
 	}
 	logger                 *slog.Logger
 	console                *terminal.Console
@@ -723,6 +730,9 @@ func (c *runnerContext) buildSpec(templateID string,
 	if c.args.userData != "" {
 		spec.UserData = new(c.args.userData)
 	}
+	if c.args.windows {
+		spec.IsWindows = new(true)
+	}
 	if err := c.applyNetworkingFlags(&spec); err != nil {
 		return nil, err
 	}
@@ -868,6 +878,9 @@ func (c *runnerContext) buildSpecFromCatalogItem(catalogItemID string) (*publicv
 	}
 	if c.args.userData != "" {
 		spec.UserData = new(c.args.userData)
+	}
+	if c.args.windows {
+		spec.IsWindows = new(true)
 	}
 	if err := c.applyNetworkingFlags(&spec); err != nil {
 		return nil, err
@@ -1021,4 +1034,8 @@ _SPEC_ - Per-NIC network attachment. The value can be a plain subnet ID, or a
 comma-separated specification in the format
 {{ bt }}subnet=ID[,security-groups=ID,ID...]{{ bt }}. Can be
 specified multiple times to attach multiple NICs.
+`
+
+const windowsFlagHelp = `
+_[BOOLEAN]_ - Create a Windows VM. Defaults to {{ bt }}false{{ bt }} (Linux VM).
 `
