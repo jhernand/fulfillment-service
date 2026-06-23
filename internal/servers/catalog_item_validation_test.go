@@ -117,6 +117,37 @@ var _ = Describe("applyFieldDefinitions", func() {
 		Expect(status.Code(err)).To(Equal(codes.InvalidArgument))
 		Expect(err.Error()).To(ContainSubstring("pull_secret"))
 	})
+
+	It("applies is_windows field definition default to compute instance spec", func() {
+		spec := &privatev1.ComputeInstanceSpec{}
+		defaultVal, err := structpb.NewValue(true)
+		Expect(err).ToNot(HaveOccurred())
+		fieldDefs := []*privatev1.FieldDefinition{{
+			Path:     "is_windows",
+			Editable: true,
+			Default:  defaultVal,
+		}}
+		err = applyFieldDefinitions(spec, fieldDefs)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(spec.GetIsWindows()).To(BeTrue())
+	})
+
+	It("forces is_windows value for non-editable field definition", func() {
+		falseVal := false
+		spec := &privatev1.ComputeInstanceSpec{
+			IsWindows: &falseVal,
+		}
+		defaultVal, err := structpb.NewValue(true)
+		Expect(err).ToNot(HaveOccurred())
+		fieldDefs := []*privatev1.FieldDefinition{{
+			Path:     "is_windows",
+			Editable: false,
+			Default:  defaultVal,
+		}}
+		err = applyFieldDefinitions(spec, fieldDefs)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(spec.GetIsWindows()).To(BeTrue())
+	})
 })
 
 var _ = Describe("addPublishedFilter", func() {

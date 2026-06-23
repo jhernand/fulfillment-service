@@ -64,6 +64,9 @@ func ApplySpecDefaults(spec *privatev1.ComputeInstanceSpec, defaults *privatev1.
 	if !spec.HasRunStrategy() && defaults.HasRunStrategy() {
 		spec.SetRunStrategy(defaults.GetRunStrategy())
 	}
+	if !spec.HasIsWindows() && defaults.HasIsWindows() {
+		spec.SetIsWindows(defaults.GetIsWindows())
+	}
 	mergeImageDefaults(spec, defaults)
 	mergeBootDiskDefaults(spec, defaults)
 }
