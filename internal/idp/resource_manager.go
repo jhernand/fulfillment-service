@@ -13,6 +13,8 @@ language governing permissions and limitations under the License.
 
 package idp
 
+//go:generate go run go.uber.org/mock/mockgen -destination=resource_manager_mock.go -package=idp . ResourceManagerInterface
+
 import (
 	"context"
 	"errors"
@@ -20,6 +22,15 @@ import (
 	"log/slog"
 	"strings"
 )
+
+// ResourceManagerInterface defines the interface for resource management operations.
+type ResourceManagerInterface interface {
+	DeleteProjectGroups(ctx context.Context, tenant, projectName string) error
+	CreateProjectGroups(ctx context.Context, tenant, projectName string) (string, error)
+	AddUserToProjectGroup(ctx context.Context, tenant, projectName, username, groupType string) error
+	AddUserToGroupByID(ctx context.Context, tenant, username, groupID string) error
+	RemoveUserFromProjectGroup(ctx context.Context, tenant, projectName, username, groupType string) error
+}
 
 // ResourceManager handles Keycloak group operations for authorization.
 // Works with any IdP client that implements group management.
@@ -77,6 +88,13 @@ func (m *ResourceManager) DeleteProjectGroups(ctx context.Context, tenant, proje
 	if projectName == "" {
 		return fmt.Errorf("project name is required")
 	}
+	// Validate inputs to prevent path traversal attacks
+	if strings.Contains(projectName, "..") {
+		return fmt.Errorf("project name cannot contain '..' sequence")
+	}
+	if strings.Contains(projectName, "/") {
+		return fmt.Errorf("project name cannot contain '/' character")
+	}
 
 	// Delete the parent project group, which will cascade delete the viewers and managers subgroups
 	projectGroupPath := fmt.Sprintf("/%s", projectName)
@@ -132,6 +150,13 @@ func (m *ResourceManager) CreateProjectGroups(ctx context.Context, tenant, proje
 	}
 	if projectName == "" {
 		return "", fmt.Errorf("project name is required")
+	}
+	// Validate inputs to prevent path traversal attacks
+	if strings.Contains(projectName, "..") {
+		return "", fmt.Errorf("project name cannot contain '..' sequence")
+	}
+	if strings.Contains(projectName, "/") {
+		return "", fmt.Errorf("project name cannot contain '/' character")
 	}
 
 	m.logger.DebugContext(ctx, "Creating project groups",
@@ -190,6 +215,13 @@ func (m *ResourceManager) AddUserToProjectGroup(ctx context.Context, tenant, pro
 	if groupType != GroupNameViewers && groupType != GroupNameManagers {
 		return fmt.Errorf("invalid group type %q, must be %q or %q", groupType, GroupNameViewers, GroupNameManagers)
 	}
+	// Validate inputs to prevent path traversal attacks
+	if strings.Contains(projectName, "..") {
+		return fmt.Errorf("project name cannot contain '..' sequence")
+	}
+	if strings.Contains(projectName, "/") {
+		return fmt.Errorf("project name cannot contain '/' character")
+	}
 
 	groupPath := fmt.Sprintf("/%s/%s", projectName, groupType)
 	groupID, err := m.getGroupIDByPath(ctx, tenant, groupPath)
@@ -232,6 +264,49 @@ func (m *ResourceManager) AddUserToGroupByID(ctx context.Context, tenant, userna
 	m.logger.InfoContext(ctx, "Added user to group",
 		slog.String("group_id", groupID),
 		slog.String("!username", username),
+		slog.String("tenant", tenant),
+	)
+
+	return nil
+}
+
+// RemoveUserFromProjectGroup removes a user from a project group (viewers or managers).
+func (m *ResourceManager) RemoveUserFromProjectGroup(ctx context.Context, tenant, projectName, username, groupType string) error {
+	if tenant == "" {
+		return fmt.Errorf("tenant is required")
+	}
+	if projectName == "" {
+		return fmt.Errorf("project name is required")
+	}
+	if username == "" {
+		return fmt.Errorf("username is required")
+	}
+	if groupType != GroupNameViewers && groupType != GroupNameManagers {
+		return fmt.Errorf("invalid group type %q, must be %q or %q", groupType, GroupNameViewers, GroupNameManagers)
+	}
+	// Validate inputs to prevent path traversal attacks
+	if strings.Contains(projectName, "..") {
+		return fmt.Errorf("project name cannot contain '..' sequence")
+	}
+	if strings.Contains(projectName, "/") {
+		return fmt.Errorf("project name cannot contain '/' character")
+	}
+
+	groupPath := fmt.Sprintf("/%s/%s", projectName, groupType)
+	groupID, err := m.getGroupIDByPath(ctx, tenant, groupPath)
+	if err != nil {
+		return fmt.Errorf("failed to get group ID for %s: %w", groupPath, err)
+	}
+
+	if err = m.client.RemoveUserFromGroup(ctx, tenant, username, groupID); err != nil {
+		return fmt.Errorf("failed to remove user from group %s: %w", groupPath, err)
+	}
+
+	m.logger.InfoContext(ctx, "Removed user from project group",
+		slog.String("group_path", groupPath),
+		slog.String("group_type", groupType),
+		slog.String("!username", username),
+		slog.String("project_name", projectName),
 		slog.String("tenant", tenant),
 	)
 

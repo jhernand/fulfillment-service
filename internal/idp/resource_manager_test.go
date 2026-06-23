@@ -126,6 +126,18 @@ var _ = Describe("ResourceManager", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("project name is required"))
 		})
+
+		It("should reject project name with forward slash", func() {
+			err := manager.DeleteProjectGroups(ctx, "test-org", "foo/bar")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name cannot contain '/' character"))
+		})
+
+		It("should reject project name with dot-dot sequence", func() {
+			err := manager.DeleteProjectGroups(ctx, "test-org", "../malicious")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name cannot contain '..' sequence"))
+		})
 	})
 
 	Describe("CreateProjectGroups", func() {
@@ -181,6 +193,34 @@ var _ = Describe("ResourceManager", func() {
 			managersID, err := manager.CreateProjectGroups(ctx, "test-org", "test-project")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create viewers group"))
+			Expect(managersID).To(BeEmpty())
+		})
+
+		It("should return error when tenant is empty", func() {
+			managersID, err := manager.CreateProjectGroups(ctx, "", "test-project")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("tenant is required"))
+			Expect(managersID).To(BeEmpty())
+		})
+
+		It("should return error when project name is empty", func() {
+			managersID, err := manager.CreateProjectGroups(ctx, "test-org", "")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name is required"))
+			Expect(managersID).To(BeEmpty())
+		})
+
+		It("should reject project name with forward slash", func() {
+			managersID, err := manager.CreateProjectGroups(ctx, "test-org", "foo/bar")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name cannot contain '/' character"))
+			Expect(managersID).To(BeEmpty())
+		})
+
+		It("should reject project name with dot-dot sequence", func() {
+			managersID, err := manager.CreateProjectGroups(ctx, "test-org", "../malicious")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name cannot contain '..' sequence"))
 			Expect(managersID).To(BeEmpty())
 		})
 	})
@@ -269,6 +309,117 @@ var _ = Describe("ResourceManager", func() {
 			err := manager.AddUserToProjectGroup(ctx, "test-org", "test-project", "user-123", GroupNameManagers)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to add user to group"))
+		})
+
+		It("should reject project name with forward slash", func() {
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "foo/bar", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name cannot contain '/' character"))
+		})
+
+		It("should reject project name with dot-dot sequence", func() {
+			err := manager.AddUserToProjectGroup(ctx, "test-org", "../malicious", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name cannot contain '..' sequence"))
+		})
+	})
+
+	Describe("RemoveUserFromProjectGroup", func() {
+		var manager *ResourceManager
+
+		BeforeEach(func() {
+			var err error
+			manager, err = NewResourceManager().
+				SetLogger(logger).
+				SetClient(mockClient).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should remove user from managers group", func() {
+			mockClient.EXPECT().
+				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/managers").
+				Return("managers-group-id", nil)
+
+			mockClient.EXPECT().
+				RemoveUserFromGroup(gomock.Any(), "test-org", "user-123", "managers-group-id").
+				Return(nil)
+
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "test-project", "user-123", GroupNameManagers)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should remove user from viewers group", func() {
+			mockClient.EXPECT().
+				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/viewers").
+				Return("viewers-group-id", nil)
+
+			mockClient.EXPECT().
+				RemoveUserFromGroup(gomock.Any(), "test-org", "user-456", "viewers-group-id").
+				Return(nil)
+
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "test-project", "user-456", GroupNameViewers)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should return error when tenant is empty", func() {
+			err := manager.RemoveUserFromProjectGroup(ctx, "", "test-project", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("tenant is required"))
+		})
+
+		It("should return error when project name is empty", func() {
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name is required"))
+		})
+
+		It("should return error when username is empty", func() {
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "test-project", "", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("username is required"))
+		})
+
+		It("should return error for invalid group type", func() {
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "test-project", "user-123", "invalid-group")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid group type"))
+		})
+
+		It("should return error when group lookup fails", func() {
+			mockClient.EXPECT().
+				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/managers").
+				Return("", errors.New("group not found"))
+
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "test-project", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to get group ID"))
+		})
+
+		It("should return error when removing user from group fails", func() {
+			mockClient.EXPECT().
+				GetGroupIDByPath(gomock.Any(), "test-org", "/test-project/managers").
+				Return("managers-group-id", nil)
+
+			mockClient.EXPECT().
+				RemoveUserFromGroup(gomock.Any(), "test-org", "user-123", "managers-group-id").
+				Return(errors.New("keycloak error"))
+
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "test-project", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to remove user from group"))
+		})
+
+		It("should reject project name with forward slash", func() {
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "foo/bar", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name cannot contain '/' character"))
+		})
+
+		It("should reject project name with dot-dot sequence", func() {
+			err := manager.RemoveUserFromProjectGroup(ctx, "test-org", "../malicious", "user-123", GroupNameManagers)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("project name cannot contain '..' sequence"))
 		})
 	})
 })

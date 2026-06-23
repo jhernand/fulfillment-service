@@ -91,6 +91,8 @@ type Client interface {
 	GetGroupIDByPath(ctx context.Context, organizationName, groupPath string) (string, error)
 	// AddUserToGroup adds a user to an organization group by group ID.
 	AddUserToGroup(ctx context.Context, organizationName, username, groupID string) error
+	// RemoveUserFromGroup removes a user from an organization group by group ID.
+	RemoveUserFromGroup(ctx context.Context, organizationName, username, groupID string) error
 
 	// Identity Provider operations
 	// CreateIdentityProvider creates a new external identity provider at the realm level.
