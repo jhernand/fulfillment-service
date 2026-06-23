@@ -16,11 +16,14 @@ package keycloak
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/osac-project/fulfillment-service/internal/apiclient"
 )
 
 // CreateAuthorizationGroup creates a Keycloak organization group for authorization purposes.
@@ -37,7 +40,7 @@ import (
 // Organization groups are scoped per organization, so paths can be simple and readable.
 // This method creates the full hierarchy if parent groups don't exist.
 // See https://www.keycloak.org/2026/04/org-groups for details.
-func (c *Client) CreateAuthorizationGroup(ctx context.Context, organizationName, groupName, groupPath string) error {
+func (c *Client) CreateAuthorizationGroup(ctx context.Context, organizationName, groupName, groupPath string) (string, error) {
 	c.logger.DebugContext(ctx, "Creating organization authorization group",
 		slog.String("organizationName", organizationName),
 		slog.String("groupName", groupName),
@@ -47,7 +50,7 @@ func (c *Client) CreateAuthorizationGroup(ctx context.Context, organizationName,
 	// Get the organization ID first
 	org, err := c.GetOrganization(ctx, organizationName)
 	if err != nil {
-		return fmt.Errorf("failed to get organization: %w", err)
+		return "", fmt.Errorf("failed to get organization: %w", err)
 	}
 
 	// Parse the path to create parent groups if needed
@@ -57,16 +60,23 @@ func (c *Client) CreateAuthorizationGroup(ctx context.Context, organizationName,
 	cache := make(map[string]string) // path -> groupID
 	err = c.ensureGroupHierarchyWithCache(ctx, org.ID, groupPath, cache)
 	if err != nil {
-		return fmt.Errorf("failed to ensure group hierarchy: %w", err)
+		return "", fmt.Errorf("failed to ensure group hierarchy: %w", err)
+	}
+
+	// Get the created group ID from the cache
+	groupID, ok := cache[groupPath]
+	if !ok {
+		return "", fmt.Errorf("group was created but ID not found in cache: %s", groupPath)
 	}
 
 	c.logger.DebugContext(ctx, "Created organization authorization group",
 		slog.String("organizationName", organizationName),
 		slog.String("groupName", groupName),
 		slog.String("groupPath", groupPath),
+		slog.String("groupID", groupID),
 	)
 
-	return nil
+	return groupID, nil
 }
 
 // DeleteAuthorizationGroup deletes a Keycloak organization group by ID.
@@ -130,7 +140,8 @@ func (c *Client) ensureGroupHierarchyWithCache(ctx context.Context, orgID, group
 		groupID, err := c.createOrganizationGroupWithParent(ctx, orgID, segment, parentID)
 		if err != nil {
 			// Check if it's a "already exists" error (409 conflict)
-			if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "status=409") {
+			var apiErr *apiclient.APIError
+			if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
 				// Group already exists, look up its ID using orgID directly
 				groupID, lookupErr := c.getGroupIDByPathWithOrgID(ctx, orgID, currentPath)
 				if lookupErr != nil {
@@ -268,4 +279,129 @@ func (c *Client) getGroupIDByPath(ctx context.Context, organizationName, groupPa
 	// Use getGroupIDByPathWithOrgID which lists all groups instead of using the search parameter.
 	// The search parameter is unreliable for recently-created groups.
 	return c.getGroupIDByPathWithOrgID(ctx, org.ID, groupPath)
+}
+
+// getUserIDByUsername looks up a user's UUID by their username.
+// Returns the user's UUID if found, or an error if not found or multiple matches exist.
+func (c *Client) getUserIDByUsername(ctx context.Context, username string) (string, error) {
+	// Use exact match to find the user by username
+	path := fmt.Sprintf("/admin/realms/%s/users?username=%s&exact=true",
+		url.PathEscape(c.realmName),
+		url.QueryEscape(username),
+	)
+
+	response, err := c.httpClient.DoRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to search for user: %w", err)
+	}
+	defer response.Body.Close()
+
+	var users []struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&users); err != nil {
+		return "", fmt.Errorf("failed to decode user search response: %w", err)
+	}
+
+	if len(users) == 0 {
+		return "", fmt.Errorf("user not found: %s", username)
+	}
+	if len(users) > 1 {
+		return "", fmt.Errorf("multiple users found for username: %s", username)
+	}
+
+	return users[0].ID, nil
+}
+
+// AddUserToGroup adds a user to an organization group by group ID.
+func (c *Client) AddUserToGroup(ctx context.Context, organizationName, username, groupID string) error {
+	c.logger.DebugContext(ctx, "Adding user to organization group",
+		slog.String("organizationName", organizationName),
+		slog.String("!username", username),
+		slog.String("groupID", groupID),
+	)
+
+	// Look up the user's UUID by username
+	userUUID, err := c.getUserIDByUsername(ctx, username)
+	if err != nil {
+		return fmt.Errorf("failed to lookup user UUID: %w", err)
+	}
+
+	c.logger.DebugContext(ctx, "Looked up user UUID",
+		slog.String("!username", username),
+		slog.String("!uuid", userUUID),
+	)
+
+	// Get the organization ID
+	org, err := c.GetOrganization(ctx, organizationName)
+	if err != nil {
+		return fmt.Errorf("failed to get organization: %w", err)
+	}
+
+	// First, ensure the user is a member of the organization
+	// This is required before we can add them to organization groups
+	err = c.ensureOrganizationMember(ctx, org.ID, userUUID)
+	if err != nil {
+		return fmt.Errorf("failed to ensure user is organization member: %w", err)
+	}
+
+	// Add the user to the organization group via the group's members endpoint
+	// PUT /admin/realms/{realm}/organizations/{orgId}/groups/{groupId}/members/{userId}
+	// The userId is in the path, not the body
+	path := fmt.Sprintf("/admin/realms/%s/organizations/%s/groups/%s/members/%s",
+		url.PathEscape(c.realmName),
+		url.PathEscape(org.ID),
+		url.PathEscape(groupID),
+		url.PathEscape(userUUID),
+	)
+
+	response, err := c.httpClient.DoRequest(ctx, http.MethodPut, path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to add user to organization group: %w", err)
+	}
+	defer response.Body.Close()
+
+	c.logger.InfoContext(ctx, "Added user to organization group",
+		slog.String("organizationName", organizationName),
+		slog.String("!username", username),
+		slog.String("!uuid", userUUID),
+		slog.String("groupID", groupID),
+	)
+
+	return nil
+}
+
+// ensureOrganizationMember ensures a user is a member of an organization.
+// If they're already a member, this is a no-op. If not, adds them.
+func (c *Client) ensureOrganizationMember(ctx context.Context, orgID, userUUID string) error {
+	// Try to add the user as an organization member
+	// POST /admin/realms/{realm}/organizations/{org-id}/members
+	// Body is just the user UUID as a plain string
+	path := fmt.Sprintf("/admin/realms/%s/organizations/%s/members",
+		url.PathEscape(c.realmName),
+		url.PathEscape(orgID),
+	)
+
+	response, err := c.httpClient.DoRequest(ctx, http.MethodPost, path, userUUID)
+	if err != nil {
+		// Check if they're already a member (409 conflict)
+		var apiErr *apiclient.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
+			c.logger.DebugContext(ctx, "User already member of organization",
+				slog.String("!userUUID", userUUID),
+				slog.String("!orgID", orgID),
+			)
+			return nil
+		}
+		return fmt.Errorf("failed to add user to organization: %w", err)
+	}
+	defer response.Body.Close()
+
+	c.logger.DebugContext(ctx, "Added user to organization",
+		slog.String("!userUUID", userUUID),
+		slog.String("!orgID", orgID),
+	)
+
+	return nil
 }

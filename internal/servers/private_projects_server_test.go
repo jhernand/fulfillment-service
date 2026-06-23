@@ -16,6 +16,8 @@ package servers
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	grpccodes "google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
@@ -328,5 +330,102 @@ var _ = Describe("Private projects server", func() {
 		updateResp, err := privateServer.Update(ctx, updateReq)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(updateResp.Object.Spec.Description).To(HaveValue(Equal("Updated description")))
+	})
+
+	It("Rejects update of the name of a project", func() {
+		createResponse, err := privateServer.Create(ctx, privatev1.ProjectsCreateRequest_builder{
+			Object: privatev1.Project_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name:   "my-project",
+					Tenant: "my-tenant",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		object := createResponse.GetObject()
+		id := object.GetId()
+		updateResponse, err := privateServer.Update(ctx, privatev1.ProjectsUpdateRequest_builder{
+			Object: privatev1.Project_builder{
+				Id: id,
+				Metadata: privatev1.Metadata_builder{
+					Name: "your-project",
+				}.Build(),
+			}.Build(),
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{"metadata.name"},
+			},
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		Expect(updateResponse).To(BeNil())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+		Expect(status.Message()).To(Equal(
+			"field 'metadata.name' is immutable",
+		))
+	})
+
+	It("Rejects update of the tenant of a project", func() {
+		createResponse, err := privateServer.Create(ctx, privatev1.ProjectsCreateRequest_builder{
+			Object: privatev1.Project_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name:   "my-project",
+					Tenant: "my-tenant",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		object := createResponse.GetObject()
+		id := object.GetId()
+		updateResponse, err := privateServer.Update(ctx, privatev1.ProjectsUpdateRequest_builder{
+			Object: privatev1.Project_builder{
+				Id: id,
+				Metadata: privatev1.Metadata_builder{
+					Tenant: "your-tenant",
+				}.Build(),
+			}.Build(),
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{"metadata.tenant"},
+			},
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		Expect(updateResponse).To(BeNil())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+		Expect(status.Message()).To(Equal(
+			"field 'metadata.tenant' is immutable",
+		))
+	})
+
+	It("Silently ignores update of the creator of a project", func() {
+		createResponse, err := privateServer.Create(ctx, privatev1.ProjectsCreateRequest_builder{
+			Object: privatev1.Project_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name:   "my-project",
+					Tenant: "my-tenant",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		object := createResponse.GetObject()
+		id := object.GetId()
+		originalCreator := object.GetMetadata().GetCreator()
+
+		// Attempt to update creator - should be silently ignored
+		updateResponse, err := privateServer.Update(ctx, privatev1.ProjectsUpdateRequest_builder{
+			Object: privatev1.Project_builder{
+				Id: id,
+				Metadata: privatev1.Metadata_builder{
+					Creator: "attacker-user",
+				}.Build(),
+			}.Build(),
+			UpdateMask: &fieldmaskpb.FieldMask{
+				Paths: []string{"metadata.creator"},
+			},
+		}.Build())
+		Expect(err).ToNot(HaveOccurred())
+		Expect(updateResponse).ToNot(BeNil())
+		Expect(updateResponse.Object.GetMetadata().GetCreator()).To(Equal(originalCreator))
 	})
 })

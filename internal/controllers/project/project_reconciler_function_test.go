@@ -207,12 +207,12 @@ var _ = Describe("Validation and Activation", func() {
 			// Expect viewers group creation
 			mockIdpClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "acme", "viewers", "/test-project/viewers").
-				Return(nil)
+				Return("viewers-id", nil)
 
 			// Expect managers group creation
 			mockIdpClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "acme", "managers", "/test-project/managers").
-				Return(nil)
+				Return("managers-id", nil)
 
 			task := &task{
 				r:       functionObj,
@@ -243,12 +243,12 @@ var _ = Describe("Validation and Activation", func() {
 			// Expect viewers group creation
 			mockIdpClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "acme", "viewers", "/test-project/viewers").
-				Return(nil)
+				Return("viewers-id", nil)
 
 			// Expect managers group creation
 			mockIdpClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "acme", "managers", "/test-project/managers").
-				Return(nil)
+				Return("managers-id", nil)
 
 			task := &task{
 				r:       functionObj,
@@ -307,12 +307,12 @@ var _ = Describe("Validation and Activation", func() {
 			// Expect viewers group creation
 			mockIdpClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "acme", "viewers", "/child-project/viewers").
-				Return(nil)
+				Return("viewers-id", nil)
 
 			// Expect managers group creation
 			mockIdpClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "acme", "managers", "/child-project/managers").
-				Return(nil)
+				Return("managers-id", nil)
 
 			task := &task{
 				r:       functionObj,
@@ -374,12 +374,12 @@ var _ = Describe("Validation and Activation", func() {
 			// Expect viewers group creation
 			mockIdpClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "acme", "viewers", "/child-project/viewers").
-				Return(nil)
+				Return("viewers-id", nil)
 
 			// Expect managers group creation (new organization groups API)
 			mockIdpClient.EXPECT().
 				CreateAuthorizationGroup(gomock.Any(), "acme", "managers", "/child-project/managers").
-				Return(nil)
+				Return("managers-id", nil)
 
 			task := &task{
 				r:       functionObj,
@@ -787,7 +787,7 @@ var _ = Describe("Deletion Cleanup", func() {
 				Size: 0,
 			}, nil)
 
-		// Expect parent project group ID lookup to fail
+		// Expect parent project group ID lookup to fail (groups already deleted or never existed)
 		mockIdpClient.EXPECT().
 			GetGroupIDByPath(gomock.Any(), "acme", "/test-project").
 			Return("", status.Error(codes.NotFound, "group not found"))

@@ -205,9 +205,11 @@ func (t *task) validateAndActivate(ctx context.Context) error {
 	}
 
 	// Create Keycloak groups for project authorization
-	if err := t.r.resourceManager.CreateProjectGroups(ctx,
+	// Returns the managers group ID to avoid timing issues with group lookup
+	managersGroupID, err := t.r.resourceManager.CreateProjectGroups(ctx,
 		t.project.GetMetadata().GetTenant(),
-		t.project.GetMetadata().GetName()); err != nil {
+		t.project.GetMetadata().GetName())
+	if err != nil {
 		t.updateCondition(
 			privatev1.ProjectConditionType_PROJECT_CONDITION_TYPE_KEYCLOAK_SYNC,
 			privatev1.ConditionStatus_CONDITION_STATUS_FALSE,
@@ -229,6 +231,31 @@ func (t *task) validateAndActivate(ctx context.Context) error {
 			}
 		}
 		return fmt.Errorf("failed to create Keycloak groups: %w", err)
+	}
+
+	// Add the project creator to the managers group using the ID from creation
+	// This avoids timing issues where the group isn't immediately visible in searches
+	creator := t.project.GetMetadata().GetCreator()
+	if creator != "" {
+		if err := t.r.resourceManager.AddUserToGroupByID(ctx,
+			t.project.GetMetadata().GetTenant(),
+			creator,
+			managersGroupID); err != nil {
+			t.r.logger.WarnContext(ctx, "Failed to add creator to managers group",
+				slog.String("project", t.project.GetMetadata().GetName()),
+				slog.String("!creator", creator),
+				slog.String("managers_group_id", managersGroupID),
+				slog.Any("error", err),
+			)
+			// Don't fail the reconciliation if this fails - the groups are still created
+			// The user can be added manually later
+		} else {
+			t.r.logger.InfoContext(ctx, "Added creator to project managers group",
+				slog.String("project", t.project.GetMetadata().GetName()),
+				slog.String("!creator", creator),
+				slog.String("managers_group_id", managersGroupID),
+			)
+		}
 	}
 
 	// Update condition with success

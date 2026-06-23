@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	idp "github.com/osac-project/fulfillment-service/internal/idp"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,21 +42,21 @@ func (m *MockClient) EXPECT() *MockClientMockRecorder {
 }
 
 // AddUserToGroup mocks base method.
-func (m *MockClient) AddUserToGroup(ctx context.Context, organizationName, username, groupID string) error {
+func (m *MockClient) AddUserToGroup(ctx context.Context, organizationName, userID, groupID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddUserToGroup", ctx, organizationName, username, groupID)
+	ret := m.ctrl.Call(m, "AddUserToGroup", ctx, organizationName, userID, groupID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // AddUserToGroup indicates an expected call of AddUserToGroup.
-func (mr *MockClientMockRecorder) AddUserToGroup(ctx, organizationName, username, groupID any) *gomock.Call {
+func (mr *MockClientMockRecorder) AddUserToGroup(ctx, organizationName, userID, groupID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddUserToGroup", reflect.TypeOf((*MockClient)(nil).AddUserToGroup), ctx, organizationName, username, groupID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddUserToGroup", reflect.TypeOf((*MockClient)(nil).AddUserToGroup), ctx, organizationName, userID, groupID)
 }
 
 // AssignClientRolesToUser mocks base method.
-func (m *MockClient) AssignClientRolesToUser(ctx context.Context, organizationName, userID, clientID string, roles []*Role) error {
+func (m *MockClient) AssignClientRolesToUser(ctx context.Context, organizationName, userID, clientID string, roles []*idp.Role) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AssignClientRolesToUser", ctx, organizationName, userID, clientID, roles)
 	ret0, _ := ret[0].(error)
@@ -97,7 +98,7 @@ func (mr *MockClientMockRecorder) AssignOrganizationAdminPermissions(ctx, organi
 }
 
 // AssignOrganizationRolesToUser mocks base method.
-func (m *MockClient) AssignOrganizationRolesToUser(ctx context.Context, organizationName, userID string, roles []*Role) error {
+func (m *MockClient) AssignOrganizationRolesToUser(ctx context.Context, organizationName, userID string, roles []*idp.Role) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AssignOrganizationRolesToUser", ctx, organizationName, userID, roles)
 	ret0, _ := ret[0].(error)
@@ -126,10 +127,10 @@ func (mr *MockClientMockRecorder) CreateAuthorizationGroup(ctx, organizationName
 }
 
 // CreateAuthorizationResource mocks base method.
-func (m *MockClient) CreateAuthorizationResource(ctx context.Context, resource *AuthorizationResource) (*AuthorizationResource, error) {
+func (m *MockClient) CreateAuthorizationResource(ctx context.Context, resource *idp.AuthorizationResource) (*idp.AuthorizationResource, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateAuthorizationResource", ctx, resource)
-	ret0, _ := ret[0].(*AuthorizationResource)
+	ret0, _ := ret[0].(*idp.AuthorizationResource)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -140,26 +141,11 @@ func (mr *MockClientMockRecorder) CreateAuthorizationResource(ctx, resource any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAuthorizationResource", reflect.TypeOf((*MockClient)(nil).CreateAuthorizationResource), ctx, resource)
 }
 
-// CreateIdentityProvider mocks base method.
-func (m *MockClient) CreateIdentityProvider(ctx context.Context, idp *IdentityProvider) (*IdentityProvider, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateIdentityProvider", ctx, idp)
-	ret0, _ := ret[0].(*IdentityProvider)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// CreateIdentityProvider indicates an expected call of CreateIdentityProvider.
-func (mr *MockClientMockRecorder) CreateIdentityProvider(ctx, idp any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateIdentityProvider", reflect.TypeOf((*MockClient)(nil).CreateIdentityProvider), ctx, idp)
-}
-
 // CreateOrganization mocks base method.
-func (m *MockClient) CreateOrganization(ctx context.Context, org *Organization) (*Organization, error) {
+func (m *MockClient) CreateOrganization(ctx context.Context, org *idp.Organization) (*idp.Organization, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateOrganization", ctx, org)
-	ret0, _ := ret[0].(*Organization)
+	ret0, _ := ret[0].(*idp.Organization)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -171,10 +157,10 @@ func (mr *MockClientMockRecorder) CreateOrganization(ctx, org any) *gomock.Call 
 }
 
 // CreateUser mocks base method.
-func (m *MockClient) CreateUser(ctx context.Context, organizationName string, user *User) (*User, error) {
+func (m *MockClient) CreateUser(ctx context.Context, organizationName string, user *idp.User) (*idp.User, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateUser", ctx, organizationName, user)
-	ret0, _ := ret[0].(*User)
+	ret0, _ := ret[0].(*idp.User)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -242,10 +228,10 @@ func (mr *MockClientMockRecorder) DeleteUser(ctx, organizationName, userID any) 
 }
 
 // GetAuthorizationResource mocks base method.
-func (m *MockClient) GetAuthorizationResource(ctx context.Context, resourceID string) (*AuthorizationResource, error) {
+func (m *MockClient) GetAuthorizationResource(ctx context.Context, resourceID string) (*idp.AuthorizationResource, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetAuthorizationResource", ctx, resourceID)
-	ret0, _ := ret[0].(*AuthorizationResource)
+	ret0, _ := ret[0].(*idp.AuthorizationResource)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -272,10 +258,10 @@ func (mr *MockClientMockRecorder) GetGroupIDByPath(ctx, organizationName, groupP
 }
 
 // GetIdentityProvider mocks base method.
-func (m *MockClient) GetIdentityProvider(ctx context.Context, alias string) (*IdentityProvider, error) {
+func (m *MockClient) GetIdentityProvider(ctx context.Context, alias string) (*idp.IdentityProvider, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetIdentityProvider", ctx, alias)
-	ret0, _ := ret[0].(*IdentityProvider)
+	ret0, _ := ret[0].(*idp.IdentityProvider)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -287,10 +273,10 @@ func (mr *MockClientMockRecorder) GetIdentityProvider(ctx, alias any) *gomock.Ca
 }
 
 // GetOrganization mocks base method.
-func (m *MockClient) GetOrganization(ctx context.Context, name string) (*Organization, error) {
+func (m *MockClient) GetOrganization(ctx context.Context, name string) (*idp.Organization, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetOrganization", ctx, name)
-	ret0, _ := ret[0].(*Organization)
+	ret0, _ := ret[0].(*idp.Organization)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -302,10 +288,10 @@ func (mr *MockClientMockRecorder) GetOrganization(ctx, name any) *gomock.Call {
 }
 
 // GetOrganizationIdentityProvider mocks base method.
-func (m *MockClient) GetOrganizationIdentityProvider(ctx context.Context, organizationName, alias string) (*IdentityProvider, error) {
+func (m *MockClient) GetOrganizationIdentityProvider(ctx context.Context, organizationName, alias string) (*idp.IdentityProvider, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetOrganizationIdentityProvider", ctx, organizationName, alias)
-	ret0, _ := ret[0].(*IdentityProvider)
+	ret0, _ := ret[0].(*idp.IdentityProvider)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -317,10 +303,10 @@ func (mr *MockClientMockRecorder) GetOrganizationIdentityProvider(ctx, organizat
 }
 
 // GetUser mocks base method.
-func (m *MockClient) GetUser(ctx context.Context, organizationName, userID string) (*User, error) {
+func (m *MockClient) GetUser(ctx context.Context, organizationName, userID string) (*idp.User, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetUser", ctx, organizationName, userID)
-	ret0, _ := ret[0].(*User)
+	ret0, _ := ret[0].(*idp.User)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -332,10 +318,10 @@ func (mr *MockClientMockRecorder) GetUser(ctx, organizationName, userID any) *go
 }
 
 // GetUserClientRoles mocks base method.
-func (m *MockClient) GetUserClientRoles(ctx context.Context, organizationName, userID, clientID string) ([]*Role, error) {
+func (m *MockClient) GetUserClientRoles(ctx context.Context, organizationName, userID, clientID string) ([]*idp.Role, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetUserClientRoles", ctx, organizationName, userID, clientID)
-	ret0, _ := ret[0].([]*Role)
+	ret0, _ := ret[0].([]*idp.Role)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -347,10 +333,10 @@ func (mr *MockClientMockRecorder) GetUserClientRoles(ctx, organizationName, user
 }
 
 // GetUserOrganizationRoles mocks base method.
-func (m *MockClient) GetUserOrganizationRoles(ctx context.Context, organizationName, userID string) ([]*Role, error) {
+func (m *MockClient) GetUserOrganizationRoles(ctx context.Context, organizationName, userID string) ([]*idp.Role, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetUserOrganizationRoles", ctx, organizationName, userID)
-	ret0, _ := ret[0].([]*Role)
+	ret0, _ := ret[0].([]*idp.Role)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -362,10 +348,10 @@ func (mr *MockClientMockRecorder) GetUserOrganizationRoles(ctx, organizationName
 }
 
 // ListAllIdentityProviders mocks base method.
-func (m *MockClient) ListAllIdentityProviders(ctx context.Context) ([]*IdentityProvider, error) {
+func (m *MockClient) ListAllIdentityProviders(ctx context.Context) ([]*idp.IdentityProvider, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListAllIdentityProviders", ctx)
-	ret0, _ := ret[0].([]*IdentityProvider)
+	ret0, _ := ret[0].([]*idp.IdentityProvider)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -377,10 +363,10 @@ func (mr *MockClientMockRecorder) ListAllIdentityProviders(ctx any) *gomock.Call
 }
 
 // ListClientRoles mocks base method.
-func (m *MockClient) ListClientRoles(ctx context.Context, organizationName, clientID string) ([]*Role, error) {
+func (m *MockClient) ListClientRoles(ctx context.Context, organizationName, clientID string) ([]*idp.Role, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListClientRoles", ctx, organizationName, clientID)
-	ret0, _ := ret[0].([]*Role)
+	ret0, _ := ret[0].([]*idp.Role)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -392,10 +378,10 @@ func (mr *MockClientMockRecorder) ListClientRoles(ctx, organizationName, clientI
 }
 
 // ListIdentityProviders mocks base method.
-func (m *MockClient) ListIdentityProviders(ctx context.Context, organizationName string) ([]*IdentityProvider, error) {
+func (m *MockClient) ListIdentityProviders(ctx context.Context, organizationName string) ([]*idp.IdentityProvider, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListIdentityProviders", ctx, organizationName)
-	ret0, _ := ret[0].([]*IdentityProvider)
+	ret0, _ := ret[0].([]*idp.IdentityProvider)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -407,10 +393,10 @@ func (mr *MockClientMockRecorder) ListIdentityProviders(ctx, organizationName an
 }
 
 // ListOrganizationRoles mocks base method.
-func (m *MockClient) ListOrganizationRoles(ctx context.Context, organizationName string) ([]*Role, error) {
+func (m *MockClient) ListOrganizationRoles(ctx context.Context, organizationName string) ([]*idp.Role, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListOrganizationRoles", ctx, organizationName)
-	ret0, _ := ret[0].([]*Role)
+	ret0, _ := ret[0].([]*idp.Role)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -422,10 +408,10 @@ func (mr *MockClientMockRecorder) ListOrganizationRoles(ctx, organizationName an
 }
 
 // ListUsers mocks base method.
-func (m *MockClient) ListUsers(ctx context.Context, organizationName string) ([]*User, error) {
+func (m *MockClient) ListUsers(ctx context.Context, organizationName string) ([]*idp.User, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListUsers", ctx, organizationName)
-	ret0, _ := ret[0].([]*User)
+	ret0, _ := ret[0].([]*idp.User)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -437,7 +423,7 @@ func (mr *MockClientMockRecorder) ListUsers(ctx, organizationName any) *gomock.C
 }
 
 // RemoveClientRolesFromUser mocks base method.
-func (m *MockClient) RemoveClientRolesFromUser(ctx context.Context, organizationName, userID, clientID string, roles []*Role) error {
+func (m *MockClient) RemoveClientRolesFromUser(ctx context.Context, organizationName, userID, clientID string, roles []*idp.Role) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RemoveClientRolesFromUser", ctx, organizationName, userID, clientID, roles)
 	ret0, _ := ret[0].(error)
@@ -451,7 +437,7 @@ func (mr *MockClientMockRecorder) RemoveClientRolesFromUser(ctx, organizationNam
 }
 
 // RemoveOrganizationRolesFromUser mocks base method.
-func (m *MockClient) RemoveOrganizationRolesFromUser(ctx context.Context, organizationName, userID string, roles []*Role) error {
+func (m *MockClient) RemoveOrganizationRolesFromUser(ctx context.Context, organizationName, userID string, roles []*idp.Role) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RemoveOrganizationRolesFromUser", ctx, organizationName, userID, roles)
 	ret0, _ := ret[0].(error)
@@ -462,4 +448,18 @@ func (m *MockClient) RemoveOrganizationRolesFromUser(ctx context.Context, organi
 func (mr *MockClientMockRecorder) RemoveOrganizationRolesFromUser(ctx, organizationName, userID, roles any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveOrganizationRolesFromUser", reflect.TypeOf((*MockClient)(nil).RemoveOrganizationRolesFromUser), ctx, organizationName, userID, roles)
+}
+
+// RemoveUserFromGroup mocks base method.
+func (m *MockClient) RemoveUserFromGroup(ctx context.Context, organizationName, userID, groupID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveUserFromGroup", ctx, organizationName, userID, groupID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveUserFromGroup indicates an expected call of RemoveUserFromGroup.
+func (mr *MockClientMockRecorder) RemoveUserFromGroup(ctx, organizationName, userID, groupID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveUserFromGroup", reflect.TypeOf((*MockClient)(nil).RemoveUserFromGroup), ctx, organizationName, userID, groupID)
 }
