@@ -113,22 +113,22 @@ func renderInstanceType(w io.Writer, it *publicv1.InstanceType) {
 		if desc := spec.GetDescription(); desc != "" {
 			fmt.Fprintf(writer, "Description:\t%s\n", desc)
 		}
-	}
 
-	// Conditional deprecation section (D-01):
-	if dep := spec.GetDeprecation(); dep != nil {
-		hasContent := dep.GetReplacement() != "" ||
-			dep.GetDeprecationTimestamp() != nil ||
-			dep.GetObsolescenceTimestamp() != nil
-		if hasContent {
-			if dep.GetReplacement() != "" {
-				fmt.Fprintf(writer, "Replacement:\t%s\n", dep.GetReplacement())
-			}
-			if ts := dep.GetDeprecationTimestamp(); ts != nil {
-				fmt.Fprintf(writer, "Deprecated At:\t%s\n", ts.AsTime().Format(time.RFC3339))
-			}
-			if ts := dep.GetObsolescenceTimestamp(); ts != nil {
-				fmt.Fprintf(writer, "Obsolete At:\t%s\n", ts.AsTime().Format(time.RFC3339))
+		// Conditional deprecation section (D-01):
+		if dep := spec.GetDeprecation(); dep != nil {
+			hasContent := dep.GetReplacement() != "" ||
+				dep.GetDeprecationTimestamp() != nil ||
+				dep.GetObsolescenceTimestamp() != nil
+			if hasContent {
+				if dep.GetReplacement() != "" {
+					fmt.Fprintf(writer, "Replacement:\t%s\n", dep.GetReplacement())
+				}
+				if ts := dep.GetDeprecationTimestamp(); ts != nil {
+					fmt.Fprintf(writer, "Deprecated At:\t%s\n", ts.AsTime().Format(time.RFC3339))
+				}
+				if ts := dep.GetObsolescenceTimestamp(); ts != nil {
+					fmt.Fprintf(writer, "Obsolete At:\t%s\n", ts.AsTime().Format(time.RFC3339))
+				}
 			}
 		}
 	}
