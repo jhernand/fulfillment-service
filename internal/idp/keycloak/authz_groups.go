@@ -405,3 +405,53 @@ func (c *Client) ensureOrganizationMember(ctx context.Context, orgID, userUUID s
 
 	return nil
 }
+
+// RemoveUserFromGroup removes a user from an organization group by group ID.
+func (c *Client) RemoveUserFromGroup(ctx context.Context, organizationName, username, groupID string) error {
+	c.logger.DebugContext(ctx, "Removing user from organization group",
+		slog.String("organizationName", organizationName),
+		slog.String("!username", username),
+		slog.String("groupID", groupID),
+	)
+
+	// Look up the user's UUID by username
+	userUUID, err := c.getUserIDByUsername(ctx, username)
+	if err != nil {
+		return fmt.Errorf("failed to lookup user UUID: %w", err)
+	}
+
+	c.logger.DebugContext(ctx, "Looked up user UUID",
+		slog.String("!username", username),
+		slog.String("!uuid", userUUID),
+	)
+
+	// Get the organization ID
+	org, err := c.GetOrganization(ctx, organizationName)
+	if err != nil {
+		return fmt.Errorf("failed to get organization: %w", err)
+	}
+
+	// Remove the user from the organization group via DELETE
+	// DELETE /admin/realms/{realm}/organizations/{orgId}/groups/{groupId}/members/{userId}
+	path := fmt.Sprintf("/admin/realms/%s/organizations/%s/groups/%s/members/%s",
+		url.PathEscape(c.realmName),
+		url.PathEscape(org.ID),
+		url.PathEscape(groupID),
+		url.PathEscape(userUUID),
+	)
+
+	response, err := c.httpClient.DoRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return fmt.Errorf("failed to remove user from organization group: %w", err)
+	}
+	defer response.Body.Close()
+
+	c.logger.InfoContext(ctx, "Removed user from organization group",
+		slog.String("organizationName", organizationName),
+		slog.String("!username", username),
+		slog.String("!uuid", userUUID),
+		slog.String("groupID", groupID),
+	)
+
+	return nil
+}
