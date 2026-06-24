@@ -53,7 +53,7 @@ type runnerContext struct {
 	logger  *slog.Logger
 	console *terminal.Console
 	conn    *grpc.ClientConn
-	helper  *reflection.ObjectHelper
+	helper  reflection.ObjectHelper
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {

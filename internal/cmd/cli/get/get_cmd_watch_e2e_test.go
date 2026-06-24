@@ -36,7 +36,7 @@ var _ = Describe("Watch e2e", func() {
 		server       *testing.Server
 		conn         *grpc.ClientConn
 		eventsServer *testing.EventsServerFuncs
-		helper       *reflection.ObjectHelper
+		helper       reflection.ObjectHelper
 		console      *terminal.Console
 	)
 

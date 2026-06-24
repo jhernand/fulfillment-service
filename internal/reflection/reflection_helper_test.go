@@ -119,7 +119,7 @@ var _ = Describe("Reflection helper", func() {
 	})
 
 	Describe("Behaviour", func() {
-		var helper *Helper
+		var helper Helper
 
 		BeforeEach(func() {
 			var err error

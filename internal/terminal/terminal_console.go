@@ -43,7 +43,7 @@ type ConsoleBuilder struct {
 	logger *slog.Logger
 	stdout io.Writer
 	stderr io.Writer
-	helper *reflection.Helper
+	helper reflection.Helper
 }
 
 // Console is helps writing messages to the console. Don't create objects of this type directly, use the NewConsole
@@ -53,7 +53,7 @@ type Console struct {
 	stdout io.Writer
 	stderr io.Writer
 	engine *templating.Engine
-	helper *reflection.Helper
+	helper reflection.Helper
 }
 
 // NewConsole creates a builder that can the be used to create a template engine.
@@ -83,7 +83,7 @@ func (b *ConsoleBuilder) SetStderr(value io.Writer) *ConsoleBuilder {
 
 // SetHelper sets the reflection helper that will be used to introspect objects. This is optional. If not set then
 // functions like 'table' that need reflection will not be available.
-func (b *ConsoleBuilder) SetHelper(value *reflection.Helper) *ConsoleBuilder {
+func (b *ConsoleBuilder) SetHelper(value reflection.Helper) *ConsoleBuilder {
 	b.helper = value
 	return b
 }
@@ -142,7 +142,7 @@ func (c *Console) AddTemplates(fs iofs.FS, dir string) error {
 
 // SetHelper sets the reflection helper that will be used to introspect objects. This is optional. If not set then
 // functions like 'table' that need reflection will not be available.
-func (c *Console) SetHelper(value *reflection.Helper) {
+func (c *Console) SetHelper(value reflection.Helper) {
 	c.helper = value
 }
 

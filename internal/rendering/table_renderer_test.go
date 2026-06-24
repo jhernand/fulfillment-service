@@ -35,7 +35,7 @@ var _ = Describe("Table renderer", func() {
 		ctx        context.Context
 		server     *internaltesting.Server
 		connection *grpc.ClientConn
-		helper     *reflection.Helper
+		helper     reflection.Helper
 	)
 
 	BeforeEach(func() {
