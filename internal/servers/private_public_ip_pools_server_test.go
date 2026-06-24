@@ -891,6 +891,89 @@ var _ = Describe("Private public IP pools server", func() {
 			})
 		})
 
+		Context("implementation_strategy immutability on Update", func() {
+			It("rejects changing implementation_strategy", func() {
+				createResponse, err := poolsServer.Create(ctx, privatev1.PublicIPPoolsCreateRequest_builder{
+					Object: privatev1.PublicIPPool_builder{
+						Spec: privatev1.PublicIPPoolSpec_builder{
+							Cidrs:                  []string{"10.0.0.0/24"},
+							IpFamily:               privatev1.IPFamily_IP_FAMILY_IPV4,
+							ImplementationStrategy: "metallb-l2",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				id := createResponse.GetObject().GetId()
+
+				_, err = poolsServer.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
+					Object: privatev1.PublicIPPool_builder{
+						Id: id,
+						Spec: privatev1.PublicIPPoolSpec_builder{
+							ImplementationStrategy: "different-strategy",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(err.Error()).To(ContainSubstring("implementation_strategy"))
+				Expect(err.Error()).To(ContainSubstring("immutable"))
+			})
+
+			It("allows same implementation_strategy on Update", func() {
+				createResponse, err := poolsServer.Create(ctx, privatev1.PublicIPPoolsCreateRequest_builder{
+					Object: privatev1.PublicIPPool_builder{
+						Spec: privatev1.PublicIPPoolSpec_builder{
+							Cidrs:                  []string{"10.0.0.0/24"},
+							IpFamily:               privatev1.IPFamily_IP_FAMILY_IPV4,
+							ImplementationStrategy: "metallb-l2",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				id := createResponse.GetObject().GetId()
+
+				_, err = poolsServer.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
+					Object: privatev1.PublicIPPool_builder{
+						Id: id,
+						Spec: privatev1.PublicIPPoolSpec_builder{
+							ImplementationStrategy: "metallb-l2",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("preserves implementation_strategy when omitted in Update", func() {
+				createResponse, err := poolsServer.Create(ctx, privatev1.PublicIPPoolsCreateRequest_builder{
+					Object: privatev1.PublicIPPool_builder{
+						Spec: privatev1.PublicIPPoolSpec_builder{
+							Cidrs:                  []string{"10.0.0.0/24"},
+							IpFamily:               privatev1.IPFamily_IP_FAMILY_IPV4,
+							ImplementationStrategy: "metallb-l2",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				id := createResponse.GetObject().GetId()
+
+				updateResponse, err := poolsServer.Update(ctx, privatev1.PublicIPPoolsUpdateRequest_builder{
+					Object: privatev1.PublicIPPool_builder{
+						Id: id,
+						Metadata: privatev1.Metadata_builder{
+							Name: "renamed-pool",
+						}.Build(),
+					}.Build(),
+					UpdateMask: &fieldmaskpb.FieldMask{
+						Paths: []string{"metadata.name"},
+					},
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updateResponse.GetObject().GetSpec().GetImplementationStrategy()).To(Equal("metallb-l2"))
+			})
+		})
+
 		Context("Unit tests for capacity calculation helpers", func() {
 			DescribeTable("calculateCIDRCapacity",
 				func(cidr string, family privatev1.IPFamily, expected int64) {

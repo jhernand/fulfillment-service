@@ -714,6 +714,96 @@ var _ = Describe("Private virtual networks server", func() {
 			})
 		})
 
+		Context("implementation_strategy immutability on Update", func() {
+			It("rejects changing implementation_strategy", func() {
+				existing := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Region:                 "us-west-1",
+						NetworkClass:           "test-class",
+						Ipv4Cidr:               new("10.0.0.0/16"),
+						ImplementationStrategy: "strategy-a",
+					}.Build(),
+				}.Build()
+
+				updated := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Region:                 "us-west-1",
+						NetworkClass:           "test-class",
+						Ipv4Cidr:               new("10.0.0.0/16"),
+						ImplementationStrategy: "strategy-b",
+					}.Build(),
+				}.Build()
+
+				_, err := server.validateVirtualNetwork(ctx, updated, existing)
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(err.Error()).To(ContainSubstring("implementation_strategy"))
+				Expect(err.Error()).To(ContainSubstring("immutable"))
+			})
+
+			It("allows same implementation_strategy on Update", func() {
+				nc := createNetworkClass(ctx, privatev1.NetworkClassState_NETWORK_CLASS_STATE_READY)
+
+				existing := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Region:                 "us-west-1",
+						NetworkClass:           nc.GetId(),
+						Ipv4Cidr:               new("10.0.0.0/16"),
+						ImplementationStrategy: "test-strategy",
+					}.Build(),
+				}.Build()
+
+				updated := privatev1.VirtualNetwork_builder{
+					Spec: privatev1.VirtualNetworkSpec_builder{
+						Region:                 "us-west-1",
+						NetworkClass:           nc.GetId(),
+						Ipv4Cidr:               new("10.0.0.0/16"),
+						ImplementationStrategy: "test-strategy",
+					}.Build(),
+				}.Build()
+
+				_, err := server.validateVirtualNetwork(ctx, updated, existing)
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("preserves implementation_strategy when omitted in Update (round-trip)", func() {
+				nc := createNetworkClass(ctx, privatev1.NetworkClassState_NETWORK_CLASS_STATE_READY)
+
+				createResponse, err := server.Create(ctx, privatev1.VirtualNetworksCreateRequest_builder{
+					Object: privatev1.VirtualNetwork_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.VirtualNetworkSpec_builder{
+							Ipv4Cidr:     new("10.0.0.0/16"),
+							NetworkClass: nc.GetId(),
+							Region:       "us-west-1",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				created := createResponse.GetObject()
+				Expect(created.GetSpec().GetImplementationStrategy()).To(Equal("test-strategy"))
+
+				updateResponse, err := server.Update(ctx, privatev1.VirtualNetworksUpdateRequest_builder{
+					Object: privatev1.VirtualNetwork_builder{
+						Id: created.GetId(),
+						Metadata: privatev1.Metadata_builder{
+							Name: "renamed-vn",
+						}.Build(),
+						Spec: privatev1.VirtualNetworkSpec_builder{
+							NetworkClass: nc.GetId(),
+							Region:       "us-west-1",
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updateResponse.GetObject().GetSpec().GetImplementationStrategy()).To(Equal("test-strategy"))
+			})
+		})
+
 		Context("VN-VAL-11: IPv4 CIDR immutability on Update", func() {
 			It("prevents ipv4_cidr field modification", func() {
 				// Fake NetworkClass: immutability check for NC fires before the NC reference lookup
