@@ -178,17 +178,24 @@ func (s *PrivateStorageBackendsServer) validateStorageBackendCreate(_ context.Co
 	if sb == nil {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "storage backend is mandatory")
 	}
-	if sb.GetProvider() == "" {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'provider' is required")
+	if sb.GetMetadata() == nil || sb.GetMetadata().GetName() == "" {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'metadata.name' is required")
 	}
-	if sb.GetEndpoint() == "" {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'endpoint' is required")
+	spec := sb.GetSpec()
+	if spec == nil {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'spec' is required")
 	}
-	if sb.GetCredentials() == nil || sb.GetCredentials().GetUsername() == "" {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'credentials.username' is required")
+	if spec.GetProvider() == "" {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'spec.provider' is required")
 	}
-	if sb.GetCredentials().GetPassword() == "" {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'credentials.password' is required")
+	if spec.GetEndpoint() == "" {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'spec.endpoint' is required")
+	}
+	if spec.GetCredentials() == nil || spec.GetCredentials().GetUsername() == "" {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'spec.credentials.username' is required")
+	}
+	if spec.GetCredentials().GetPassword() == "" {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument, "field 'spec.credentials.password' is required")
 	}
 	return nil
 }
@@ -196,10 +203,10 @@ func (s *PrivateStorageBackendsServer) validateStorageBackendCreate(_ context.Co
 func (s *PrivateStorageBackendsServer) validateStorageBackendUpdate(_ context.Context,
 	newSB *privatev1.StorageBackend, existingSB *privatev1.StorageBackend) error {
 
-	if newSB.GetProvider() != "" && newSB.GetProvider() != existingSB.GetProvider() {
+	if newSB.GetSpec().GetProvider() != "" && newSB.GetSpec().GetProvider() != existingSB.GetSpec().GetProvider() {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'provider' is immutable and cannot be changed from '%s' to '%s'",
-			existingSB.GetProvider(), newSB.GetProvider())
+			"field 'spec.provider' is immutable and cannot be changed from '%s' to '%s'",
+			existingSB.GetSpec().GetProvider(), newSB.GetSpec().GetProvider())
 	}
 	return nil
 }

@@ -52,7 +52,7 @@ type StorageBackendsListRequest struct {
 	// expression evaluates to `true` the object is included in the results. For example, to retrieve all storage backends
 	// with provider "vast":
 	//
-	//	this.provider == "vast"
+	//	this.spec.provider == "vast"
 	//
 	// If this isn't provided, or if the value is empty, then all the storage backends that the user has permission to see
 	// will be returned. Not all CEL constructs are currently supported for implementation reasons; see the filter
@@ -64,7 +64,7 @@ type StorageBackendsListRequest struct {
 	// names of the attributes of the storage backend instead of the names of the columns of a table. For example, in
 	// order to sort the storage backends descending by provider the value should be:
 	//
-	//	provider desc
+	//	spec.provider desc
 	//
 	// If the parameter isn't provided, or if the value is empty, then the order of the results is undefined.
 	Order         *string `protobuf:"bytes,4,opt,name=order,proto3,oneof" json:"order,omitempty"`
@@ -201,7 +201,7 @@ type StorageBackendsListRequest_builder struct {
 	// expression evaluates to `true` the object is included in the results. For example, to retrieve all storage backends
 	// with provider "vast":
 	//
-	//	this.provider == "vast"
+	//	this.spec.provider == "vast"
 	//
 	// If this isn't provided, or if the value is empty, then all the storage backends that the user has permission to see
 	// will be returned. Not all CEL constructs are currently supported for implementation reasons; see the filter
@@ -213,7 +213,7 @@ type StorageBackendsListRequest_builder struct {
 	// names of the attributes of the storage backend instead of the names of the columns of a table. For example, in
 	// order to sort the storage backends descending by provider the value should be:
 	//
-	//	provider desc
+	//	spec.provider desc
 	//
 	// If the parameter isn't provided, or if the value is empty, then the order of the results is undefined.
 	Order *string

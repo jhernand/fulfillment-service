@@ -42,7 +42,6 @@ create table archived_storage_backends (
   version integer not null default 0
 );
 
-create index storage_backends_by_name on storage_backends (name);
 create index storage_backends_by_creator on storage_backends (creator);
 create index storage_backends_by_label on storage_backends using gin (labels);
 

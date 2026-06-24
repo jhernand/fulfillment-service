@@ -87,16 +87,13 @@ func (x StorageBackendState) Number() protoreflect.EnumNumber {
 //
 // StorageBackend follows the NetworkClass pattern: DB-backed with no Kubernetes CRD and no reconciler.
 type StorageBackend struct {
-	state                  protoimpl.MessageState     `protogen:"opaque.v1"`
-	xxx_hidden_Id          string                     `protobuf:"bytes,1,opt,name=id,proto3"`
-	xxx_hidden_Metadata    *Metadata                  `protobuf:"bytes,2,opt,name=metadata,proto3"`
-	xxx_hidden_Provider    string                     `protobuf:"bytes,3,opt,name=provider,proto3"`
-	xxx_hidden_Description string                     `protobuf:"bytes,4,opt,name=description,proto3"`
-	xxx_hidden_Endpoint    string                     `protobuf:"bytes,5,opt,name=endpoint,proto3"`
-	xxx_hidden_Credentials *StorageBackendCredentials `protobuf:"bytes,6,opt,name=credentials,proto3"`
-	xxx_hidden_Status      *StorageBackendStatus      `protobuf:"bytes,7,opt,name=status,proto3"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id       string                 `protobuf:"bytes,1,opt,name=id,proto3"`
+	xxx_hidden_Metadata *Metadata              `protobuf:"bytes,2,opt,name=metadata,proto3"`
+	xxx_hidden_Spec     *StorageBackendSpec    `protobuf:"bytes,3,opt,name=spec,proto3"`
+	xxx_hidden_Status   *StorageBackendStatus  `protobuf:"bytes,4,opt,name=status,proto3"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *StorageBackend) Reset() {
@@ -138,30 +135,9 @@ func (x *StorageBackend) GetMetadata() *Metadata {
 	return nil
 }
 
-func (x *StorageBackend) GetProvider() string {
+func (x *StorageBackend) GetSpec() *StorageBackendSpec {
 	if x != nil {
-		return x.xxx_hidden_Provider
-	}
-	return ""
-}
-
-func (x *StorageBackend) GetDescription() string {
-	if x != nil {
-		return x.xxx_hidden_Description
-	}
-	return ""
-}
-
-func (x *StorageBackend) GetEndpoint() string {
-	if x != nil {
-		return x.xxx_hidden_Endpoint
-	}
-	return ""
-}
-
-func (x *StorageBackend) GetCredentials() *StorageBackendCredentials {
-	if x != nil {
-		return x.xxx_hidden_Credentials
+		return x.xxx_hidden_Spec
 	}
 	return nil
 }
@@ -181,20 +157,8 @@ func (x *StorageBackend) SetMetadata(v *Metadata) {
 	x.xxx_hidden_Metadata = v
 }
 
-func (x *StorageBackend) SetProvider(v string) {
-	x.xxx_hidden_Provider = v
-}
-
-func (x *StorageBackend) SetDescription(v string) {
-	x.xxx_hidden_Description = v
-}
-
-func (x *StorageBackend) SetEndpoint(v string) {
-	x.xxx_hidden_Endpoint = v
-}
-
-func (x *StorageBackend) SetCredentials(v *StorageBackendCredentials) {
-	x.xxx_hidden_Credentials = v
+func (x *StorageBackend) SetSpec(v *StorageBackendSpec) {
+	x.xxx_hidden_Spec = v
 }
 
 func (x *StorageBackend) SetStatus(v *StorageBackendStatus) {
@@ -208,11 +172,11 @@ func (x *StorageBackend) HasMetadata() bool {
 	return x.xxx_hidden_Metadata != nil
 }
 
-func (x *StorageBackend) HasCredentials() bool {
+func (x *StorageBackend) HasSpec() bool {
 	if x == nil {
 		return false
 	}
-	return x.xxx_hidden_Credentials != nil
+	return x.xxx_hidden_Spec != nil
 }
 
 func (x *StorageBackend) HasStatus() bool {
@@ -226,8 +190,8 @@ func (x *StorageBackend) ClearMetadata() {
 	x.xxx_hidden_Metadata = nil
 }
 
-func (x *StorageBackend) ClearCredentials() {
-	x.xxx_hidden_Credentials = nil
+func (x *StorageBackend) ClearSpec() {
+	x.xxx_hidden_Spec = nil
 }
 
 func (x *StorageBackend) ClearStatus() {
@@ -241,16 +205,8 @@ type StorageBackend_builder struct {
 	Id string
 	// Metadata of the storage backend.
 	Metadata *Metadata
-	// Storage provider identifier. For example: "vast", "ceph", "pure".
-	//
-	// This value is immutable once the StorageBackend is created.
-	Provider string
-	// Human-readable description of the storage backend.
-	Description string
-	// Management endpoint for the storage array. Accepts a URL or host:port format.
-	Endpoint string
-	// Credentials for authenticating with the storage management API.
-	Credentials *StorageBackendCredentials
+	// Desired configuration of the storage backend (user-modifiable).
+	Spec *StorageBackendSpec
 	// Current operational status of the storage backend.
 	Status *StorageBackendStatus
 }
@@ -261,11 +217,125 @@ func (b0 StorageBackend_builder) Build() *StorageBackend {
 	_, _ = b, x
 	x.xxx_hidden_Id = b.Id
 	x.xxx_hidden_Metadata = b.Metadata
+	x.xxx_hidden_Spec = b.Spec
+	x.xxx_hidden_Status = b.Status
+	return m0
+}
+
+// Defines the desired configuration for a StorageBackend.
+type StorageBackendSpec struct {
+	state                  protoimpl.MessageState     `protogen:"opaque.v1"`
+	xxx_hidden_Provider    string                     `protobuf:"bytes,1,opt,name=provider,proto3"`
+	xxx_hidden_Description string                     `protobuf:"bytes,2,opt,name=description,proto3"`
+	xxx_hidden_Endpoint    string                     `protobuf:"bytes,3,opt,name=endpoint,proto3"`
+	xxx_hidden_Credentials *StorageBackendCredentials `protobuf:"bytes,4,opt,name=credentials,proto3"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *StorageBackendSpec) Reset() {
+	*x = StorageBackendSpec{}
+	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StorageBackendSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StorageBackendSpec) ProtoMessage() {}
+
+func (x *StorageBackendSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (x *StorageBackendSpec) GetProvider() string {
+	if x != nil {
+		return x.xxx_hidden_Provider
+	}
+	return ""
+}
+
+func (x *StorageBackendSpec) GetDescription() string {
+	if x != nil {
+		return x.xxx_hidden_Description
+	}
+	return ""
+}
+
+func (x *StorageBackendSpec) GetEndpoint() string {
+	if x != nil {
+		return x.xxx_hidden_Endpoint
+	}
+	return ""
+}
+
+func (x *StorageBackendSpec) GetCredentials() *StorageBackendCredentials {
+	if x != nil {
+		return x.xxx_hidden_Credentials
+	}
+	return nil
+}
+
+func (x *StorageBackendSpec) SetProvider(v string) {
+	x.xxx_hidden_Provider = v
+}
+
+func (x *StorageBackendSpec) SetDescription(v string) {
+	x.xxx_hidden_Description = v
+}
+
+func (x *StorageBackendSpec) SetEndpoint(v string) {
+	x.xxx_hidden_Endpoint = v
+}
+
+func (x *StorageBackendSpec) SetCredentials(v *StorageBackendCredentials) {
+	x.xxx_hidden_Credentials = v
+}
+
+func (x *StorageBackendSpec) HasCredentials() bool {
+	if x == nil {
+		return false
+	}
+	return x.xxx_hidden_Credentials != nil
+}
+
+func (x *StorageBackendSpec) ClearCredentials() {
+	x.xxx_hidden_Credentials = nil
+}
+
+type StorageBackendSpec_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	// Storage provider identifier. For example: "vast", "ceph", "pure".
+	//
+	// This value is immutable once the StorageBackend is created.
+	Provider string
+	// Human-readable description of the storage backend.
+	Description string
+	// Management endpoint for the storage array. Accepts a URL or host:port format.
+	Endpoint string
+	// Credentials for authenticating with the storage management API.
+	Credentials *StorageBackendCredentials
+}
+
+func (b0 StorageBackendSpec_builder) Build() *StorageBackendSpec {
+	m0 := &StorageBackendSpec{}
+	b, x := &b0, m0
+	_, _ = b, x
 	x.xxx_hidden_Provider = b.Provider
 	x.xxx_hidden_Description = b.Description
 	x.xxx_hidden_Endpoint = b.Endpoint
 	x.xxx_hidden_Credentials = b.Credentials
-	x.xxx_hidden_Status = b.Status
 	return m0
 }
 
@@ -280,7 +350,7 @@ type StorageBackendCredentials struct {
 
 func (x *StorageBackendCredentials) Reset() {
 	*x = StorageBackendCredentials{}
-	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[1]
+	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -292,7 +362,7 @@ func (x *StorageBackendCredentials) String() string {
 func (*StorageBackendCredentials) ProtoMessage() {}
 
 func (x *StorageBackendCredentials) ProtoReflect() protoreflect.Message {
-	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[1]
+	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -356,7 +426,7 @@ type StorageBackendStatus struct {
 
 func (x *StorageBackendStatus) Reset() {
 	*x = StorageBackendStatus{}
-	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[2]
+	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -368,7 +438,7 @@ func (x *StorageBackendStatus) String() string {
 func (*StorageBackendStatus) ProtoMessage() {}
 
 func (x *StorageBackendStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[2]
+	mi := &file_osac_private_v1_storage_backend_type_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -447,27 +517,32 @@ var file_osac_private_v1_storage_backend_type_proto_rawDesc = string([]byte{
 	0x61, 0x63, 0x2e, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x1a, 0x23, 0x6f,
 	0x73, 0x61, 0x63, 0x2f, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2f, 0x76, 0x31, 0x2f, 0x6d,
 	0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x2e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x22, 0xbe, 0x02, 0x0a, 0x0e, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x42, 0x61,
+	0x74, 0x6f, 0x22, 0xcf, 0x01, 0x0a, 0x0e, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x42, 0x61,
 	0x63, 0x6b, 0x65, 0x6e, 0x64, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
 	0x09, 0x52, 0x02, 0x69, 0x64, 0x12, 0x35, 0x0a, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74,
 	0x61, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x6f, 0x73, 0x61, 0x63, 0x2e, 0x70,
 	0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61,
-	0x74, 0x61, 0x52, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x1a, 0x0a, 0x08,
-	0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08,
-	0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x12, 0x20, 0x0a, 0x0b, 0x64, 0x65, 0x73, 0x63,
-	0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x64,
-	0x65, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x1a, 0x0a, 0x08, 0x65, 0x6e,
-	0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x65, 0x6e,
-	0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x12, 0x4c, 0x0a, 0x0b, 0x63, 0x72, 0x65, 0x64, 0x65, 0x6e,
-	0x74, 0x69, 0x61, 0x6c, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x6f, 0x73,
-	0x61, 0x63, 0x2e, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x74,
-	0x6f, 0x72, 0x61, 0x67, 0x65, 0x42, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x43, 0x72, 0x65, 0x64,
-	0x65, 0x6e, 0x74, 0x69, 0x61, 0x6c, 0x73, 0x52, 0x0b, 0x63, 0x72, 0x65, 0x64, 0x65, 0x6e, 0x74,
-	0x69, 0x61, 0x6c, 0x73, 0x12, 0x3d, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x07,
-	0x20, 0x01, 0x28, 0x0b, 0x32, 0x25, 0x2e, 0x6f, 0x73, 0x61, 0x63, 0x2e, 0x70, 0x72, 0x69, 0x76,
-	0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x42, 0x61,
-	0x63, 0x6b, 0x65, 0x6e, 0x64, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06, 0x73, 0x74, 0x61,
-	0x74, 0x75, 0x73, 0x22, 0x53, 0x0a, 0x19, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x42, 0x61,
+	0x74, 0x61, 0x52, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x37, 0x0a, 0x04,
+	0x73, 0x70, 0x65, 0x63, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x23, 0x2e, 0x6f, 0x73, 0x61,
+	0x63, 0x2e, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x74, 0x6f,
+	0x72, 0x61, 0x67, 0x65, 0x42, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x53, 0x70, 0x65, 0x63, 0x52,
+	0x04, 0x73, 0x70, 0x65, 0x63, 0x12, 0x3d, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18,
+	0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x25, 0x2e, 0x6f, 0x73, 0x61, 0x63, 0x2e, 0x70, 0x72, 0x69,
+	0x76, 0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x42,
+	0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06, 0x73, 0x74,
+	0x61, 0x74, 0x75, 0x73, 0x22, 0xbc, 0x01, 0x0a, 0x12, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65,
+	0x42, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x53, 0x70, 0x65, 0x63, 0x12, 0x1a, 0x0a, 0x08, 0x70,
+	0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x70,
+	0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x12, 0x20, 0x0a, 0x0b, 0x64, 0x65, 0x73, 0x63, 0x72,
+	0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x64, 0x65,
+	0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x1a, 0x0a, 0x08, 0x65, 0x6e, 0x64,
+	0x70, 0x6f, 0x69, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x65, 0x6e, 0x64,
+	0x70, 0x6f, 0x69, 0x6e, 0x74, 0x12, 0x4c, 0x0a, 0x0b, 0x63, 0x72, 0x65, 0x64, 0x65, 0x6e, 0x74,
+	0x69, 0x61, 0x6c, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x6f, 0x73, 0x61,
+	0x63, 0x2e, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x74, 0x6f,
+	0x72, 0x61, 0x67, 0x65, 0x42, 0x61, 0x63, 0x6b, 0x65, 0x6e, 0x64, 0x43, 0x72, 0x65, 0x64, 0x65,
+	0x6e, 0x74, 0x69, 0x61, 0x6c, 0x73, 0x52, 0x0b, 0x63, 0x72, 0x65, 0x64, 0x65, 0x6e, 0x74, 0x69,
+	0x61, 0x6c, 0x73, 0x22, 0x53, 0x0a, 0x19, 0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x42, 0x61,
 	0x63, 0x6b, 0x65, 0x6e, 0x64, 0x43, 0x72, 0x65, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x61, 0x6c, 0x73,
 	0x12, 0x1a, 0x0a, 0x08, 0x75, 0x73, 0x65, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01,
 	0x28, 0x09, 0x52, 0x08, 0x75, 0x73, 0x65, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x1a, 0x0a, 0x08,
@@ -505,24 +580,26 @@ var file_osac_private_v1_storage_backend_type_proto_rawDesc = string([]byte{
 })
 
 var file_osac_private_v1_storage_backend_type_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_osac_private_v1_storage_backend_type_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_osac_private_v1_storage_backend_type_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_osac_private_v1_storage_backend_type_proto_goTypes = []any{
 	(StorageBackendState)(0),          // 0: osac.private.v1.StorageBackendState
 	(*StorageBackend)(nil),            // 1: osac.private.v1.StorageBackend
-	(*StorageBackendCredentials)(nil), // 2: osac.private.v1.StorageBackendCredentials
-	(*StorageBackendStatus)(nil),      // 3: osac.private.v1.StorageBackendStatus
-	(*Metadata)(nil),                  // 4: osac.private.v1.Metadata
+	(*StorageBackendSpec)(nil),        // 2: osac.private.v1.StorageBackendSpec
+	(*StorageBackendCredentials)(nil), // 3: osac.private.v1.StorageBackendCredentials
+	(*StorageBackendStatus)(nil),      // 4: osac.private.v1.StorageBackendStatus
+	(*Metadata)(nil),                  // 5: osac.private.v1.Metadata
 }
 var file_osac_private_v1_storage_backend_type_proto_depIdxs = []int32{
-	4, // 0: osac.private.v1.StorageBackend.metadata:type_name -> osac.private.v1.Metadata
-	2, // 1: osac.private.v1.StorageBackend.credentials:type_name -> osac.private.v1.StorageBackendCredentials
-	3, // 2: osac.private.v1.StorageBackend.status:type_name -> osac.private.v1.StorageBackendStatus
-	0, // 3: osac.private.v1.StorageBackendStatus.state:type_name -> osac.private.v1.StorageBackendState
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	5, // 0: osac.private.v1.StorageBackend.metadata:type_name -> osac.private.v1.Metadata
+	2, // 1: osac.private.v1.StorageBackend.spec:type_name -> osac.private.v1.StorageBackendSpec
+	4, // 2: osac.private.v1.StorageBackend.status:type_name -> osac.private.v1.StorageBackendStatus
+	3, // 3: osac.private.v1.StorageBackendSpec.credentials:type_name -> osac.private.v1.StorageBackendCredentials
+	0, // 4: osac.private.v1.StorageBackendStatus.state:type_name -> osac.private.v1.StorageBackendState
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_osac_private_v1_storage_backend_type_proto_init() }
@@ -531,14 +608,14 @@ func file_osac_private_v1_storage_backend_type_proto_init() {
 		return
 	}
 	file_osac_private_v1_metadata_type_proto_init()
-	file_osac_private_v1_storage_backend_type_proto_msgTypes[2].OneofWrappers = []any{}
+	file_osac_private_v1_storage_backend_type_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_osac_private_v1_storage_backend_type_proto_rawDesc), len(file_osac_private_v1_storage_backend_type_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -31,22 +31,28 @@ message StorageBackend {
   // Metadata of the storage backend.
   Metadata metadata = 2;
 
+  // Desired configuration of the storage backend (user-modifiable).
+  StorageBackendSpec spec = 3;
+
+  // Current operational status of the storage backend.
+  StorageBackendStatus status = 4;
+}
+
+// Defines the desired configuration for a StorageBackend.
+message StorageBackendSpec {
   // Storage provider identifier. For example: "vast", "ceph", "pure".
   //
   // This value is immutable once the StorageBackend is created.
-  string provider = 3;
+  string provider = 1;
 
   // Human-readable description of the storage backend.
-  string description = 4;
+  string description = 2;
 
   // Management endpoint for the storage array. Accepts a URL or host:port format.
-  string endpoint = 5;
+  string endpoint = 3;
 
   // Credentials for authenticating with the storage management API.
-  StorageBackendCredentials credentials = 6;
-
-  // Current operational status of the storage backend.
-  StorageBackendStatus status = 7;
+  StorageBackendCredentials credentials = 4;
 }
 
 // Credentials for authenticating with a storage backend's management API.

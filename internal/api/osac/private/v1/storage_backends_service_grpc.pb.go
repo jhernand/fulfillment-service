@@ -54,7 +54,8 @@ type StorageBackendsClient interface {
 	Update(ctx context.Context, in *StorageBackendsUpdateRequest, opts ...grpc.CallOption) (*StorageBackendsUpdateResponse, error)
 	// Deletes a storage backend.
 	Delete(ctx context.Context, in *StorageBackendsDeleteRequest, opts ...grpc.CallOption) (*StorageBackendsDeleteResponse, error)
-	// Signals a storage backend for reconciliation.
+	// Signal is required by the generic server infrastructure but is not implemented for StorageBackend
+	// (no reconciler). Calls return UNIMPLEMENTED.
 	Signal(ctx context.Context, in *StorageBackendsSignalRequest, opts ...grpc.CallOption) (*StorageBackendsSignalResponse, error)
 }
 
@@ -140,7 +141,8 @@ type StorageBackendsServer interface {
 	Update(context.Context, *StorageBackendsUpdateRequest) (*StorageBackendsUpdateResponse, error)
 	// Deletes a storage backend.
 	Delete(context.Context, *StorageBackendsDeleteRequest) (*StorageBackendsDeleteResponse, error)
-	// Signals a storage backend for reconciliation.
+	// Signal is required by the generic server infrastructure but is not implemented for StorageBackend
+	// (no reconciler). Calls return UNIMPLEMENTED.
 	Signal(context.Context, *StorageBackendsSignalRequest) (*StorageBackendsSignalResponse, error)
 	mustEmbedUnimplementedStorageBackendsServer()
 }

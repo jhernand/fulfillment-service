@@ -77,11 +77,13 @@ var _ = Describe("Private storage backends server", func() {
 					Metadata: privatev1.Metadata_builder{
 						Name: "test-backend",
 					}.Build(),
-					Provider: "vast",
-					Endpoint: "https://storage.example.com:8443",
-					Credentials: privatev1.StorageBackendCredentials_builder{
-						Username: "admin",
-						Password: "secret",
+					Spec: privatev1.StorageBackendSpec_builder{
+						Provider: "vast",
+						Endpoint: "https://storage.example.com:8443",
+						Credentials: privatev1.StorageBackendCredentials_builder{
+							Username: "admin",
+							Password: "secret",
+						}.Build(),
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -95,11 +97,13 @@ var _ = Describe("Private storage backends server", func() {
 					Metadata: privatev1.Metadata_builder{
 						Name: name,
 					}.Build(),
-					Provider: "vast",
-					Endpoint: "https://storage.example.com:8443",
-					Credentials: privatev1.StorageBackendCredentials_builder{
-						Username: "admin",
-						Password: "secret",
+					Spec: privatev1.StorageBackendSpec_builder{
+						Provider: "vast",
+						Endpoint: "https://storage.example.com:8443",
+						Credentials: privatev1.StorageBackendCredentials_builder{
+							Username: "admin",
+							Password: "secret",
+						}.Build(),
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -111,10 +115,10 @@ var _ = Describe("Private storage backends server", func() {
 			created := createStorageBackend()
 
 			Expect(created.GetId()).ToNot(BeEmpty())
-			Expect(created.GetProvider()).To(Equal("vast"))
-			Expect(created.GetEndpoint()).To(Equal("https://storage.example.com:8443"))
-			Expect(created.GetCredentials().GetUsername()).To(Equal("admin"))
-			Expect(created.GetCredentials().GetPassword()).To(Equal("secret"))
+			Expect(created.GetSpec().GetProvider()).To(Equal("vast"))
+			Expect(created.GetSpec().GetEndpoint()).To(Equal("https://storage.example.com:8443"))
+			Expect(created.GetSpec().GetCredentials().GetUsername()).To(Equal("admin"))
+			Expect(created.GetSpec().GetCredentials().GetPassword()).To(Equal("secret"))
 			Expect(created.GetStatus().GetState()).To(Equal(
 				privatev1.StorageBackendState_STORAGE_BACKEND_STATE_READY))
 			Expect(created.GetMetadata().GetTenant()).To(Equal(auth.SharedTenant))
@@ -125,9 +129,9 @@ var _ = Describe("Private storage backends server", func() {
 			Expect(err).ToNot(HaveOccurred())
 			obj := getResponse.GetObject()
 			Expect(obj.GetId()).To(Equal(created.GetId()))
-			Expect(obj.GetProvider()).To(Equal("vast"))
-			Expect(obj.GetEndpoint()).To(Equal("https://storage.example.com:8443"))
-			Expect(obj.GetCredentials().GetUsername()).To(Equal("admin"))
+			Expect(obj.GetSpec().GetProvider()).To(Equal("vast"))
+			Expect(obj.GetSpec().GetEndpoint()).To(Equal("https://storage.example.com:8443"))
+			Expect(obj.GetSpec().GetCredentials().GetUsername()).To(Equal("admin"))
 		})
 
 		It("List objects", func() {
@@ -203,14 +207,16 @@ var _ = Describe("Private storage backends server", func() {
 
 			updateResponse, err := server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
 				Object: privatev1.StorageBackend_builder{
-					Id:          created.GetId(),
-					Description: "Updated description",
+					Id: created.GetId(),
+					Spec: privatev1.StorageBackendSpec_builder{
+						Description: "Updated description",
+					}.Build(),
 				}.Build(),
-				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"spec.description"}},
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updateResponse.GetObject().GetDescription()).To(Equal("Updated description"))
-			Expect(updateResponse.GetObject().GetProvider()).To(Equal("vast"))
+			Expect(updateResponse.GetObject().GetSpec().GetDescription()).To(Equal("Updated description"))
+			Expect(updateResponse.GetObject().GetSpec().GetProvider()).To(Equal("vast"))
 		})
 
 		It("Update endpoint", func() {
@@ -218,13 +224,15 @@ var _ = Describe("Private storage backends server", func() {
 
 			updateResponse, err := server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
 				Object: privatev1.StorageBackend_builder{
-					Id:       created.GetId(),
-					Endpoint: "https://new-storage.example.com:9443",
+					Id: created.GetId(),
+					Spec: privatev1.StorageBackendSpec_builder{
+						Endpoint: "https://new-storage.example.com:9443",
+					}.Build(),
 				}.Build(),
-				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"endpoint"}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"spec.endpoint"}},
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updateResponse.GetObject().GetEndpoint()).To(Equal("https://new-storage.example.com:9443"))
+			Expect(updateResponse.GetObject().GetSpec().GetEndpoint()).To(Equal("https://new-storage.example.com:9443"))
 		})
 
 		It("Update credentials", func() {
@@ -233,16 +241,18 @@ var _ = Describe("Private storage backends server", func() {
 			updateResponse, err := server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
 				Object: privatev1.StorageBackend_builder{
 					Id: created.GetId(),
-					Credentials: privatev1.StorageBackendCredentials_builder{
-						Username: "new-admin",
-						Password: "new-secret",
+					Spec: privatev1.StorageBackendSpec_builder{
+						Credentials: privatev1.StorageBackendCredentials_builder{
+							Username: "new-admin",
+							Password: "new-secret",
+						}.Build(),
 					}.Build(),
 				}.Build(),
-				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"credentials"}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"spec.credentials"}},
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
-			Expect(updateResponse.GetObject().GetCredentials().GetUsername()).To(Equal("new-admin"))
-			Expect(updateResponse.GetObject().GetCredentials().GetPassword()).To(Equal("new-secret"))
+			Expect(updateResponse.GetObject().GetSpec().GetCredentials().GetUsername()).To(Equal("new-admin"))
+			Expect(updateResponse.GetObject().GetSpec().GetCredentials().GetPassword()).To(Equal("new-secret"))
 		})
 
 		It("Delete removes the object", func() {
@@ -270,11 +280,13 @@ var _ = Describe("Private storage backends server", func() {
 					Metadata: privatev1.Metadata_builder{
 						Name: "test-backend",
 					}.Build(),
-					Provider: "vast",
-					Endpoint: "https://storage.example.com:8443",
-					Credentials: privatev1.StorageBackendCredentials_builder{
-						Username: "admin",
-						Password: "secret",
+					Spec: privatev1.StorageBackendSpec_builder{
+						Provider: "vast",
+						Endpoint: "https://storage.example.com:8443",
+						Credentials: privatev1.StorageBackendCredentials_builder{
+							Username: "admin",
+							Password: "secret",
+						}.Build(),
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -290,11 +302,13 @@ var _ = Describe("Private storage backends server", func() {
 					Metadata: privatev1.Metadata_builder{
 						Name: "test-backend",
 					}.Build(),
-					Provider: "vast",
-					Endpoint: "https://storage.example.com:8443",
-					Credentials: privatev1.StorageBackendCredentials_builder{
-						Username: "admin",
-						Password: "secret",
+					Spec: privatev1.StorageBackendSpec_builder{
+						Provider: "vast",
+						Endpoint: "https://storage.example.com:8443",
+						Credentials: privatev1.StorageBackendCredentials_builder{
+							Username: "admin",
+							Password: "secret",
+						}.Build(),
 					}.Build(),
 					Status: privatev1.StorageBackendStatus_builder{
 						State: privatev1.StorageBackendState_STORAGE_BACKEND_STATE_UNSPECIFIED,
@@ -313,11 +327,13 @@ var _ = Describe("Private storage backends server", func() {
 						Name:   "test-backend",
 						Tenant: "some-other-tenant",
 					}.Build(),
-					Provider: "vast",
-					Endpoint: "https://storage.example.com:8443",
-					Credentials: privatev1.StorageBackendCredentials_builder{
-						Username: "admin",
-						Password: "secret",
+					Spec: privatev1.StorageBackendSpec_builder{
+						Provider: "vast",
+						Endpoint: "https://storage.example.com:8443",
+						Credentials: privatev1.StorageBackendCredentials_builder{
+							Username: "admin",
+							Password: "secret",
+						}.Build(),
 					}.Build(),
 				}.Build(),
 			}.Build())
@@ -332,10 +348,12 @@ var _ = Describe("Private storage backends server", func() {
 						Metadata: privatev1.Metadata_builder{
 							Name: "test-backend",
 						}.Build(),
-						Endpoint: "https://storage.example.com:8443",
-						Credentials: privatev1.StorageBackendCredentials_builder{
-							Username: "admin",
-							Password: "secret",
+						Spec: privatev1.StorageBackendSpec_builder{
+							Endpoint: "https://storage.example.com:8443",
+							Credentials: privatev1.StorageBackendCredentials_builder{
+								Username: "admin",
+								Password: "secret",
+							}.Build(),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -352,10 +370,12 @@ var _ = Describe("Private storage backends server", func() {
 						Metadata: privatev1.Metadata_builder{
 							Name: "test-backend",
 						}.Build(),
-						Provider: "vast",
-						Credentials: privatev1.StorageBackendCredentials_builder{
-							Username: "admin",
-							Password: "secret",
+						Spec: privatev1.StorageBackendSpec_builder{
+							Provider: "vast",
+							Credentials: privatev1.StorageBackendCredentials_builder{
+								Username: "admin",
+								Password: "secret",
+							}.Build(),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -372,10 +392,12 @@ var _ = Describe("Private storage backends server", func() {
 						Metadata: privatev1.Metadata_builder{
 							Name: "test-backend",
 						}.Build(),
-						Provider: "vast",
-						Endpoint: "https://storage.example.com:8443",
-						Credentials: privatev1.StorageBackendCredentials_builder{
-							Password: "secret",
+						Spec: privatev1.StorageBackendSpec_builder{
+							Provider: "vast",
+							Endpoint: "https://storage.example.com:8443",
+							Credentials: privatev1.StorageBackendCredentials_builder{
+								Password: "secret",
+							}.Build(),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -392,10 +414,12 @@ var _ = Describe("Private storage backends server", func() {
 						Metadata: privatev1.Metadata_builder{
 							Name: "test-backend",
 						}.Build(),
-						Provider: "vast",
-						Endpoint: "https://storage.example.com:8443",
-						Credentials: privatev1.StorageBackendCredentials_builder{
-							Username: "admin",
+						Spec: privatev1.StorageBackendSpec_builder{
+							Provider: "vast",
+							Endpoint: "https://storage.example.com:8443",
+							Credentials: privatev1.StorageBackendCredentials_builder{
+								Username: "admin",
+							}.Build(),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -412,8 +436,10 @@ var _ = Describe("Private storage backends server", func() {
 						Metadata: privatev1.Metadata_builder{
 							Name: "test-backend",
 						}.Build(),
-						Provider: "vast",
-						Endpoint: "https://storage.example.com:8443",
+						Spec: privatev1.StorageBackendSpec_builder{
+							Provider: "vast",
+							Endpoint: "https://storage.example.com:8443",
+						}.Build(),
 					}.Build(),
 				}.Build())
 				Expect(err).To(HaveOccurred())
@@ -430,10 +456,12 @@ var _ = Describe("Private storage backends server", func() {
 
 				_, err := server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
 					Object: privatev1.StorageBackend_builder{
-						Id:       created.GetId(),
-						Provider: "ceph",
+						Id: created.GetId(),
+						Spec: privatev1.StorageBackendSpec_builder{
+							Provider: "ceph",
+						}.Build(),
 					}.Build(),
-					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"provider"}},
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"spec.provider"}},
 				}.Build())
 				Expect(err).To(HaveOccurred())
 				st, ok := status.FromError(err)
@@ -500,11 +528,13 @@ var _ = Describe("Private storage backends server", func() {
 						Metadata: privatev1.Metadata_builder{
 							Name: "unique-name",
 						}.Build(),
-						Provider: "ceph",
-						Endpoint: "https://other.example.com:8443",
-						Credentials: privatev1.StorageBackendCredentials_builder{
-							Username: "admin",
-							Password: "secret",
+						Spec: privatev1.StorageBackendSpec_builder{
+							Provider: "ceph",
+							Endpoint: "https://other.example.com:8443",
+							Credentials: privatev1.StorageBackendCredentials_builder{
+								Username: "admin",
+								Password: "secret",
+							}.Build(),
 						}.Build(),
 					}.Build(),
 				}.Build())
@@ -535,10 +565,12 @@ var _ = Describe("Private storage backends server", func() {
 				// First update succeeds:
 				_, err := server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
 					Object: privatev1.StorageBackend_builder{
-						Id:          created.GetId(),
-						Description: "first update",
+						Id: created.GetId(),
+						Spec: privatev1.StorageBackendSpec_builder{
+							Description: "first update",
+						}.Build(),
 					}.Build(),
-					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"description"}},
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"spec.description"}},
 					Lock:       true,
 				}.Build())
 				Expect(err).ToNot(HaveOccurred())
@@ -546,8 +578,10 @@ var _ = Describe("Private storage backends server", func() {
 				// Second update with the original version fails (version is now stale):
 				_, err = server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
 					Object: privatev1.StorageBackend_builder{
-						Id:          created.GetId(),
-						Description: "second update",
+						Id: created.GetId(),
+						Spec: privatev1.StorageBackendSpec_builder{
+							Description: "second update",
+						}.Build(),
 						Metadata: privatev1.Metadata_builder{
 							Version: created.GetMetadata().GetVersion(),
 						}.Build(),
@@ -561,7 +595,9 @@ var _ = Describe("Private storage backends server", func() {
 		It("Update without id fails", func() {
 			_, err := server.Update(ctx, privatev1.StorageBackendsUpdateRequest_builder{
 				Object: privatev1.StorageBackend_builder{
-					Description: "updated",
+					Spec: privatev1.StorageBackendSpec_builder{
+						Description: "updated",
+					}.Build(),
 				}.Build(),
 			}.Build())
 			Expect(err).To(HaveOccurred())
