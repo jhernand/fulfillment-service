@@ -13,7 +13,7 @@
 
 apiVersion: v2
 name: prometheus
-description: A Helm chart for Prometheus for use in the OSAC project
+description: A Helm chart for Prometheus for use in OSAC development and testing environments (not for production)
 type: application
 version: 0.0.0
 appVersion: "3.10.0"
