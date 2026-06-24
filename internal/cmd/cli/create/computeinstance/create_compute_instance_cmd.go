@@ -103,6 +103,12 @@ func Cmd() *cobra.Command {
 		memoryFlagHelp,
 	)
 	flags.StringVar(
+		&runner.args.instanceType,
+		"instance-type",
+		"",
+		instanceTypeFlagHelp,
+	)
+	flags.StringVar(
 		&runner.args.imageSourceRef,
 		"image",
 		"",
@@ -159,6 +165,8 @@ func Cmd() *cobra.Command {
 
 	result.MarkFlagsMutuallyExclusive("catalog-item", "template")
 	result.MarkFlagsOneRequired("catalog-item", "template")
+	result.MarkFlagsMutuallyExclusive("instance-type", "cores")
+	result.MarkFlagsMutuallyExclusive("instance-type", "memory-gib")
 	return result
 }
 
@@ -171,6 +179,7 @@ type runnerContext struct {
 		templateParameterFiles  []string
 		cores                   int32
 		memoryGiB               int32
+		instanceType            string
 		imageSourceRef          string
 		imageSourceType         string
 		sshKey                  string
@@ -266,6 +275,10 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to create compute instance: %w", err)
 		}
 
+		for _, w := range response.GetWarnings() {
+			fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+		}
+
 		computeInstance = response.Object
 		c.console.Infof(ctx, "Created compute instance '%s'.\n", computeInstance.Id)
 		return nil
@@ -314,6 +327,11 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}.Build())
 	if err != nil {
 		return fmt.Errorf("failed to create compute instance: %w", err)
+	}
+
+	// Display warnings from the server response:
+	for _, w := range response.GetWarnings() {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
 	}
 
 	// Display the result:
@@ -709,6 +727,9 @@ func (c *runnerContext) buildSpec(templateID string,
 	if c.args.memoryGiB > 0 {
 		spec.MemoryGib = new(c.args.memoryGiB)
 	}
+	if c.args.instanceType != "" {
+		spec.InstanceType = new(c.args.instanceType)
+	}
 	if c.args.sshKey != "" {
 		spec.SshKey = new(c.args.sshKey)
 	}
@@ -858,6 +879,9 @@ func (c *runnerContext) buildSpecFromCatalogItem(catalogItemID string) (*publicv
 	if c.args.memoryGiB > 0 {
 		spec.MemoryGib = new(c.args.memoryGiB)
 	}
+	if c.args.instanceType != "" {
+		spec.InstanceType = new(c.args.instanceType)
+	}
 	if c.args.sshKey != "" {
 		spec.SshKey = new(c.args.sshKey)
 	}
@@ -996,6 +1020,11 @@ _COUNT_ - Number of CPU cores.
 
 const memoryFlagHelp = `
 _SIZE_ - Memory size in GiB.
+`
+
+const instanceTypeFlagHelp = `
+_NAME_ - Instance type name. Mutually exclusive with
+{{ bt }}--cores{{ bt }} and {{ bt }}--memory-gib{{ bt }}.
 `
 
 const imageFlagHelp = `

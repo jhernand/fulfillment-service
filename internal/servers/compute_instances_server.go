@@ -246,6 +246,9 @@ func (s *ComputeInstancesServer) Create(ctx context.Context,
 	// Create the public response:
 	response = &publicv1.ComputeInstancesCreateResponse{}
 	response.SetObject(createdPublicComputeInstance)
+	// Propagate warnings from the private server response (deprecation notices
+	// for DEPRECATED instance types or legacy cores/memory_gib usage).
+	response.SetWarnings(privateResponse.GetWarnings())
 	return
 }
 

@@ -234,6 +234,7 @@ func (s *ComputeInstanceCatalogItemsServer) Create(ctx context.Context,
 
 	response = &publicv1.ComputeInstanceCatalogItemsCreateResponse{}
 	response.SetObject(createdPublicCatalogItem)
+	response.SetWarnings(privateResponse.GetWarnings())
 	return
 }
 
@@ -283,6 +284,7 @@ func (s *ComputeInstanceCatalogItemsServer) Update(ctx context.Context,
 
 	response = &publicv1.ComputeInstanceCatalogItemsUpdateResponse{}
 	response.SetObject(updatedPublicCatalogItem)
+	response.SetWarnings(privateResponse.GetWarnings())
 	return
 }
 

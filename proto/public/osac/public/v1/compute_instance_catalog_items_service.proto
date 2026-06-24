@@ -53,6 +53,9 @@ message ComputeInstanceCatalogItemsCreateRequest {
 
 message ComputeInstanceCatalogItemsCreateResponse {
   ComputeInstanceCatalogItem object = 1;
+
+  // Deprecation or validation warnings (e.g. deprecated instance type in field_definitions).
+  repeated string warnings = 2;
 }
 
 message ComputeInstanceCatalogItemsUpdateRequest {
@@ -67,6 +70,9 @@ message ComputeInstanceCatalogItemsUpdateRequest {
 
 message ComputeInstanceCatalogItemsUpdateResponse {
   ComputeInstanceCatalogItem object = 1;
+
+  // Deprecation or validation warnings (e.g. deprecated instance type in field_definitions).
+  repeated string warnings = 2;
 }
 
 message ComputeInstanceCatalogItemsDeleteRequest {

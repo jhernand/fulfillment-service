@@ -58,6 +58,7 @@ type PrivateComputeInstancesServer struct {
 	catalogItemsDao   *dao.GenericDAO[*privatev1.ComputeInstanceCatalogItem]
 	subnetsDao        *dao.GenericDAO[*privatev1.Subnet]
 	securityGroupsDao *dao.GenericDAO[*privatev1.SecurityGroup]
+	instanceTypesDao  *dao.GenericDAO[*privatev1.InstanceType]
 }
 
 func NewPrivateComputeInstancesServer() *PrivateComputeInstancesServerBuilder {
@@ -142,6 +143,16 @@ func (b *PrivateComputeInstancesServerBuilder) Build() (result *PrivateComputeIn
 		return
 	}
 
+	// Create the InstanceTypes DAO for instance type validation:
+	instanceTypesDao, err := dao.NewGenericDAO[*privatev1.InstanceType]().
+		SetLogger(b.logger).
+		SetTenancyLogic(b.tenancyLogic).
+		SetMetricsRegisterer(b.metricsRegisterer).
+		Build()
+	if err != nil {
+		return
+	}
+
 	// Create the generic server:
 	generic, err := NewGenericServer[*privatev1.ComputeInstance]().
 		SetLogger(b.logger).
@@ -163,6 +174,7 @@ func (b *PrivateComputeInstancesServerBuilder) Build() (result *PrivateComputeIn
 		catalogItemsDao:   catalogItemsDao,
 		subnetsDao:        subnetsDao,
 		securityGroupsDao: securityGroupsDao,
+		instanceTypesDao:  instanceTypesDao,
 	}
 	return
 }
@@ -226,7 +238,25 @@ func (s *PrivateComputeInstancesServer) Create(ctx context.Context,
 		}
 	}
 
+	// Validate instance type existence and state (D-02: validate-only, no resolution).
+	// Must run after template/catalog defaults are applied so instance_type defaults
+	// from templates are visible.
+	var warnings []string
+	warnings, err = s.validateInstanceType(ctx, request.GetObject())
+	if err != nil {
+		return
+	}
+
 	err = s.generic.Create(ctx, request, &response)
+	if err != nil {
+		return
+	}
+
+	// Attach warnings to the response (deprecation notices for DEPRECATED instance types
+	// or legacy cores/memory_gib usage per D-08, D-13).
+	if len(warnings) > 0 {
+		response.SetWarnings(warnings)
+	}
 	return
 }
 
@@ -364,6 +394,58 @@ func (s *PrivateComputeInstancesServer) applySpecDefaults(
 	return utils.ValidateRequiredSpecFields(spec)
 }
 
+// validateInstanceType validates the instance_type field on a ComputeInstance during creation.
+// Per D-01, the API stores only the instance_type name and does NOT expand cores/memory_gib.
+// Per D-02, the API validates existence and state but resolution happens in the reconciler.
+func (s *PrivateComputeInstancesServer) validateInstanceType(
+	ctx context.Context,
+	ci *privatev1.ComputeInstance,
+) ([]string, error) {
+	spec := ci.GetSpec()
+	instanceTypeName := spec.GetInstanceType()
+	var warnings []string
+
+	if instanceTypeName == "" {
+		// instance_type not on the spec directly. If a template is referenced
+		// (e.g. via catalog item), check whether its spec_defaults provide one.
+		if templateRef := spec.GetTemplate(); templateRef != "" {
+			template, fetchErr := s.fetchTemplate(ctx, templateRef)
+			if fetchErr == nil && template.GetSpecDefaults().HasInstanceType() {
+				instanceTypeName = template.GetSpecDefaults().GetInstanceType()
+			}
+		}
+	}
+
+	if instanceTypeName == "" {
+		// No instance_type provided. Check for legacy path (D-08).
+		if spec.HasCores() || spec.HasMemoryGib() {
+			warnings = append(warnings,
+				"Direct cores/memory_gib is deprecated, use instance_type instead. "+
+					"This path will be removed in a future release.")
+		}
+		return warnings, nil
+	}
+
+	// Instance type is provided. Check mutual exclusivity (D-09).
+	if spec.HasCores() || spec.HasMemoryGib() {
+		return nil, grpcstatus.Errorf(grpccodes.InvalidArgument,
+			"instance_type and cores/memory_gib are mutually exclusive")
+	}
+
+	// Look up the instance type and validate its state.
+	stateWarnings, err := validateInstanceTypeState(ctx, s.instanceTypesDao, instanceTypeName, "")
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, stateWarnings...)
+
+	// CRITICAL: Do NOT set spec.cores, spec.memory_gib, or labels here.
+	// Per D-01, the API stores only the instance_type name. The reconciler
+	// expands cores/memory_gib and sets the label on the K8S CR (Plan 04).
+
+	return warnings, nil
+}
+
 // validateTemplateImmutability ensures that the template and template_parameters fields
 // cannot be changed after compute instance creation.
 func (s *PrivateComputeInstancesServer) validateTemplateImmutability(ctx context.Context,
@@ -372,8 +454,9 @@ func (s *PrivateComputeInstancesServer) validateTemplateImmutability(ctx context
 	updatingTemplate := hasMaskPrefix(updateMask, "spec.template")
 	updatingTemplateParams := hasMaskPrefix(updateMask, "spec.template_parameters")
 	updatingCatalogItem := hasMaskPrefix(updateMask, "spec.catalog_item")
+	updatingInstanceType := hasMaskPrefix(updateMask, "spec.instance_type")
 
-	if !updatingTemplate && !updatingTemplateParams && !updatingCatalogItem {
+	if !updatingTemplate && !updatingTemplateParams && !updatingCatalogItem && !updatingInstanceType {
 		return nil
 	}
 
@@ -422,6 +505,15 @@ func (s *PrivateComputeInstancesServer) validateTemplateImmutability(ctx context
 			"cannot change spec.catalog_item from '%s' to '%s': catalog item is immutable",
 			existingSpec.GetCatalogItem(),
 			newSpec.GetCatalogItem(),
+		)
+	}
+
+	if updatingInstanceType && existingSpec.GetInstanceType() != newSpec.GetInstanceType() {
+		return grpcstatus.Errorf(
+			grpccodes.InvalidArgument,
+			"cannot change spec.instance_type from '%s' to '%s': instance type is immutable",
+			existingSpec.GetInstanceType(),
+			newSpec.GetInstanceType(),
 		)
 	}
 

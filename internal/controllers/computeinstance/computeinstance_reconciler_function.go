@@ -14,6 +14,7 @@ language governing permissions and limitations under the License.
 package computeinstance
 
 //go:generate mockgen -source=../../api/osac/private/v1/compute_instances_service_grpc.pb.go -destination=compute_instances_client_mock.go -package=computeinstance ComputeInstancesClient
+//go:generate mockgen -source=../../api/osac/private/v1/instance_types_service_grpc.pb.go -destination=instance_types_client_mock.go -package=computeinstance InstanceTypesClient
 
 import (
 	"context"
@@ -63,6 +64,7 @@ type function struct {
 	hubCache               controllers.HubCache
 	computeInstancesClient privatev1.ComputeInstancesClient
 	hubsClient             privatev1.HubsClient
+	instanceTypesClient    privatev1.InstanceTypesClient
 	maskCalculator         *masks.Calculator
 }
 
@@ -119,6 +121,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 		logger:                 b.logger,
 		computeInstancesClient: privatev1.NewComputeInstancesClient(b.connection),
 		hubsClient:             privatev1.NewHubsClient(b.connection),
+		instanceTypesClient:    privatev1.NewInstanceTypesClient(b.connection),
 		hubCache:               b.hubCache,
 		maskCalculator:         masks.NewCalculator().Build(),
 	}
@@ -199,13 +202,17 @@ func (t *task) update(ctx context.Context) error {
 
 	// Create or update the Kubernetes object:
 	if object == nil {
+		objectLabels := map[string]string{
+			labels.ComputeInstanceUuid: t.computeInstance.GetId(),
+		}
+		if instanceTypeName := t.computeInstance.GetSpec().GetInstanceType(); instanceTypeName != "" {
+			objectLabels[labels.InstanceTypeName] = instanceTypeName
+		}
 		object = &osacv1alpha1.ComputeInstance{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:    t.hubNamespace,
 				GenerateName: objectPrefix,
-				Labels: map[string]string{
-					labels.ComputeInstanceUuid: t.computeInstance.GetId(),
-				},
+				Labels:       objectLabels,
 				Annotations: map[string]string{
 					annotations.Tenant: t.computeInstance.GetMetadata().GetTenant(),
 				},
@@ -536,7 +543,9 @@ func (t *task) buildSpec(ctx context.Context) (osacv1alpha1.ComputeInstanceSpec,
 	}
 
 	// Add explicit spec fields if present:
-	t.addExplicitFields(&spec)
+	if err := t.addExplicitFields(ctx, &spec); err != nil {
+		return osacv1alpha1.ComputeInstanceSpec{}, err
+	}
 
 	// Handle network_attachments (required)
 	err = t.buildSpecNetworkAttachments(ctx, &spec)
@@ -620,14 +629,29 @@ func (t *task) buildSpecNetworkAttachments(ctx context.Context, spec *osacv1alph
 	return nil
 }
 
-func (t *task) addExplicitFields(spec *osacv1alpha1.ComputeInstanceSpec) {
+func (t *task) addExplicitFields(ctx context.Context, spec *osacv1alpha1.ComputeInstanceSpec) error {
 	ciSpec := t.computeInstance.GetSpec()
 
-	if ciSpec.HasCores() {
-		spec.Cores = ciSpec.GetCores()
-	}
-	if ciSpec.HasMemoryGib() {
-		spec.MemoryGiB = ciSpec.GetMemoryGib()
+	if instanceTypeName := ciSpec.GetInstanceType(); instanceTypeName != "" {
+		// Instance type path: resolve instance_type name to cores/memory_gib via gRPC lookup.
+		// Per D-05: do NOT check InstanceType state. The OBSOLETE check was done at API creation time.
+		response, err := t.r.instanceTypesClient.Get(ctx, privatev1.InstanceTypesGetRequest_builder{
+			Id: instanceTypeName,
+		}.Build())
+		if err != nil {
+			return fmt.Errorf("failed to resolve instance type '%s': %w", instanceTypeName, err)
+		}
+		itSpec := response.GetObject().GetSpec()
+		spec.Cores = itSpec.GetCores()
+		spec.MemoryGiB = itSpec.GetMemoryGib()
+	} else {
+		// Legacy path: use cores/memory_gib directly from the compute instance spec.
+		if ciSpec.HasCores() {
+			spec.Cores = ciSpec.GetCores()
+		}
+		if ciSpec.HasMemoryGib() {
+			spec.MemoryGiB = ciSpec.GetMemoryGib()
+		}
 	}
 	if ciSpec.HasRunStrategy() {
 		spec.RunStrategy = osacv1alpha1.RunStrategyType(ciSpec.GetRunStrategy())
@@ -660,12 +684,15 @@ func (t *task) addExplicitFields(spec *osacv1alpha1.ComputeInstanceSpec) {
 		}
 		spec.AdditionalDisks = disks
 	}
+
 	// Map is_windows boolean to guestOSFamily string
 	if ciSpec.HasIsWindows() && ciSpec.GetIsWindows() {
 		spec.GuestOSFamily = "windows"
 	} else {
 		spec.GuestOSFamily = "linux"
 	}
+
+	return nil
 }
 
 // ensureUserDataSecret creates a Kubernetes Secret containing the cloud-init user data

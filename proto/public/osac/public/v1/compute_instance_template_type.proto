@@ -112,4 +112,7 @@ message ComputeInstanceTemplateSpecDefaults {
 
   // Default run strategy.
   optional string run_strategy = 5;
+
+  // Default instance type name. Mutually exclusive with cores/memory_gib defaults.
+  optional string instance_type = 6;
 }

@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/gomega"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -497,6 +498,321 @@ var _ = Describe("Private compute instance catalog items server", func() {
 				}.Build(),
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		Describe("Instance type validation in field_definitions", func() {
+			var itServer *PrivateInstanceTypesServer
+
+			// createInstanceTypeWithState creates an instance type and transitions it to the
+			// given state. For ACTIVE, no transition is needed. For DEPRECATED or OBSOLETE,
+			// the type is first created as ACTIVE and then updated.
+			createInstanceTypeWithState := func(name string, state privatev1.InstanceTypeState) {
+				_, err := itServer.Create(ctx, privatev1.InstanceTypesCreateRequest_builder{
+					Object: privatev1.InstanceType_builder{
+						Metadata: privatev1.Metadata_builder{
+							Name: name,
+						}.Build(),
+						Spec: privatev1.InstanceTypeSpec_builder{
+							Cores:     4,
+							MemoryGib: 16,
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+
+				if state == privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_ACTIVE ||
+					state == privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_UNSPECIFIED {
+					return
+				}
+
+				_, err = itServer.Update(ctx, privatev1.InstanceTypesUpdateRequest_builder{
+					Object: privatev1.InstanceType_builder{
+						Id: name,
+						Spec: privatev1.InstanceTypeSpec_builder{
+							State: state,
+						}.Build(),
+					}.Build(),
+					UpdateMask: &fieldmaskpb.FieldMask{
+						Paths: []string{"spec.state"},
+					},
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+			}
+
+			BeforeEach(func() {
+				var err error
+				itServer, err = NewPrivateInstanceTypesServer().
+					SetLogger(logger).
+					SetAttributionLogic(attribution).
+					SetTenancyLogic(tenancy).
+					Build()
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("Returns warning when field_definitions default references a DEPRECATED instance type on Create", func() {
+				createInstanceTypeWithState("deprecated-type",
+					privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_DEPRECATED)
+
+				response, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item with deprecated default",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("deprecated-type"),
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.GetWarnings()).To(HaveLen(1))
+				Expect(response.GetWarnings()[0]).To(ContainSubstring("deprecated"))
+			})
+
+			It("Returns warning when field_definitions default references a DEPRECATED instance type on Update", func() {
+				// Create a catalog item without field_definitions first.
+				createResponse, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item to update",
+						Template: "my-ci-template-id",
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				catalogItemId := createResponse.GetObject().GetId()
+
+				createInstanceTypeWithState("deprecated-type-upd",
+					privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_DEPRECATED)
+
+				updateResponse, err := server.Update(ctx, privatev1.ComputeInstanceCatalogItemsUpdateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Id:       catalogItemId,
+						Title:    "Catalog item to update",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("deprecated-type-upd"),
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updateResponse.GetWarnings()).To(HaveLen(1))
+			})
+
+			It("Rejects Create when field_definitions default references an OBSOLETE instance type", func() {
+				createInstanceTypeWithState("obsolete-type",
+					privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_OBSOLETE)
+
+				_, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item with obsolete default",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("obsolete-type"),
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.FailedPrecondition))
+				Expect(status.Message()).To(ContainSubstring("obsolete"))
+			})
+
+			It("Rejects Update when field_definitions default references an OBSOLETE instance type", func() {
+				// Create a catalog item first.
+				createResponse, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item for obsolete update",
+						Template: "my-ci-template-id",
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				catalogItemId := createResponse.GetObject().GetId()
+
+				createInstanceTypeWithState("obsolete-type-upd",
+					privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_OBSOLETE)
+
+				_, err = server.Update(ctx, privatev1.ComputeInstanceCatalogItemsUpdateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Id:       catalogItemId,
+						Title:    "Catalog item for obsolete update",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("obsolete-type-upd"),
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.FailedPrecondition))
+			})
+
+			It("Returns no warnings when field_definitions default references an ACTIVE instance type", func() {
+				createInstanceTypeWithState("active-type",
+					privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_ACTIVE)
+
+				response, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item with active default",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("active-type"),
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.GetWarnings()).To(BeEmpty())
+			})
+
+			It("Rejects Create when field_definitions default references a non-existent instance type", func() {
+				_, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item with missing type",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("non-existent-type"),
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			})
+
+			It("Skips validation when field_definitions has no spec.instance_type path", func() {
+				response, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item without instance type field",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.cores",
+								Editable: true,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.GetWarnings()).To(BeEmpty())
+			})
+
+			It("Rejects Create when field_definitions control both instance_type and cores (D-19)", func() {
+				createInstanceTypeWithState("active-type-d19",
+					privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_ACTIVE)
+
+				_, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item with mutual exclusivity violation",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("active-type-d19"),
+							}.Build(),
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.cores",
+								Editable: true,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(status.Message()).To(ContainSubstring("mutually exclusive"))
+			})
+
+			It("Rejects Create when field_definitions control both instance_type and memory_gib (D-19)", func() {
+				createInstanceTypeWithState("active-type-d19-mem",
+					privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_ACTIVE)
+
+				_, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item with mutual exclusivity violation",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("active-type-d19-mem"),
+							}.Build(),
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.memory_gib",
+								Editable: true,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(status.Message()).To(ContainSubstring("mutually exclusive"))
+			})
+
+			It("Rejects Update when field_definitions control both instance_type and cores (D-19)", func() {
+				// Create a catalog item first.
+				createResponse, err := server.Create(ctx, privatev1.ComputeInstanceCatalogItemsCreateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Title:    "Catalog item for D-19 update test",
+						Template: "my-ci-template-id",
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				catalogItemId := createResponse.GetObject().GetId()
+
+				createInstanceTypeWithState("active-type-d19-upd",
+					privatev1.InstanceTypeState_INSTANCE_TYPE_STATE_ACTIVE)
+
+				_, err = server.Update(ctx, privatev1.ComputeInstanceCatalogItemsUpdateRequest_builder{
+					Object: privatev1.ComputeInstanceCatalogItem_builder{
+						Id:       catalogItemId,
+						Title:    "Catalog item for D-19 update test",
+						Template: "my-ci-template-id",
+						FieldDefinitions: []*privatev1.FieldDefinition{
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.instance_type",
+								Editable: true,
+								Default:  structpb.NewStringValue("active-type-d19-upd"),
+							}.Build(),
+							privatev1.FieldDefinition_builder{
+								Path:     "spec.cores",
+								Editable: true,
+							}.Build(),
+						},
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(status.Message()).To(ContainSubstring("mutually exclusive"))
+			})
 		})
 	})
 })
