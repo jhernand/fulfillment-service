@@ -45,9 +45,14 @@ create table archived_storage_backends (
 create index storage_backends_by_creator on storage_backends (creator);
 create index storage_backends_by_label on storage_backends using gin (labels);
 
--- Name uniqueness across all backends (active and soft-deleted). Names are permanently reserved.
+-- Name uniqueness across all backends (active and soft-deleted).
 create unique index storage_backends_unique_name
   on storage_backends (name);
+
+-- Tenant foreign key referencing the tenants table.
+alter table storage_backends
+  add constraint storage_backends_tenant_fk
+  foreign key (tenant) references tenants (id);
 
 -- Enforce immutability of id and name columns at the database level.
 create trigger check_immutable_columns
