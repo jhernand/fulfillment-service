@@ -106,7 +106,7 @@ func (b *TableRendererBuilder) SetLogger(value *slog.Logger) *TableRendererBuild
 
 // SetHelper sets the reflection helper that will be used to introspect objects. This is mandatory.
 func (b *TableRendererBuilder) SetHelper(value reflection.Helper) *TableRendererBuilder {
-	b.helper = value
+	b.helper = reflection.NormalizeNil(value)
 	return b
 }
 
