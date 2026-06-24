@@ -16,6 +16,7 @@ package publicip
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
@@ -52,7 +53,13 @@ func Cmd() *cobra.Command {
 		"",
 		poolFlagHelp,
 	)
-	result.MarkFlagRequired("pool") //nolint:errcheck
+	flags.StringVar(
+		&runner.args.ipFamily,
+		"ip-family",
+		"",
+		ipFamilyFlagHelp,
+	)
+	result.MarkFlagsMutuallyExclusive("pool", "ip-family")
 	// Note: attaching a compute instance at creation time (via --compute-instance flag) is future
 	// scope. To attach a public IP to a compute instance, use 'osac create publicipattachment'.
 	return result
@@ -60,8 +67,9 @@ func Cmd() *cobra.Command {
 
 type runnerContext struct {
 	args struct {
-		name string
-		pool string
+		name     string
+		pool     string
+		ipFamily string
 	}
 	logger  *slog.Logger
 	console *terminal.Console
@@ -84,26 +92,34 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close()
 
-	poolClient := publicv1.NewPublicIPPoolsClient(conn)
-	pool, err := lookup.Find(c.args.pool, "public IP pool", func(filter string, limit int32) ([]*publicv1.PublicIPPool, error) {
-		resp, err := poolClient.List(ctx, publicv1.PublicIPPoolsListRequest_builder{
-			Filter: proto.String(filter),
-			Limit:  proto.Int32(limit),
-		}.Build())
+	spec := publicv1.PublicIPSpec_builder{}
+
+	if c.args.pool != "" {
+		poolClient := publicv1.NewPublicIPPoolsClient(conn)
+		pool, err := lookup.Find(c.args.pool, "public IP pool", func(filter string, limit int32) ([]*publicv1.PublicIPPool, error) {
+			resp, err := poolClient.List(ctx, publicv1.PublicIPPoolsListRequest_builder{
+				Filter: proto.String(filter),
+				Limit:  proto.Int32(limit),
+			}.Build())
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve public IP pool %q: %w", c.args.pool, err)
+			}
+			return resp.GetItems(), nil
+		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve public IP pool %q: %w", c.args.pool, err)
+			return err
 		}
-		return resp.GetItems(), nil
-	})
-	if err != nil {
-		return err
+		spec.Pool = pool.GetId()
+	} else if c.args.ipFamily != "" {
+		family, err := parseIPFamily(c.args.ipFamily)
+		if err != nil {
+			return err
+		}
+		spec.IpFamily = family
 	}
 
 	client := publicv1.NewPublicIPsClient(conn)
 
-	spec := publicv1.PublicIPSpec_builder{
-		Pool: pool.GetId(),
-	}
 	publicIP := publicv1.PublicIP_builder{
 		Metadata: publicv1.Metadata_builder{Name: c.args.name, Tenant: config.TenantFromContext(ctx)}.Build(),
 		Spec:     spec.Build(),
@@ -119,16 +135,38 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func parseIPFamily(value string) (publicv1.IPFamily, error) {
+	switch strings.ToLower(value) {
+	case "ipv4":
+		return publicv1.IPFamily_IP_FAMILY_IPV4, nil
+	case "ipv6":
+		return publicv1.IPFamily_IP_FAMILY_IPV6, nil
+	default:
+		return publicv1.IPFamily_IP_FAMILY_UNSPECIFIED,
+			fmt.Errorf("invalid IP family %q: must be 'IPv4' or 'IPv6'", value)
+	}
+}
+
 const shortHelp = `Create a public IP.`
 
 const longHelp = `
-Allocate a public IP address from an existing PublicIPPool.
+Allocate a public IP address from a PublicIPPool.
+
+Specify either {{ bt }}--pool{{ bt }} to select a specific pool, or {{ bt }}--ip-family{{ bt }}
+to let the system auto-select a READY pool with available capacity. If neither is provided, the
+system defaults to auto-selecting an IPv4 pool. The two flags are mutually exclusive.
 
 Examples:
 
 {{ bt 3 }}shell
-# Create a public IP from a pool
+# Create a public IP from a specific pool
 {{ binary }} create publicip --name my-ip --pool pool-abc123
+
+# Create a public IP with automatic IPv6 pool selection
+{{ binary }} create publicip --name my-ip --ip-family IPv6
+
+# Create a public IP with default IPv4 auto-selection
+{{ binary }} create publicip --name my-ip
 {{ bt 3 }}
 `
 
@@ -138,4 +176,10 @@ _NAME_ - Name of the public IP.
 
 const poolFlagHelp = `
 _ID|NAME_ - ID or name of the parent PublicIPPool to allocate the address from.
+Mutually exclusive with {{ bt }}--ip-family{{ bt }}.
+`
+
+const ipFamilyFlagHelp = `
+_IPv4|IPv6_ - IP address family preference for automatic pool selection.
+Mutually exclusive with {{ bt }}--pool{{ bt }}.
 `
