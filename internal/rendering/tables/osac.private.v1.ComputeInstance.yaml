@@ -24,6 +24,9 @@ columns:
   type: osac.private.v1.ComputeInstanceTemplate
   lookup: true
 
+- header: OS
+  value: "has(this.spec.is_windows) && this.spec.is_windows ? 'windows' : 'linux'"
+
 - header: STATE
   value: this.status.state
   type: osac.private.v1.ComputeInstanceState

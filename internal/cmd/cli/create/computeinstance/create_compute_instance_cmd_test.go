@@ -71,6 +71,25 @@ var _ = Describe("buildSpec", func() {
 		}.Build()
 		Expect(proto.Equal(spec, want)).To(BeTrue(), "spec should equal expected spec")
 	})
+
+	It("should set IsWindows when windows flag is true", func() {
+		c := &runnerContext{}
+		c.args.windows = true
+		spec, err := c.buildSpec("tmpl", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(spec.IsWindows).NotTo(BeNil())
+		Expect(*spec.IsWindows).To(BeTrue())
+	})
+
+	It("should leave IsWindows nil when windows flag is false", func() {
+		c := &runnerContext{}
+		c.args.windows = false
+		spec, err := c.buildSpec("tmpl", nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(spec.IsWindows).To(BeNil())
+	})
 })
 
 var _ = Describe("buildSpecFromCatalogItem", func() {
@@ -106,6 +125,25 @@ var _ = Describe("buildSpecFromCatalogItem", func() {
 		c.args.networkAttachments = []string{"subnet=a,foo=bar"}
 		_, err := c.buildSpecFromCatalogItem("cat-003")
 		Expect(err).To(HaveOccurred())
+	})
+
+	It("should set IsWindows when windows flag is true", func() {
+		c := &runnerContext{}
+		c.args.windows = true
+		spec, err := c.buildSpecFromCatalogItem("cat-004")
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(spec.IsWindows).NotTo(BeNil())
+		Expect(*spec.IsWindows).To(BeTrue())
+	})
+
+	It("should leave IsWindows nil when windows flag is false", func() {
+		c := &runnerContext{}
+		c.args.windows = false
+		spec, err := c.buildSpecFromCatalogItem("cat-005")
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(spec.IsWindows).To(BeNil())
 	})
 })
 
@@ -143,6 +181,15 @@ var _ = Describe("Create computeinstance flag registration", func() {
 		flag := cmd.Flags().Lookup("template")
 		Expect(flag).NotTo(BeNil())
 		Expect(flag.Shorthand).To(Equal("t"))
+	})
+
+	It("should register --windows flag with default value false", func() {
+		cmd := Cmd()
+		cmd.SetOut(GinkgoWriter)
+		cmd.SetErr(GinkgoWriter)
+		flag := cmd.Flags().Lookup("windows")
+		Expect(flag).NotTo(BeNil())
+		Expect(flag.DefValue).To(Equal("false"))
 	})
 })
 
