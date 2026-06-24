@@ -27,7 +27,7 @@ var _ = DescribeMigration("Create external IP tables", func() {
 	DescribeTable(
 		"Creates the expected tables",
 		func(ctx context.Context, table string) {
-			err := tool.Migrate(ctx, 60)
+			err := tool.Migrate(ctx, 61)
 			Expect(err).ToNot(HaveOccurred())
 
 			quotedTable := pgx.Identifier{table}.Sanitize()
@@ -77,7 +77,7 @@ var _ = DescribeMigration("Create external IP tables", func() {
 	}
 
 	It("Rejects duplicate active external IP", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 60)
+		err := tool.Migrate(ctx, 61)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = insertAttachment(ctx, "a1", "eip-1", "ci-1")
@@ -88,7 +88,7 @@ var _ = DescribeMigration("Create external IP tables", func() {
 	})
 
 	It("Rejects duplicate active compute instance", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 60)
+		err := tool.Migrate(ctx, 61)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = insertAttachment(ctx, "a1", "eip-1", "ci-1")
@@ -99,7 +99,7 @@ var _ = DescribeMigration("Create external IP tables", func() {
 	})
 
 	It("Allows same external IP after soft delete", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 60)
+		err := tool.Migrate(ctx, 61)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = insertAttachment(ctx, "a1", "eip-1", "ci-1")
@@ -112,7 +112,7 @@ var _ = DescribeMigration("Create external IP tables", func() {
 	})
 
 	It("Allows same compute instance after soft delete", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 60)
+		err := tool.Migrate(ctx, 61)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = insertAttachment(ctx, "a1", "eip-1", "ci-1")
@@ -125,7 +125,7 @@ var _ = DescribeMigration("Create external IP tables", func() {
 	})
 
 	It("Allows different external IPs and compute instances", func(ctx context.Context) {
-		err := tool.Migrate(ctx, 60)
+		err := tool.Migrate(ctx, 61)
 		Expect(err).ToNot(HaveOccurred())
 
 		err = insertAttachment(ctx, "a1", "eip-1", "ci-1")
