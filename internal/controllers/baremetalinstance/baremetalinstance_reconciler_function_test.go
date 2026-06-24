@@ -24,6 +24,8 @@ import (
 	bmfov1alpha1 "github.com/osac-project/bare-metal-fulfillment-operator/api/v1alpha1"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -274,6 +276,99 @@ var _ = Describe("mutateBMI", func() {
 		err := t.mutateBMI(ctx, &obj)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(obj.Spec.TemplateParameters).To(BeEmpty())
+	})
+
+	It("should include user-provided template_parameters in CR templateParameters", func() {
+		catalogItemsClient := defaultFakeCatalogItemsClient()
+
+		osParam, err := anypb.New(wrapperspb.String("rhel9.4"))
+		Expect(err).ToNot(HaveOccurred())
+
+		t := &task{
+			r: &function{
+				logger:                              logger,
+				bareMetalInstanceCatalogItemsClient: catalogItemsClient,
+			},
+			bareMetalInstance: privatev1.BareMetalInstance_builder{
+				Id: "bmi-test",
+				Spec: privatev1.BareMetalInstanceSpec_builder{
+					CatalogItem:        "catalog-1",
+					TemplateParameters: map[string]*anypb.Any{"os_version": osParam},
+				}.Build(),
+			}.Build(),
+		}
+
+		var obj bmfov1alpha1.BareMetalInstance
+		err = t.mutateBMI(ctx, &obj)
+		Expect(err).ToNot(HaveOccurred())
+
+		var params map[string]any
+		Expect(json.Unmarshal([]byte(obj.Spec.TemplateParameters), &params)).To(Succeed())
+		Expect(params["os_version"]).To(Equal("rhel9.4"))
+	})
+
+	It("should merge user template_parameters with system parameters", func() {
+		catalogItemsClient := defaultFakeCatalogItemsClient()
+
+		osParam, err := anypb.New(wrapperspb.String("rhel9.4"))
+		Expect(err).ToNot(HaveOccurred())
+
+		t := &task{
+			r: &function{
+				logger:                              logger,
+				bareMetalInstanceCatalogItemsClient: catalogItemsClient,
+			},
+			bareMetalInstance: privatev1.BareMetalInstance_builder{
+				Id: "bmi-test",
+				Spec: privatev1.BareMetalInstanceSpec_builder{
+					CatalogItem:        "catalog-1",
+					SshPublicKey:       new("ssh-ed25519 AAAA... test@example.com"),
+					TemplateParameters: map[string]*anypb.Any{"os_version": osParam},
+				}.Build(),
+			}.Build(),
+			userDataSecretName: "bmi-test-user-data",
+		}
+
+		var obj bmfov1alpha1.BareMetalInstance
+		err = t.mutateBMI(ctx, &obj)
+		Expect(err).ToNot(HaveOccurred())
+
+		var params map[string]any
+		Expect(json.Unmarshal([]byte(obj.Spec.TemplateParameters), &params)).To(Succeed())
+		Expect(params["os_version"]).To(Equal("rhel9.4"))
+		Expect(params["sshPublicKey"]).To(Equal("ssh-ed25519 AAAA... test@example.com"))
+		Expect(params["userDataSecret"]).To(Equal("bmi-test-user-data"))
+	})
+
+	It("should let system parameters override user-provided ones", func() {
+		catalogItemsClient := defaultFakeCatalogItemsClient()
+
+		userSshParam, err := anypb.New(wrapperspb.String("user-provided-key"))
+		Expect(err).ToNot(HaveOccurred())
+
+		t := &task{
+			r: &function{
+				logger:                              logger,
+				bareMetalInstanceCatalogItemsClient: catalogItemsClient,
+			},
+			bareMetalInstance: privatev1.BareMetalInstance_builder{
+				Id: "bmi-test",
+				Spec: privatev1.BareMetalInstanceSpec_builder{
+					CatalogItem:        "catalog-1",
+					SshPublicKey:       new("ssh-ed25519 AAAA... real@example.com"),
+					TemplateParameters: map[string]*anypb.Any{"sshPublicKey": userSshParam},
+				}.Build(),
+			}.Build(),
+		}
+
+		var obj bmfov1alpha1.BareMetalInstance
+		err = t.mutateBMI(ctx, &obj)
+		Expect(err).ToNot(HaveOccurred())
+
+		var params map[string]any
+		Expect(json.Unmarshal([]byte(obj.Spec.TemplateParameters), &params)).To(Succeed())
+		Expect(params["sshPublicKey"]).To(Equal("ssh-ed25519 AAAA... real@example.com"),
+			"system sshPublicKey must override user-provided template_parameters value")
 	})
 
 	It("should return error when catalog item fetch fails", func() {

@@ -18,17 +18,21 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 
 	grpccodes "google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
 	"github.com/osac-project/fulfillment-service/internal/auth"
 	"github.com/osac-project/fulfillment-service/internal/database/dao"
 	"github.com/osac-project/fulfillment-service/internal/events"
+	"github.com/osac-project/fulfillment-service/internal/utils"
 )
 
 const bareMetalInstanceUserDataMaxBytes = 64 * 1024
@@ -48,6 +52,7 @@ type PrivateBareMetalInstancesServer struct {
 	logger          *slog.Logger
 	generic         *GenericServer[*privatev1.BareMetalInstance]
 	catalogItemsDao *dao.GenericDAO[*privatev1.BareMetalInstanceCatalogItem]
+	templatesDao    *dao.GenericDAO[*privatev1.BareMetalInstanceTemplate]
 }
 
 func NewPrivateBareMetalInstancesServer() *PrivateBareMetalInstancesServerBuilder {
@@ -102,6 +107,15 @@ func (b *PrivateBareMetalInstancesServerBuilder) Build() (result *PrivateBareMet
 		return
 	}
 
+	templatesDao, err := dao.NewGenericDAO[*privatev1.BareMetalInstanceTemplate]().
+		SetLogger(b.logger).
+		SetTenancyLogic(b.tenancyLogic).
+		SetMetricsRegisterer(b.metricsRegisterer).
+		Build()
+	if err != nil {
+		return
+	}
+
 	generic, err := NewGenericServer[*privatev1.BareMetalInstance]().
 		SetLogger(b.logger).
 		SetService(privatev1.BareMetalInstances_ServiceDesc.ServiceName).
@@ -118,6 +132,7 @@ func (b *PrivateBareMetalInstancesServerBuilder) Build() (result *PrivateBareMet
 		logger:          b.logger,
 		generic:         generic,
 		catalogItemsDao: catalogItemsDao,
+		templatesDao:    templatesDao,
 	}
 	return
 }
@@ -234,23 +249,77 @@ func (s *PrivateBareMetalInstancesServer) validateAndApplyCatalogItem(ctx contex
 		return err
 	}
 
-	return applyFieldDefinitions(bmi.GetSpec(), item.GetFieldDefinitions())
+	if err := applyFieldDefinitions(bmi.GetSpec(), item.GetFieldDefinitions()); err != nil {
+		return err
+	}
+
+	return s.validateAndApplyTemplateParameters(ctx, bmi, item.GetTemplate())
 }
 
-// validateImmutability ensures catalog_item, ssh_public_key, and user_data cannot be changed after creation.
+// validateAndApplyTemplateParameters fetches the template referenced by the catalog item,
+// validates user-provided template_parameters against the template's parameter definitions,
+// and applies default values for optional parameters.
+func (s *PrivateBareMetalInstancesServer) validateAndApplyTemplateParameters(ctx context.Context,
+	bmi *privatev1.BareMetalInstance, templateID string) error {
+	providedParams := bmi.GetSpec().GetTemplateParameters()
+	if templateID == "" {
+		if len(providedParams) > 0 {
+			return grpcstatus.Errorf(grpccodes.InvalidArgument,
+				"spec.template_parameters can't be set because the catalog item has no template")
+		}
+		return nil
+	}
+
+	getResponse, err := s.templatesDao.Get().SetId(templateID).Do(ctx)
+	if err != nil {
+		var notFoundErr *dao.ErrNotFound
+		if errors.As(err, &notFoundErr) {
+			if len(providedParams) == 0 {
+				return nil
+			}
+			return grpcstatus.Errorf(grpccodes.InvalidArgument,
+				"template '%s' does not exist, cannot validate template_parameters", templateID)
+		}
+		s.logger.ErrorContext(ctx, "Failed to fetch template for parameter validation",
+			slog.String("template_id", templateID),
+			slog.Any("error", err))
+		return grpcstatus.Errorf(grpccodes.Internal, "failed to fetch template")
+	}
+	template := getResponse.GetObject()
+
+	if len(template.GetParameters()) == 0 && len(providedParams) == 0 {
+		return nil
+	}
+
+	if err := utils.ValidateBareMetalInstanceTemplateParameters(template, providedParams); err != nil {
+		return err
+	}
+
+	actualParams := utils.ProcessTemplateParametersWithDefaults(
+		utils.BareMetalInstanceTemplateAdapter{BareMetalInstanceTemplate: template},
+		providedParams,
+	)
+	bmi.GetSpec().SetTemplateParameters(actualParams)
+
+	return nil
+}
+
+// validateImmutability ensures catalog_item, ssh_public_key, user_data, and template_parameters
+// cannot be changed after creation.
 func (s *PrivateBareMetalInstancesServer) validateImmutability(ctx context.Context,
 	request *privatev1.BareMetalInstancesUpdateRequest) error {
 	mask := request.GetUpdateMask()
 	updatingCatalogItem := updateIncludesField(mask, "spec.catalog_item")
 	updatingSshKey := updateIncludesField(mask, "spec.ssh_public_key")
 	updatingUserData := updateIncludesField(mask, "spec.user_data")
+	updatingTemplateParams := updateIncludesField(mask, "spec.template_parameters")
 
 	bmi := request.GetObject()
 	if bmi == nil {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "bare metal instance is mandatory")
 	}
 	newSpec := bmi.GetSpec()
-	if newSpec == nil && (updatingCatalogItem || updatingSshKey || updatingUserData) {
+	if newSpec == nil && (updatingCatalogItem || updatingSshKey || updatingUserData || updatingTemplateParams) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "bare metal instance spec is mandatory")
 	}
 	id := bmi.GetId()
@@ -288,6 +357,16 @@ func (s *PrivateBareMetalInstancesServer) validateImmutability(ctx context.Conte
 	if updatingUserData && existingSpec.GetUserData() != newSpec.GetUserData() {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument,
 			"cannot change spec.user_data: user_data is immutable after creation")
+	}
+
+	if updatingTemplateParams {
+		templateParamsEqual := func(first, second *anypb.Any) bool {
+			return proto.Equal(first, second)
+		}
+		if !maps.EqualFunc(existingSpec.GetTemplateParameters(), newSpec.GetTemplateParameters(), templateParamsEqual) {
+			return grpcstatus.Errorf(grpccodes.InvalidArgument,
+				"cannot change spec.template_parameters: template parameters are immutable")
+		}
 	}
 
 	return nil
