@@ -241,6 +241,11 @@ func (t *task) validateTenant() error {
 }
 
 func (t *task) delete(ctx context.Context) (err error) {
+	t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_DELETING)
+	t.updateCondition(
+		privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_READY,
+		privatev1.ConditionStatus_CONDITION_STATUS_FALSE, "", "")
+
 	t.hubId = t.bareMetalInstance.GetStatus().GetHub()
 	if t.hubId == "" {
 		t.removeFinalizer()
@@ -414,61 +419,102 @@ func (t *task) syncStatus(object *bmfov1alpha1.BareMetalInstance) {
 		return
 	}
 
-	switch object.Status.Phase {
-	case bmfov1alpha1.BareMetalInstancePhaseAllocating,
-		bmfov1alpha1.BareMetalInstancePhaseProgressing:
-		t.bareMetalInstance.GetStatus().SetState(
-			privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING)
-	case bmfov1alpha1.BareMetalInstancePhaseReady:
-		t.bareMetalInstance.GetStatus().SetState(
-			privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_RUNNING)
-	case bmfov1alpha1.BareMetalInstancePhaseFailed:
-		t.bareMetalInstance.GetStatus().SetState(
-			privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_FAILED)
-	case bmfov1alpha1.BareMetalInstancePhaseDeleting:
-		t.bareMetalInstance.GetStatus().SetState(
-			privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_DELETING)
+	powerSynced := object.GetStatusCondition(bmfov1alpha1.HostConditionPowerSynced)
+
+	t.syncState(object, powerSynced)
+
+	readyStatus := privatev1.ConditionStatus_CONDITION_STATUS_TRUE
+	state := t.bareMetalInstance.GetStatus().GetState()
+	if state == privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING ||
+		state == privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_DELETING ||
+		state == privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_FAILED {
+		readyStatus = privatev1.ConditionStatus_CONDITION_STATUS_FALSE
 	}
+	t.updateCondition(privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_READY, readyStatus, "", "")
+
+	// PROVISIONED is a ratchet: only promoted True once the template completes;
+	// never demoted False once set (re-provisioning cycles must not un-provision the instance).
+	// TemplateComplete=True implies Allocated=True by ordering, so no separate allocation check needed.
+	templateCond := object.GetStatusCondition(bmfov1alpha1.HostConditionProvisionTemplateComplete)
+	if templateCond != nil && templateCond.Status == metav1.ConditionTrue {
+		t.updateCondition(
+			privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_PROVISIONED,
+			privatev1.ConditionStatus_CONDITION_STATUS_TRUE, "", "")
+	}
+
+	restartPending := t.bareMetalInstance.GetSpec().GetRestartTrigger() != t.bareMetalInstance.GetStatus().GetRestartTrigger()
 
 	for _, cond := range object.Status.Conditions {
 		condType := bmfov1alpha1.BareMetalInstanceConditionType(cond.Type)
 		status := mapConditionStatus(cond.Status)
 
 		switch condType {
-		case bmfov1alpha1.HostConditionAllocated:
-			t.updateCondition(
-				privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_PROVISIONED,
-				status, cond.Reason, sanitizeConditionMessage(condType, cond.Status))
 		case bmfov1alpha1.HostConditionProvisionTemplateComplete:
 			t.updateCondition(
 				privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_CONFIGURATION_APPLIED,
 				status, cond.Reason, sanitizeConditionMessage(condType, cond.Status))
-		case bmfov1alpha1.HostConditionAvailable:
-			t.updateCondition(
-				privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_READY,
-				status, cond.Reason, sanitizeConditionMessage(condType, cond.Status))
 		case bmfov1alpha1.HostConditionPowerSynced:
+			if !restartPending {
+				continue
+			}
 			if cond.Status == metav1.ConditionFalse && cond.Reason == bmfov1alpha1.HostConditionReasonProgressing {
 				t.updateCondition(
 					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS,
-					privatev1.ConditionStatus_CONDITION_STATUS_TRUE, cond.Reason,
-					"Restart in progress")
-			} else if cond.Status == metav1.ConditionFalse && cond.Reason == bmfov1alpha1.HostConditionReasonIronicAPIFailure {
+					privatev1.ConditionStatus_CONDITION_STATUS_TRUE, cond.Reason, "Restart in progress")
 				t.updateCondition(
 					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED,
-					privatev1.ConditionStatus_CONDITION_STATUS_TRUE, cond.Reason,
-					"Restart failed")
+					privatev1.ConditionStatus_CONDITION_STATUS_FALSE, "", "")
+			} else if cond.Status == metav1.ConditionFalse {
+				t.updateCondition(
+					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED,
+					privatev1.ConditionStatus_CONDITION_STATUS_TRUE, "PowerSyncFailed", "Restart failed")
+				t.updateCondition(
+					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS,
+					privatev1.ConditionStatus_CONDITION_STATUS_FALSE, "", "")
 			} else if cond.Status == metav1.ConditionTrue {
 				t.updateCondition(
 					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_IN_PROGRESS,
-					privatev1.ConditionStatus_CONDITION_STATUS_FALSE, cond.Reason, "")
+					privatev1.ConditionStatus_CONDITION_STATUS_FALSE, "", "")
 				t.updateCondition(
 					privatev1.BareMetalInstanceConditionType_BARE_METAL_INSTANCE_CONDITION_TYPE_RESTART_FAILED,
-					privatev1.ConditionStatus_CONDITION_STATUS_FALSE, cond.Reason, "")
+					privatev1.ConditionStatus_CONDITION_STATUS_FALSE, "", "")
 				t.bareMetalInstance.GetStatus().SetRestartTrigger(
 					t.bareMetalInstance.GetSpec().GetRestartTrigger())
 			}
 		}
+	}
+}
+
+func (t *task) syncState(object *bmfov1alpha1.BareMetalInstance, powerSynced *metav1.Condition) {
+	switch object.Status.Phase {
+	case bmfov1alpha1.BareMetalInstancePhaseFailed:
+		t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_FAILED)
+		return
+	case bmfov1alpha1.BareMetalInstancePhaseDeleting:
+		t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_DELETING)
+		return
+	}
+
+	if powerSynced == nil {
+		t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING)
+		return
+	}
+
+	switch {
+	case powerSynced.Status == metav1.ConditionTrue && powerSynced.Reason == bmfov1alpha1.HostConditionReasonPowerOn:
+		t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_RUNNING)
+	case powerSynced.Status == metav1.ConditionTrue && powerSynced.Reason == bmfov1alpha1.HostConditionReasonPowerOff:
+		t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_STOPPED)
+	case powerSynced.Status == metav1.ConditionFalse && powerSynced.Reason == bmfov1alpha1.HostConditionReasonProgressing:
+		if object.Spec.RunStrategy == bmfov1alpha1.RunStrategyHalted {
+			t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_STOPPING)
+		} else {
+			t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_STARTING)
+		}
+	case powerSynced.Status == metav1.ConditionFalse:
+		t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_FAILED)
+	default:
+		t.bareMetalInstance.GetStatus().SetState(privatev1.BareMetalInstanceState_BARE_METAL_INSTANCE_STATE_PROVISIONING)
 	}
 }
 
