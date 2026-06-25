@@ -19,7 +19,6 @@ columns:
 - header: NAME
   value: "has(this.metadata.name)? this.metadata.name: '-'"
 
-- header: TENANT
-  value: this.spec.tenant
-  type: osac.private.v1.Tenant
-  lookup: true
+- header: STATE
+  value: this.status.state
+  type: osac.private.v1.TenantState

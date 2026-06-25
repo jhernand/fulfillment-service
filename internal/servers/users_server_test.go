@@ -51,7 +51,7 @@ var _ = Describe("Public Users Server", func() {
 					Enabled:       true,
 					FirstName:     "Test",
 					LastName:      "User",
-					Organization:  "org-123",
+					Tenant:        "org-123",
 				},
 			},
 		}
@@ -274,8 +274,8 @@ var _ = Describe("Public Users Server", func() {
 		Expect(updateResp.Object.Spec.HasCredentials()).To(BeFalse())
 	})
 
-	It("Lists users filtered by organization", func() {
-		// Create users in two different organizations:
+	It("Lists users filtered by tenant", func() {
+		// Create users in two different tenants:
 		for i := range 2 {
 			_, err := publicServer.Create(ctx, &publicv1.UsersCreateRequest{
 				Object: &publicv1.User{
@@ -285,7 +285,7 @@ var _ = Describe("Public Users Server", func() {
 					Spec: &publicv1.UserSpec{
 						Username:     fmt.Sprintf("org-a-user-%d", i),
 						Email:        fmt.Sprintf("user-%d@org-a.com", i),
-						Organization: "org-a",
+						Tenant: "org-a",
 					},
 				},
 			})
@@ -300,33 +300,33 @@ var _ = Describe("Public Users Server", func() {
 					Spec: &publicv1.UserSpec{
 						Username:     fmt.Sprintf("org-b-user-%d", i),
 						Email:        fmt.Sprintf("user-%d@org-b.com", i),
-						Organization: "org-b",
+						Tenant: "org-b",
 					},
 				},
 			})
 			Expect(err).ToNot(HaveOccurred())
 		}
 
-		// List users filtering by organization "org-a":
+		// List users filtering by tenant "org-a":
 		listResp, err := publicServer.List(ctx, publicv1.UsersListRequest_builder{
-			Filter: new("this.spec.organization == 'org-a'"),
+			Filter: new("this.spec.tenant == 'org-a'"),
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(listResp.GetSize()).To(Equal(int32(2)))
 		Expect(listResp.GetItems()).To(HaveLen(2))
 		for _, item := range listResp.GetItems() {
-			Expect(item.GetSpec().GetOrganization()).To(Equal("org-a"))
+			Expect(item.GetSpec().GetTenant()).To(Equal("org-a"))
 		}
 
-		// List users filtering by organization "org-b":
+		// List users filtering by tenant "org-b":
 		listResp, err = publicServer.List(ctx, publicv1.UsersListRequest_builder{
-			Filter: new("this.spec.organization == 'org-b'"),
+			Filter: new("this.spec.tenant == 'org-b'"),
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(listResp.GetSize()).To(Equal(int32(3)))
 		Expect(listResp.GetItems()).To(HaveLen(3))
 		for _, item := range listResp.GetItems() {
-			Expect(item.GetSpec().GetOrganization()).To(Equal("org-b"))
+			Expect(item.GetSpec().GetTenant()).To(Equal("org-b"))
 		}
 	})
 })

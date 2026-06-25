@@ -49,7 +49,7 @@ var _ = Describe("Users Server", func() {
 					Enabled:       true,
 					FirstName:     "Test",
 					LastName:      "User",
-					Organization:  "org-123",
+					Tenant:        "org-123",
 				},
 			},
 		}
