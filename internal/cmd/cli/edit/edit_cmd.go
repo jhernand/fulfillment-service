@@ -28,8 +28,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"gopkg.in/yaml.v3"
 
+	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/config"
 	"github.com/osac-project/fulfillment-service/internal/logging"
 	"github.com/osac-project/fulfillment-service/internal/reflection"
@@ -239,7 +242,9 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	c.showWatchSuggestion(ctx, updated)
+	if c.isWatchable() {
+		c.showWatchSuggestion(ctx, updated)
+	}
 
 	return nil
 }
@@ -271,6 +276,26 @@ func (c *runnerContext) findEditor(ctx context.Context) string {
 func (c *runnerContext) update(ctx context.Context, object proto.Message) (result proto.Message, err error) {
 	result, err = c.helper.Update(ctx, object)
 	return
+}
+
+func (c *runnerContext) isWatchable() bool {
+	objectFullName := c.helper.Descriptor().FullName()
+	for _, eventDesc := range []protoreflect.MessageDescriptor{
+		(&publicv1.Event{}).ProtoReflect().Descriptor(),
+		(&privatev1.Event{}).ProtoReflect().Descriptor(),
+	} {
+		payloadOneof := eventDesc.Oneofs().ByName("payload")
+		if payloadOneof == nil {
+			continue
+		}
+		for i := 0; i < payloadOneof.Fields().Len(); i++ {
+			field := payloadOneof.Fields().Get(i)
+			if field.Message() != nil && field.Message().FullName() == objectFullName {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *runnerContext) showWatchSuggestion(ctx context.Context, object proto.Message) {
