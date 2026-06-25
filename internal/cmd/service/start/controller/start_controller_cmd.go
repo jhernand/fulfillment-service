@@ -45,6 +45,7 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/controllers/cluster"
 	"github.com/osac-project/fulfillment-service/internal/controllers/computeinstance"
 	"github.com/osac-project/fulfillment-service/internal/controllers/identityprovider"
+	"github.com/osac-project/fulfillment-service/internal/controllers/onboarding"
 	"github.com/osac-project/fulfillment-service/internal/controllers/project"
 	"github.com/osac-project/fulfillment-service/internal/controllers/publicip"
 	"github.com/osac-project/fulfillment-service/internal/controllers/publicipattachment"
@@ -814,6 +815,43 @@ func (r *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 			r.logger.InfoContext(
 				ctx,
 				"Tenant reconciler failed",
+				slog.Any("error", err),
+			)
+		}
+	}()
+
+	// Create the onboarding reconciler:
+	r.logger.InfoContext(ctx, "Creating onboarding reconciler")
+	onboardingReconcilerFunction, err := onboarding.NewFunction().
+		SetLogger(r.logger).
+		SetConnection(r.client).
+		SetHubCache(hubCache).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create onboarding reconciler function: %w", err)
+	}
+	onboardingReconciler, err := controllers.NewReconciler[*privatev1.Organization]().
+		SetLogger(r.logger).
+		SetName("onboarding").
+		SetClient(r.client).
+		SetFunction(onboardingReconcilerFunction).
+		SetEventFilter("has(event.organization) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetHealthReporter(healthAggregator).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create onboarding reconciler: %w", err)
+	}
+
+	// Start the onboarding reconciler:
+	r.logger.InfoContext(ctx, "Starting onboarding reconciler")
+	go func() {
+		err := onboardingReconciler.Start(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			r.logger.InfoContext(ctx, "Onboarding reconciler finished")
+		} else {
+			r.logger.InfoContext(
+				ctx,
+				"Onboarding reconciler failed",
 				slog.Any("error", err),
 			)
 		}
