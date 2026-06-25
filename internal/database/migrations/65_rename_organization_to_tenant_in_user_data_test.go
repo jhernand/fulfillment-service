@@ -25,8 +25,15 @@ var _ = DescribeMigration("Rename organization to tenant in user data", func() {
 	DescribeTable(
 		"Renames spec.organization to spec.tenant",
 		func(ctx context.Context, inputData string, expectedData string) {
-			// Insert a user with old-style data:
+			// Insert the tenant to satisfy the FK constraint:
 			_, err := conn.Exec(
+				ctx,
+				`insert into tenants (id, name, tenant, creator, data) values ('test-tenant', 'Test Tenant', 'system', 'system', '{}') on conflict do nothing`,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Insert a user with old-style data:
+			_, err = conn.Exec(
 				ctx,
 				`insert into users (id, name, tenant, creator, data) values ('test-user', 'test-user', 'test-tenant', 'system', $1::jsonb)`,
 				inputData,
@@ -53,14 +60,14 @@ var _ = DescribeMigration("Rename organization to tenant in user data", func() {
 				"spec": {
 					"username": "testuser",
 					"email": "test@example.com",
-					"organization": "org-a"
+					"organization": "tenant-a"
 				}
 			}`,
 			`{
 				"spec": {
 					"username": "testuser",
 					"email": "test@example.com",
-					"tenant": "org-a"
+					"tenant": "tenant-a"
 				}
 			}`,
 		),
@@ -69,13 +76,13 @@ var _ = DescribeMigration("Rename organization to tenant in user data", func() {
 			`{
 				"spec": {
 					"username": "testuser",
-					"tenant": "org-b"
+					"tenant": "tenant-b"
 				}
 			}`,
 			`{
 				"spec": {
 					"username": "testuser",
-					"tenant": "org-b"
+					"tenant": "tenant-b"
 				}
 			}`,
 		),
@@ -93,10 +100,33 @@ var _ = DescribeMigration("Rename organization to tenant in user data", func() {
 				"spec": {}
 			}`,
 		),
+		Entry(
+			"User with both spec.organization and spec.tenant - preserves tenant",
+			`{
+				"spec": {
+					"username": "testuser",
+					"organization": "old-org",
+					"tenant": "correct-tenant"
+				}
+			}`,
+			`{
+				"spec": {
+					"username": "testuser",
+					"tenant": "correct-tenant"
+				}
+			}`,
+		),
 	)
 
 	It("Migrates archived_users table", func(ctx context.Context) {
+		// Insert the tenant to satisfy the FK constraint:
 		_, err := conn.Exec(
+			ctx,
+			`insert into tenants (id, name, tenant, creator, data) values ('test-tenant', 'Test Tenant', 'system', 'system', '{}') on conflict do nothing`,
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = conn.Exec(
 			ctx,
 			`insert into archived_users (id, name, tenant, creator, data, creation_timestamp, deletion_timestamp)
 			 values ('archived-user', 'archived-user', 'test-tenant', 'system', $1::jsonb, now(), now())`,
@@ -104,7 +134,7 @@ var _ = DescribeMigration("Rename organization to tenant in user data", func() {
 				"spec": {
 					"username": "old-user",
 					"email": "old@example.com",
-					"organization": "org-archived"
+					"organization": "tenant-archived"
 				}
 			}`,
 		)
@@ -127,7 +157,7 @@ var _ = DescribeMigration("Rename organization to tenant in user data", func() {
 			"spec": {
 				"username": "old-user",
 				"email": "old@example.com",
-				"tenant": "org-archived"
+				"tenant": "tenant-archived"
 			}
 		}`
 		Expect(actualData).To(MatchJSON(expectedData))

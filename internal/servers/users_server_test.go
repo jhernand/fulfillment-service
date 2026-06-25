@@ -51,7 +51,7 @@ var _ = Describe("Public Users Server", func() {
 					Enabled:       true,
 					FirstName:     "Test",
 					LastName:      "User",
-					Tenant:        "org-123",
+					Tenant:        "tenant-123",
 				},
 			},
 		}
@@ -64,6 +64,7 @@ var _ = Describe("Public Users Server", func() {
 		Expect(response.Object.Id).ToNot(BeEmpty())
 		Expect(response.Object.Metadata.Name).To(Equal("test-user"))
 		Expect(response.Object.Spec.Username).To(Equal("testuser"))
+		Expect(response.Object.Spec.Tenant).To(Equal("tenant-123"))
 	})
 
 	It("Prunes credentials from created user", func() {
@@ -280,12 +281,12 @@ var _ = Describe("Public Users Server", func() {
 			_, err := publicServer.Create(ctx, &publicv1.UsersCreateRequest{
 				Object: &publicv1.User{
 					Metadata: &publicv1.Metadata{
-						Name: fmt.Sprintf("org-a-user-%d", i),
+						Name: fmt.Sprintf("tenant-a-user-%d", i),
 					},
 					Spec: &publicv1.UserSpec{
-						Username:     fmt.Sprintf("org-a-user-%d", i),
-						Email:        fmt.Sprintf("user-%d@org-a.com", i),
-						Tenant: "org-a",
+						Username: fmt.Sprintf("tenant-a-user-%d", i),
+						Email:    fmt.Sprintf("user-%d@tenant-a.com", i),
+						Tenant:   "tenant-a",
 					},
 				},
 			})
@@ -295,38 +296,38 @@ var _ = Describe("Public Users Server", func() {
 			_, err := publicServer.Create(ctx, &publicv1.UsersCreateRequest{
 				Object: &publicv1.User{
 					Metadata: &publicv1.Metadata{
-						Name: fmt.Sprintf("org-b-user-%d", i),
+						Name: fmt.Sprintf("tenant-b-user-%d", i),
 					},
 					Spec: &publicv1.UserSpec{
-						Username:     fmt.Sprintf("org-b-user-%d", i),
-						Email:        fmt.Sprintf("user-%d@org-b.com", i),
-						Tenant: "org-b",
+						Username: fmt.Sprintf("tenant-b-user-%d", i),
+						Email:    fmt.Sprintf("user-%d@tenant-b.com", i),
+						Tenant:   "tenant-b",
 					},
 				},
 			})
 			Expect(err).ToNot(HaveOccurred())
 		}
 
-		// List users filtering by tenant "org-a":
+		// List users filtering by tenant "tenant-a":
 		listResp, err := publicServer.List(ctx, publicv1.UsersListRequest_builder{
-			Filter: new("this.spec.tenant == 'org-a'"),
+			Filter: new("this.spec.tenant == 'tenant-a'"),
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(listResp.GetSize()).To(Equal(int32(2)))
 		Expect(listResp.GetItems()).To(HaveLen(2))
 		for _, item := range listResp.GetItems() {
-			Expect(item.GetSpec().GetTenant()).To(Equal("org-a"))
+			Expect(item.GetSpec().GetTenant()).To(Equal("tenant-a"))
 		}
 
-		// List users filtering by tenant "org-b":
+		// List users filtering by tenant "tenant-b":
 		listResp, err = publicServer.List(ctx, publicv1.UsersListRequest_builder{
-			Filter: new("this.spec.tenant == 'org-b'"),
+			Filter: new("this.spec.tenant == 'tenant-b'"),
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(listResp.GetSize()).To(Equal(int32(3)))
 		Expect(listResp.GetItems()).To(HaveLen(3))
 		for _, item := range listResp.GetItems() {
-			Expect(item.GetSpec().GetTenant()).To(Equal("org-b"))
+			Expect(item.GetSpec().GetTenant()).To(Equal("tenant-b"))
 		}
 	})
 })

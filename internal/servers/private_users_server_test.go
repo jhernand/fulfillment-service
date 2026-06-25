@@ -49,7 +49,7 @@ var _ = Describe("Users Server", func() {
 					Enabled:       true,
 					FirstName:     "Test",
 					LastName:      "User",
-					Tenant:        "org-123",
+					Tenant:        "tenant-123",
 				},
 			},
 		}
@@ -62,6 +62,7 @@ var _ = Describe("Users Server", func() {
 		Expect(response.Object.Id).ToNot(BeEmpty())
 		Expect(response.Object.Metadata.Name).To(Equal("test-user"))
 		Expect(response.Object.Spec.Username).To(Equal("testuser"))
+		Expect(response.Object.Spec.Tenant).To(Equal("tenant-123"))
 	})
 
 	It("Lists users", func() {

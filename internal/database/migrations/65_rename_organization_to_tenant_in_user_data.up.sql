@@ -18,7 +18,10 @@ update users
 set data = jsonb_set(
   data #- '{spec,organization}',
   '{spec,tenant}',
-  data->'spec'->'organization'
+  case
+    when data->'spec' ? 'tenant' then data->'spec'->'tenant'
+    else data->'spec'->'organization'
+  end
 )
 where data->'spec' ? 'organization';
 
@@ -26,6 +29,9 @@ update archived_users
 set data = jsonb_set(
   data #- '{spec,organization}',
   '{spec,tenant}',
-  data->'spec'->'organization'
+  case
+    when data->'spec' ? 'tenant' then data->'spec'->'tenant'
+    else data->'spec'->'organization'
+  end
 )
 where data->'spec' ? 'organization';
