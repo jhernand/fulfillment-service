@@ -42,6 +42,8 @@ const (
 // OrganizationsClient is the client API for Organizations service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Organizations service is superseded by Tenants.
 type OrganizationsClient interface {
 	// Retrieves the list of organizations.
 	List(ctx context.Context, in *OrganizationsListRequest, opts ...grpc.CallOption) (*OrganizationsListResponse, error)
@@ -116,6 +118,8 @@ func (c *organizationsClient) Delete(ctx context.Context, in *OrganizationsDelet
 // OrganizationsServer is the server API for Organizations service.
 // All implementations must embed UnimplementedOrganizationsServer
 // for forward compatibility.
+//
+// Organizations service is superseded by Tenants.
 type OrganizationsServer interface {
 	// Retrieves the list of organizations.
 	List(context.Context, *OrganizationsListRequest) (*OrganizationsListResponse, error)

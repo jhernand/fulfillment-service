@@ -35,6 +35,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// OrganizationState is superseded by TenantState.
+//
 // Lifecycle states for Organization resources.
 //
 // State transitions typically follow: UNSPECIFIED -> PENDING -> SYNCED, with FAILED as a terminal error state
@@ -113,6 +115,7 @@ func (x OrganizationState) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
+// Organization is superseded by Tenant.
 type Organization struct {
 	state         protoimpl.MessageState `protogen:"hybrid.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -245,6 +248,7 @@ func (b0 Organization_builder) Build() *Organization {
 	return m0
 }
 
+// OrganizationSpec is superseded by TenantSpec.
 type OrganizationSpec struct {
 	state         protoimpl.MessageState `protogen:"hybrid.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -288,6 +292,8 @@ func (b0 OrganizationSpec_builder) Build() *OrganizationSpec {
 	return m0
 }
 
+// OrganizationStatus is superseded by TenantStatus.
+//
 // Represents the current operational state of an Organization.
 //
 // Status is system-provided and read-only. Users cannot modify status fields directly; the system updates them

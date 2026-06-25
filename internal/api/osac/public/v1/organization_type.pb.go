@@ -35,6 +35,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Organization is superseded by Tenant.
+//
 // An organization groups tenants and resources for a customer or business unit.
 type Organization struct {
 	state protoimpl.MessageState `protogen:"hybrid.v1"`
@@ -145,6 +147,7 @@ func (b0 Organization_builder) Build() *Organization {
 	return m0
 }
 
+// OrganizationSpec is superseded by TenantSpec.
 type OrganizationSpec struct {
 	state         protoimpl.MessageState `protogen:"hybrid.v1"`
 	unknownFields protoimpl.UnknownFields
