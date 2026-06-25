@@ -75,7 +75,7 @@ type runnerContext struct {
 	format         string
 	conn           *grpc.ClientConn
 	marshalOptions protojson.MarshalOptions
-	helper         *reflection.ObjectHelper
+	helper         reflection.ObjectHelper
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {

@@ -101,8 +101,8 @@ type runnerContext struct {
 	console        *terminal.Console
 	conn           *grpc.ClientConn
 	marshalOptions protojson.MarshalOptions
-	globalHelper   *reflection.Helper
-	objectHelper   *reflection.ObjectHelper
+	globalHelper   reflection.Helper
+	objectHelper   reflection.ObjectHelper
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {

@@ -37,7 +37,7 @@ var _ = Describe("Edit command", func() {
 		conn    *grpc.ClientConn
 		console *terminal.Console
 		output  *bytes.Buffer
-		helper  *reflection.ObjectHelper
+		helper  reflection.ObjectHelper
 	)
 
 	BeforeEach(func() {

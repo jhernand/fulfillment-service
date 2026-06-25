@@ -80,7 +80,7 @@ type columnLayout struct {
 // NewTableRenderer function instead.
 type TableRendererBuilder struct {
 	logger *slog.Logger
-	helper *reflection.Helper
+	helper reflection.Helper
 	writer io.Writer
 }
 
@@ -88,7 +88,7 @@ type TableRendererBuilder struct {
 // directly, use the NewTableRenderer function instead.
 type TableRenderer struct {
 	logger *slog.Logger
-	helper *reflection.Helper
+	helper reflection.Helper
 	writer *tabwriter.Writer
 	cache  map[protoreflect.FullName]map[string]string
 }
@@ -105,8 +105,8 @@ func (b *TableRendererBuilder) SetLogger(value *slog.Logger) *TableRendererBuild
 }
 
 // SetHelper sets the reflection helper that will be used to introspect objects. This is mandatory.
-func (b *TableRendererBuilder) SetHelper(value *reflection.Helper) *TableRendererBuilder {
-	b.helper = value
+func (b *TableRendererBuilder) SetHelper(value reflection.Helper) *TableRendererBuilder {
+	b.helper = reflection.NormalizeNil(value)
 	return b
 }
 
@@ -244,7 +244,7 @@ func (r *TableRenderer) Render(ctx context.Context, objects any) error {
 }
 
 // loadTable loads the table definition for the given object type from the embedded filesystem.
-func (r *TableRenderer) loadTable(helper *reflection.ObjectHelper) (result *tableLayout, err error) {
+func (r *TableRenderer) loadTable(helper reflection.ObjectHelper) (result *tableLayout, err error) {
 	// Try to read the table definition file:
 	file := fmt.Sprintf("%s.yaml", helper.FullName())
 	data, err := fs.ReadFile(tablesFS, path.Join("tables", file))
@@ -297,7 +297,7 @@ func (r *TableRenderer) renderHeader(cols []*columnLayout) error {
 
 // renderRow renders a single row of the table.
 func (r *TableRenderer) renderRow(ctx context.Context, cols []*columnLayout, prgs []cel.Program, object proto.Message,
-	helper *reflection.ObjectHelper) error {
+	helper reflection.ObjectHelper) error {
 	// Wrap the object in a top-level "this" field to avoid conflicts with reserved words:
 	in := map[string]any{
 		"this": object,
