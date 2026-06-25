@@ -19,7 +19,6 @@ labels:
     component: grpc-server
 
 resources:
-- authconfig.yaml
 - certificate.yaml
 - deployment.yaml
 - service.yaml

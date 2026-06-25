@@ -2085,7 +2085,7 @@ func (t *Tool) registerHub(ctx context.Context) error {
 	// Create the hubs client:
 	hubsClient := privatev1.NewHubsClient(t.internalView.adminConn)
 
-	// Wait for Authorino authorization to be ready:
+	// Wait for the API to be ready:
 	for range 30 {
 		_, err = hubsClient.List(ctx, privatev1.HubsListRequest_builder{}.Build())
 		if err == nil {
@@ -2094,7 +2094,7 @@ func (t *Tool) registerHub(ctx context.Context) error {
 		time.Sleep(time.Second)
 	}
 	if err != nil {
-		return fmt.Errorf("authorization not ready after waiting: %w", err)
+		return fmt.Errorf("API not ready after waiting: %w", err)
 	}
 
 	// Create the hub:

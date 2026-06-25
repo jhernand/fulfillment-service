@@ -316,12 +316,6 @@ func (k *Kind) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to install default gateway: %w", err)
 	}
 
-	// Install authorino:
-	err = k.installAuthorino(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to install authorino: %w", err)
-	}
-
 	return nil
 }
 
@@ -930,42 +924,6 @@ func (k *Kind) generateCa() (keyPem, crtPem []byte, err error) {
 	return keyPem, crtPem, nil
 }
 
-func (k *Kind) installAuthorino(ctx context.Context) (err error) {
-	// Apply the authorino manifests:
-	k.logger.DebugContext(ctx, "Applying authorino manifests")
-	applyCmd, err := NewCommand().
-		SetLogger(k.logger).
-		SetName(kubectlCmd).
-		SetHome(k.home).
-		SetQuiet(k.quiet).
-		SetArgs(
-			"apply",
-			"--kubeconfig", k.kubeconfigFile,
-			"--filename", authorinoManifests,
-		).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create command to apply authorino manifests: %w", err)
-	}
-	err = applyCmd.Execute(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to apply authorino manifests: %w", err)
-	}
-	k.logger.DebugContext(ctx, "Applied authorino manifests")
-
-	// Wait for custom resource definition to be available:
-	err = k.waitForCrd(ctx, "authorino.yaml", time.Minute)
-	if err != nil {
-		return fmt.Errorf("failed to wait for authorino CRD: %w", err)
-	}
-	err = k.waitForCrd(ctx, "authconfig.yaml", time.Minute)
-	if err != nil {
-		return fmt.Errorf("failed to wait for authconfig CRD: %w", err)
-	}
-
-	return nil
-}
-
 func (k *Kind) installEnvoyGateway(ctx context.Context) (err error) {
 	k.logger.DebugContext(ctx, "Installing Envoy Gateway")
 	installCmd, err := NewCommand().
@@ -1217,7 +1175,6 @@ const internalIngressPort = 30000
 const (
 	certManagerVersion  = "v1.20.0"
 	trustManagerVersion = "v0.22.0"
-	authorinoVersion    = "v0.23.1"
 	envoyGatewayVersion = "v1.6.5"
 )
 
@@ -1232,10 +1189,4 @@ const (
 	envoyGatewayName      = "default"
 	envoyGatewayNamespace = "envoy-gateway"
 	envoyProxyName        = "default"
-)
-
-// Details of the authorino installation:
-const (
-	authorinoManifests = "https://raw.githubusercontent.com/Kuadrant/authorino-operator/refs/heads/release-" +
-		authorinoVersion + "/config/deploy/manifests.yaml"
 )

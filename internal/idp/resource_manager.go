@@ -142,7 +142,7 @@ func (m *ResourceManager) getGroupIDByPath(ctx context.Context, organizationName
 
 // CreateProjectGroups creates Keycloak organization groups for a project.
 // Creates hierarchical groups: /{project-name}/viewers and /{project-name}/managers
-// These groups are used by Authorino OPA policies for authorization.
+// These groups are used by the authorization policy.
 // Returns the managers group ID for immediate use (avoids timing issues with group lookup).
 func (m *ResourceManager) CreateProjectGroups(ctx context.Context, tenant, projectName string) (string, error) {
 	if tenant == "" {

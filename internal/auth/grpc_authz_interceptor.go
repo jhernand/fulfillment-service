@@ -56,9 +56,9 @@ type GrpcAuthzInterceptorBuilder struct {
 }
 
 // GrpcAuthzInterceptor is a gRPC interceptor that evaluates an embedded Rego policy for authorization. It reads the
-// validated JWT token from the context (placed there by the authentication interceptor), constructs an input matching
-// the Authorino structure, and evaluates the policy to determine if the request is allowed. On success it constructs a
-// Subject containing the user and tenants and stores it in the context.
+// validated JWT token from the context (placed there by the authentication interceptor), constructs an input and
+// evaluates the policy to determine if the request is allowed. On success it constructs a Subject containing the user
+// and tenants and stores it in the context.
 type GrpcAuthzInterceptor struct {
 	logger           *slog.Logger
 	anonymousMethods []*regexp.Regexp
@@ -290,7 +290,7 @@ func (i *GrpcAuthzInterceptor) authorizeWithoutToken(ctx context.Context, method
 
 func (i *GrpcAuthzInterceptor) authorizeWithToken(ctx context.Context, method string, request any,
 	token *jwt.Token) (result context.Context, err error) {
-	// Build the input for the Rego policy matching the Authorino structure:
+	// Build the input for the Rego policy:
 	input, err := i.buildInput(ctx, method, request, token)
 	if err != nil {
 		i.logger.ErrorContext(
@@ -418,8 +418,7 @@ func (i *GrpcAuthzInterceptor) isAnonymousMethod(method string) bool {
 	return false
 }
 
-// buildInput constructs the OPA input map from the validated JWT token, matching the Authorino structure so the Rego
-// policy can be used unchanged.
+// buildInput constructs the OPA input map from the validated JWT token.
 func (i *GrpcAuthzInterceptor) buildInput(ctx context.Context, method string, request any,
 	token *jwt.Token) (result map[string]any, err error) {
 	// Get the claims from the token:
@@ -434,7 +433,7 @@ func (i *GrpcAuthzInterceptor) buildInput(ctx context.Context, method string, re
 
 	// Try to extract the object identifier from the request so that the external authorization service can use
 	// it to make fine grained authorization decisions. The identifier is sent in the context extensions of the
-	// check request. For example, Authorino exposes it to OPA policies as `input.context.context_extensions.id`.
+	// check request, available to OPA policies as `input.context.context_extensions.id`.
 	extensions := map[string]any{}
 	if request != nil {
 		id := i.extractId(request)
@@ -455,7 +454,7 @@ func (i *GrpcAuthzInterceptor) buildInput(ctx context.Context, method string, re
 		}
 	}
 
-	// Build an 'identity' document resembling what Authorino would do:
+	// Build the identity document:
 	identity := map[string]any{}
 	if kube {
 		identity["authnMethod"] = "serviceaccount"
@@ -487,7 +486,7 @@ func (i *GrpcAuthzInterceptor) buildInput(ctx context.Context, method string, re
 		}
 	}
 
-	// Build an 'input' document resembling what Authorino would do:
+	// Build the input document:
 	result = map[string]any{
 		"context": map[string]any{
 			"request": map[string]any{

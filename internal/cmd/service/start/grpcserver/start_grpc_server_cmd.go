@@ -19,7 +19,6 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"os"
 	"syscall"
 	"time"
 
@@ -55,7 +54,6 @@ import (
 
 // Cmd creates and returns the `start grpc-server` command.
 func Cmd() *cobra.Command {
-	var err error
 	runner := &runnerContext{}
 	command := &cobra.Command{
 		Use:                   "grpc-server [FLAG...]",
@@ -69,34 +67,6 @@ func Cmd() *cobra.Command {
 	network.AddListenerFlags(flags, network.GrpcListenerName, network.DefaultGrpcAddress)
 	network.AddListenerFlags(flags, network.MetricsListenerName, network.DefaultMetricsAddress)
 	database.AddFlags(flags)
-	flags.StringVar(
-		&runner.args.authType,
-		"grpc-authn-type",
-		"guest",
-		grpcAuthnTypeFlagHelp,
-	)
-	err = flags.MarkDeprecated(
-		"grpc-authn-type",
-		"this flag is ignored, authentication is now always enabled",
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to mark deprecated flag 'grpc-authn-type': %v\n", err)
-		return command
-	}
-	flags.StringVar(
-		&runner.args.externalAuthAddress,
-		"grpc-authn-external-address",
-		"",
-		grpcAuthnExternalAddressFlagHelp,
-	)
-	err = flags.MarkDeprecated(
-		"grpc-authn-external-address",
-		"this flag is ignored, external authentication via Authorino is no longer used",
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to mark deprecated flag 'grpc-authn-external-address': %v\n", err)
-		return command
-	}
 	flags.StringSliceVar(
 		&runner.args.caFiles,
 		"ca-file",
@@ -109,20 +79,6 @@ func Cmd() *cobra.Command {
 		[]string{},
 		grpcAuthnTrustedTokenIssuersFlagHelp,
 	)
-	flags.StringVar(
-		&runner.args.tenancyLogic,
-		"tenancy-logic",
-		"default",
-		tenancyLogicFlagHelp,
-	)
-	err = flags.MarkDeprecated(
-		"tenancy-logic",
-		"this flag is ignored, tenancy logic is now always the default",
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to mark deprecated flag 'tenancy-logic': %v\n", err)
-		return command
-	}
 	flags.StringVar(
 		&runner.args.tokenSignerCrt,
 		"token-signer-crt",
@@ -168,10 +124,7 @@ type runnerContext struct {
 	flags  *pflag.FlagSet
 	args   struct {
 		caFiles                  []string
-		authType                 string
-		externalAuthAddress      string
 		trustedTokenIssuers      []string
-		tenancyLogic             string
 		tokenSignerCrt           string
 		tokenSignerKey           string
 		tokenEncryptionCrt       string
@@ -321,11 +274,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 	}
 
 	// Create the tenancy logic:
-	c.logger.InfoContext(
-		ctx,
-		"Creating tenancy logic",
-		slog.String("type", c.args.tenancyLogic),
-	)
+	c.logger.InfoContext(ctx, "Creating tenancy logic")
 	var tenancyLogic auth.TenancyLogic
 	tenancyLogic, err = auth.NewDefaultTenancyLogic().
 		SetLogger(c.logger).
@@ -1339,20 +1288,6 @@ const longHelp = `
 Starts the gRPC server.
 `
 
-const grpcAuthnTypeFlagHelp = `
-_TYPE_ - **Deprecated and ignored.** The service now always uses
-the built-in JWKS authentication and Rego authorization. This flag
-is accepted for backward compatibility but has no effect.
- auth service.`
-
-const grpcAuthnExternalAddressFlagHelp = `
-_ADDRESS_ - **Deprecated and ignored.** External authentication via
-Authorino is no longer used. The service now validates JWT tokens
-directly using JWKS endpoints discovered from the trusted token
-issuers. This flag is accepted for backward compatibility but has
-no effect.
-`
-
 const caFileFlagHelp = `
 _FILE_ - Files or directories containing trusted CA certificates in PEM format. Used for TLS connections to the external
 services.
@@ -1361,10 +1296,6 @@ services.
 const grpcAuthnTrustedTokenIssuersFlagHelp = `
 _ISSUERS_ - Comma separated list of token issuers that
 are advertised as trusted by the gRPC server.
-`
-
-const tenancyLogicFlagHelp = `
-_LOGIC_ - **Deprecated and ignored.** The service now always uses the default tenancy logic.
 `
 
 const tokenSignerCrtFlagHelp = `
