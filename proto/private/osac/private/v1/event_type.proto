@@ -44,6 +44,8 @@ import "osac/private/v1/virtual_network_type.proto";
 
 // Represents events delivered by the server.
 message Event {
+  reserved 18; // Previously Organization, removed in favor of Tenant.
+
   // Unique identifier of the event.
   string id = 1;
 
@@ -64,7 +66,6 @@ message Event {
     SecurityGroup security_group = 14;
     PublicIPPool public_ip_pool = 16;
     PublicIP public_ip = 17;
-    // 18 was Organization, removed in OSAC-1532.
     User user = 19;
     Role role = 20;
     RoleBinding role_binding = 21;
