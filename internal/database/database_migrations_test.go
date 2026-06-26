@@ -125,9 +125,9 @@ var _ = Describe("Migrations", func() {
 		// Compare the computed hash with the stored hash:
 		if computedHashText != storedHashText {
 			Fail(fmt.Sprintf(
-				"Database migrations hash in '%s' is outdated, should be '%s' but is '%s', update "+
-					"it manually or run 'uv run dev.py update hashes' to update it automatically",
-				storedHashFile, computedHashText, storedHashText,
+				"Database migrations hash in '%s' is outdated, run 'uv run dev.py update hashes' "+
+					"to update it",
+				storedHashFile,
 			))
 		}
 	})
