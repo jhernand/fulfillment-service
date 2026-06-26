@@ -167,7 +167,7 @@ var _ = Describe("removeFinalizer", func() {
 
 var _ = Describe("run", func() {
 	const (
-		tenantID      = "tenant-123"
+		tenantID   = "tenant-123"
 		tenantName = "my-tenant"
 		hub1ID     = "hub-1"
 		hub2ID     = "hub-2"
@@ -180,7 +180,7 @@ var _ = Describe("run", func() {
 		ctrl         *gomock.Controller
 		mockHubCache *controllers.MockHubCache
 		mockHubs     *controllers.MockHubsClient
-		mockTenants     *MockTenantsClient
+		mockTenants  *MockTenantsClient
 		scheme       *runtime.Scheme
 	)
 
