@@ -1774,9 +1774,9 @@ func (t *Tool) createTenants(ctx context.Context) error {
 	// have two tenants, one for regular users and one for system administrators. System administrators belong to
 	// the 'system' tenant, which is built-in and doesn't need to be explicitly created, so we only need to create
 	// the tenant for regular users. Tests may create additional tenants as needed.
-	tenantsClient := privatev1.NewOrganizationsClient(t.internalView.adminConn)
-	_, err := tenantsClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-		Object: privatev1.Organization_builder{
+	tenantsClient := privatev1.NewTenantsClient(t.internalView.adminConn)
+	_, err := tenantsClient.Create(ctx, privatev1.TenantsCreateRequest_builder{
+		Object: privatev1.Tenant_builder{
 			Id: usersGroup,
 			Metadata: privatev1.Metadata_builder{
 				Name:   usersGroup,

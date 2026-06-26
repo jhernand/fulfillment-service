@@ -35,9 +35,9 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/uuid"
 )
 
-func createOrg(ctx context.Context, client privatev1.OrganizationsClient, name string) string {
-	createResponse, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-		Object: privatev1.Organization_builder{
+func createTenant(ctx context.Context, client privatev1.TenantsClient, name string) string {
+	createResponse, err := client.Create(ctx, privatev1.TenantsCreateRequest_builder{
+		Object: privatev1.Tenant_builder{
 			Metadata: privatev1.Metadata_builder{
 				Name: name,
 			}.Build(),
@@ -46,22 +46,22 @@ func createOrg(ctx context.Context, client privatev1.OrganizationsClient, name s
 	Expect(err).ToNot(HaveOccurred())
 	id := createResponse.GetObject().GetId()
 	DeferCleanup(func() {
-		_, _ = client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+		_, _ = client.Delete(ctx, privatev1.TenantsDeleteRequest_builder{
 			Id: id,
 		}.Build())
 	})
 	return id
 }
 
-func waitForOrgSynced(ctx context.Context, client privatev1.OrganizationsClient, id string) {
+func waitForTenantSynced(ctx context.Context, client privatev1.TenantsClient, id string) {
 	Eventually(
 		func(g Gomega) {
-			getResponse, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+			getResponse, err := client.Get(ctx, privatev1.TenantsGetRequest_builder{
 				Id: id,
 			}.Build())
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(getResponse.GetObject().GetStatus().GetState()).To(
-				Equal(privatev1.OrganizationState_ORGANIZATION_STATE_SYNCED),
+				Equal(privatev1.TenantState_TENANT_STATE_SYNCED),
 			)
 			g.Expect(getResponse.GetObject().GetStatus().GetBreakGlassUserId()).ToNot(BeEmpty())
 		},
@@ -70,26 +70,26 @@ func waitForOrgSynced(ctx context.Context, client privatev1.OrganizationsClient,
 	).Should(Succeed())
 }
 
-func verifyOrgInKeycloak(ctx context.Context, name string) {
+func verifyTenantInKeycloak(ctx context.Context, name string) {
 	code, body, err := tool.KeycloakAdminRequest(ctx, http.MethodGet,
 		fmt.Sprintf("/organizations?exact=true&search=%s", name), nil)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(code).To(Equal(http.StatusOK))
-	var kcOrgs []map[string]any
-	Expect(json.Unmarshal(body, &kcOrgs)).To(Succeed())
-	Expect(kcOrgs).ToNot(BeEmpty())
+	var kcTenants []map[string]any
+	Expect(json.Unmarshal(body, &kcTenants)).To(Succeed())
+	Expect(kcTenants).ToNot(BeEmpty())
 }
 
-func verifyOrgRemovedFromKeycloak(ctx context.Context, name string) {
+func verifyTenantRemovedFromKeycloak(ctx context.Context, name string) {
 	Eventually(
 		func(g Gomega) {
 			code, body, err := tool.KeycloakAdminRequest(ctx, http.MethodGet,
 				fmt.Sprintf("/organizations?exact=true&search=%s", name), nil)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(code).To(Equal(http.StatusOK))
-			var kcOrgs []map[string]any
-			g.Expect(json.Unmarshal(body, &kcOrgs)).To(Succeed())
-			g.Expect(kcOrgs).To(BeEmpty())
+			var kcTenants []map[string]any
+			g.Expect(json.Unmarshal(body, &kcTenants)).To(Succeed())
+			g.Expect(kcTenants).To(BeEmpty())
 		},
 		time.Minute,
 		time.Second,
@@ -102,7 +102,7 @@ func verifyOrgRemovedFromKeycloak(ctx context.Context, name string) {
 // a gRPC connection and the token source. The connection is registered for cleanup.
 func loginAsBreakGlass(
 	ctx context.Context,
-	client privatev1.OrganizationsClient,
+	client privatev1.TenantsClient,
 	name, id string,
 ) (*grpc.ClientConn, auth.TokenSource) {
 	var breakGlassUserId string
@@ -110,13 +110,13 @@ func loginAsBreakGlass(
 	var breakGlassPassword string
 	Eventually(
 		func(g Gomega) {
-			getResponse, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+			getResponse, err := client.Get(ctx, privatev1.TenantsGetRequest_builder{
 				Id: id,
 			}.Build())
 			g.Expect(err).ToNot(HaveOccurred())
 			status := getResponse.GetObject().GetStatus()
 			g.Expect(status.GetState()).To(
-				Equal(privatev1.OrganizationState_ORGANIZATION_STATE_SYNCED),
+				Equal(privatev1.TenantState_TENANT_STATE_SYNCED),
 			)
 			g.Expect(status.GetBreakGlassUserId()).ToNot(BeEmpty())
 			breakGlassUserId = status.GetBreakGlassUserId()
@@ -165,38 +165,38 @@ func loginAsBreakGlass(
 	return conn, tokenSource
 }
 
-var _ = Describe("Organization lifecycle", func() {
+var _ = Describe("Tenant lifecycle", func() {
 	var (
 		ctx    context.Context
-		client privatev1.OrganizationsClient
+		client privatev1.TenantsClient
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		client = privatev1.NewOrganizationsClient(tool.InternalView().AdminConn())
+		client = privatev1.NewTenantsClient(tool.InternalView().AdminConn())
 	})
 
 	It("CRUD happy flow", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Creating organization %q", name))
-		id := createOrg(ctx, client, name)
+		By(fmt.Sprintf("Creating tenant %q", name))
+		id := createTenant(ctx, client, name)
 
-		By("Waiting for organization to reach SYNCED state")
-		waitForOrgSynced(ctx, client, id)
+		By("Waiting for tenant to reach SYNCED state")
+		waitForTenantSynced(ctx, client, id)
 
-		By("Verifying organization fields via Get")
-		getResponse, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+		By("Verifying tenant fields via Get")
+		getResponse, err := client.Get(ctx, privatev1.TenantsGetRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		object := getResponse.GetObject()
 		Expect(object.GetMetadata().GetName()).To(Equal(name))
 		Expect(object.GetStatus().GetBreakGlassUserId()).ToNot(BeEmpty())
-		Expect(object.GetStatus().GetIdpOrganizationName()).To(Equal(name))
+		Expect(object.GetStatus().GetIdpTenantName()).To(Equal(name))
 
-		By("Verifying organization appears in List")
-		listResponse, err := client.List(ctx, privatev1.OrganizationsListRequest_builder{}.Build())
+		By("Verifying tenant appears in List")
+		listResponse, err := client.List(ctx, privatev1.TenantsListRequest_builder{}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		ids := make([]string, len(listResponse.GetItems()))
 		for i, item := range listResponse.GetItems() {
@@ -204,19 +204,19 @@ var _ = Describe("Organization lifecycle", func() {
 		}
 		Expect(ids).To(ContainElement(id))
 
-		By("Verifying organization exists in Keycloak")
-		verifyOrgInKeycloak(ctx, name)
+		By("Verifying tenant exists in Keycloak")
+		verifyTenantInKeycloak(ctx, name)
 
-		By("Deleting organization")
-		_, err = client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+		By("Deleting tenant")
+		_, err = client.Delete(ctx, privatev1.TenantsDeleteRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Waiting for organization to return NotFound")
+		By("Waiting for tenant to return NotFound")
 		Eventually(
 			func(g Gomega) {
-				_, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+				_, err := client.Get(ctx, privatev1.TenantsGetRequest_builder{
 					Id: id,
 				}.Build())
 				g.Expect(err).To(HaveOccurred())
@@ -228,38 +228,38 @@ var _ = Describe("Organization lifecycle", func() {
 			time.Second,
 		).Should(Succeed())
 
-		By("Verifying organization removed from Keycloak")
-		verifyOrgRemovedFromKeycloak(ctx, name)
+		By("Verifying tenant removed from Keycloak")
+		verifyTenantRemovedFromKeycloak(ctx, name)
 	})
 
 	It("Break-glass auth and RBAC", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Creating organization %q", name))
-		id := createOrg(ctx, client, name)
+		By(fmt.Sprintf("Creating tenant %q", name))
+		id := createTenant(ctx, client, name)
 
 		By("Logging in as break-glass user")
 		bgConn, _ := loginAsBreakGlass(ctx, client, name, id)
 
 		By("Verifying break-glass user cannot list orgs on private API")
-		bgPrivateClient := privatev1.NewOrganizationsClient(bgConn)
-		_, err := bgPrivateClient.List(ctx, privatev1.OrganizationsListRequest_builder{}.Build())
+		bgPrivateClient := privatev1.NewTenantsClient(bgConn)
+		_, err := bgPrivateClient.List(ctx, privatev1.TenantsListRequest_builder{}.Build())
 		Expect(err).To(HaveOccurred())
 		status, ok := grpcstatus.FromError(err)
 		Expect(ok).To(BeTrue())
 		Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
 	})
 
-	It("Duplicate org name fails", func() {
+	It("Duplicate tenant name fails", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Creating organization %q", name))
-		id := createOrg(ctx, client, name)
-		waitForOrgSynced(ctx, client, id)
+		By(fmt.Sprintf("Creating tenant %q", name))
+		id := createTenant(ctx, client, name)
+		waitForTenantSynced(ctx, client, id)
 
-		By("Attempting to create another org with the same name")
-		_, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-			Object: privatev1.Organization_builder{
+		By("Attempting to create another tenant with the same name")
+		_, err := client.Create(ctx, privatev1.TenantsCreateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Name: name,
 				}.Build(),
@@ -271,16 +271,16 @@ var _ = Describe("Organization lifecycle", func() {
 		Expect(status.Code()).To(Equal(grpccodes.AlreadyExists))
 	})
 
-	It("Rename org is rejected", func() {
+	It("Rename tenant is rejected", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Creating organization %q", name))
-		id := createOrg(ctx, client, name)
+		By(fmt.Sprintf("Creating tenant %q", name))
+		id := createTenant(ctx, client, name)
 
-		By("Waiting for organization to reach SYNCED with finalizer")
+		By("Waiting for tenant to reach SYNCED with finalizer")
 		Eventually(
 			func(g Gomega) {
-				getResponse, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+				getResponse, err := client.Get(ctx, privatev1.TenantsGetRequest_builder{
 					Id: id,
 				}.Build())
 				g.Expect(err).ToNot(HaveOccurred())
@@ -288,17 +288,17 @@ var _ = Describe("Organization lifecycle", func() {
 					ContainElement(finalizers.Controller),
 				)
 				g.Expect(getResponse.GetObject().GetStatus().GetState()).To(
-					Equal(privatev1.OrganizationState_ORGANIZATION_STATE_SYNCED),
+					Equal(privatev1.TenantState_TENANT_STATE_SYNCED),
 				)
 			},
 			time.Minute,
 			time.Second,
 		).Should(Succeed())
 
-		By("Attempting to rename the organization")
+		By("Attempting to rename the tenant")
 		newName := fmt.Sprintf("renamed-%s", uuid.New())
-		_, err := client.Update(ctx, privatev1.OrganizationsUpdateRequest_builder{
-			Object: privatev1.Organization_builder{
+		_, err := client.Update(ctx, privatev1.TenantsUpdateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Id: id,
 				Metadata: privatev1.Metadata_builder{
 					Name: newName,
@@ -312,25 +312,25 @@ var _ = Describe("Organization lifecycle", func() {
 	})
 })
 
-var _ = Describe("Organization authorization boundaries", func() {
+var _ = Describe("Tenant authorization boundaries", func() {
 	var (
 		ctx    context.Context
-		client privatev1.OrganizationsClient
+		client privatev1.TenantsClient
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		client = privatev1.NewOrganizationsClient(tool.InternalView().AdminConn())
+		client = privatev1.NewTenantsClient(tool.InternalView().AdminConn())
 	})
 
-	It("Regular user cannot create org", func() {
+	It("Regular user cannot create tenant", func() {
 		By("Connecting as regular user to private API")
-		userClient := privatev1.NewOrganizationsClient(tool.InternalView().UserConn())
+		userClient := privatev1.NewTenantsClient(tool.InternalView().UserConn())
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Attempting to create organization %q as regular user", name))
-		_, err := userClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-			Object: privatev1.Organization_builder{
+		By(fmt.Sprintf("Attempting to create tenant %q as regular user", name))
+		_, err := userClient.Create(ctx, privatev1.TenantsCreateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Name: name,
 				}.Build(),
@@ -342,14 +342,14 @@ var _ = Describe("Organization authorization boundaries", func() {
 		Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
 	})
 
-	It("Anonymous request cannot create org", func() {
+	It("Anonymous request cannot create tenant", func() {
 		By("Connecting anonymously (no token) to private API")
-		anonClient := privatev1.NewOrganizationsClient(tool.InternalView().AnonymousConn())
+		anonClient := privatev1.NewTenantsClient(tool.InternalView().AnonymousConn())
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Attempting to create organization %q without authentication", name))
-		_, err := anonClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-			Object: privatev1.Organization_builder{
+		By(fmt.Sprintf("Attempting to create tenant %q without authentication", name))
+		_, err := anonClient.Create(ctx, privatev1.TenantsCreateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Name: name,
 				}.Build(),
@@ -364,22 +364,22 @@ var _ = Describe("Organization authorization boundaries", func() {
 		))
 	})
 
-	It("Break-glass from org-A cannot access org-B", func() {
-		By("Creating org-A")
+	It("Break-glass from tenant-A cannot access tenant-B", func() {
+		By("Creating tenant-A")
 		nameA := fmt.Sprintf("test-%s", uuid.New())
-		idA := createOrg(ctx, client, nameA)
+		idA := createTenant(ctx, client, nameA)
 
-		By("Creating org-B")
+		By("Creating tenant-B")
 		nameB := fmt.Sprintf("test-%s", uuid.New())
-		idB := createOrg(ctx, client, nameB)
-		waitForOrgSynced(ctx, client, idB)
+		idB := createTenant(ctx, client, nameB)
+		waitForTenantSynced(ctx, client, idB)
 
-		By("Logging in as break-glass user for org-A")
+		By("Logging in as break-glass user for tenant-A")
 		bgConnA, _ := loginAsBreakGlass(ctx, client, nameA, idA)
 
-		By("Attempting to access org-B using org-A's break-glass credentials")
-		bgPublicClientA := publicv1.NewOrganizationsClient(bgConnA)
-		_, err := bgPublicClientA.Get(ctx, publicv1.OrganizationsGetRequest_builder{
+		By("Attempting to access tenant-B using tenant-A's break-glass credentials")
+		bgPublicClientA := publicv1.NewTenantsClient(bgConnA)
+		_, err := bgPublicClientA.Get(ctx, publicv1.TenantsGetRequest_builder{
 			Id: idB,
 		}.Build())
 		Expect(err).To(HaveOccurred())
@@ -394,17 +394,17 @@ var _ = Describe("Organization authorization boundaries", func() {
 	It("Break-glass cannot call admin-only APIs", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Creating organization %q", name))
-		id := createOrg(ctx, client, name)
+		By(fmt.Sprintf("Creating tenant %q", name))
+		id := createTenant(ctx, client, name)
 
 		By("Logging in as break-glass user")
 		bgConn, _ := loginAsBreakGlass(ctx, client, name, id)
 
-		bgPrivateClient := privatev1.NewOrganizationsClient(bgConn)
+		bgPrivateClient := privatev1.NewTenantsClient(bgConn)
 
-		By("Attempting to create a new org as break-glass user")
-		_, err := bgPrivateClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-			Object: privatev1.Organization_builder{
+		By("Attempting to create a new tenant as break-glass user")
+		_, err := bgPrivateClient.Create(ctx, privatev1.TenantsCreateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Name: fmt.Sprintf("test-%s", uuid.New()),
 				}.Build(),
@@ -415,8 +415,8 @@ var _ = Describe("Organization authorization boundaries", func() {
 		Expect(ok).To(BeTrue())
 		Expect(status.Code()).To(Equal(grpccodes.PermissionDenied))
 
-		By("Attempting to delete an org as break-glass user")
-		_, err = bgPrivateClient.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+		By("Attempting to delete a tenant as break-glass user")
+		_, err = bgPrivateClient.Delete(ctx, privatev1.TenantsDeleteRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).To(HaveOccurred())
@@ -428,8 +428,8 @@ var _ = Describe("Organization authorization boundaries", func() {
 	It("Break-glass JWT contains correct org membership", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Creating organization %q", name))
-		id := createOrg(ctx, client, name)
+		By(fmt.Sprintf("Creating tenant %q", name))
+		id := createTenant(ctx, client, name)
 
 		By("Logging in as break-glass user")
 		_, tokenSource := loginAsBreakGlass(ctx, client, name, id)
@@ -477,21 +477,21 @@ var _ = Describe("Organization authorization boundaries", func() {
 	})
 })
 
-var _ = Describe("Organization edge cases and resilience", func() {
+var _ = Describe("Tenant edge cases and resilience", func() {
 	var (
 		ctx    context.Context
-		client privatev1.OrganizationsClient
+		client privatev1.TenantsClient
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		client = privatev1.NewOrganizationsClient(tool.InternalView().AdminConn())
+		client = privatev1.NewTenantsClient(tool.InternalView().AdminConn())
 	})
 
 	It("Empty name is rejected", func() {
-		By("Attempting to create organization with empty name")
-		_, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-			Object: privatev1.Organization_builder{
+		By("Attempting to create tenant with empty name")
+		_, err := client.Create(ctx, privatev1.TenantsCreateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Name: "",
 				}.Build(),
@@ -504,7 +504,7 @@ var _ = Describe("Organization edge cases and resilience", func() {
 	})
 
 	It("Name with special characters is rejected", func() {
-		By("Attempting to create organization with invalid characters")
+		By("Attempting to create tenant with invalid characters")
 		invalidNames := []string{
 			"test/slash",
 			"test org space",
@@ -513,8 +513,8 @@ var _ = Describe("Organization edge cases and resilience", func() {
 		}
 		for _, name := range invalidNames {
 			By(fmt.Sprintf("Trying name %q", name))
-			_, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-				Object: privatev1.Organization_builder{
+			_, err := client.Create(ctx, privatev1.TenantsCreateRequest_builder{
+				Object: privatev1.Tenant_builder{
 					Metadata: privatev1.Metadata_builder{
 						Name: name,
 					}.Build(),
@@ -529,10 +529,10 @@ var _ = Describe("Organization edge cases and resilience", func() {
 	})
 
 	It("Very long name is rejected", func() {
-		By("Attempting to create organization with a 300-character name")
+		By("Attempting to create tenant with a 300-character name")
 		longName := strings.Repeat("a", 300)
-		_, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-			Object: privatev1.Organization_builder{
+		_, err := client.Create(ctx, privatev1.TenantsCreateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Name: longName,
 				}.Build(),
@@ -547,20 +547,20 @@ var _ = Describe("Organization edge cases and resilience", func() {
 	It("Re-create after delete succeeds with same name", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Creating organization %q", name))
-		id := createOrg(ctx, client, name)
-		waitForOrgSynced(ctx, client, id)
+		By(fmt.Sprintf("Creating tenant %q", name))
+		id := createTenant(ctx, client, name)
+		waitForTenantSynced(ctx, client, id)
 
-		By("Deleting the organization")
-		_, err := client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+		By("Deleting the tenant")
+		_, err := client.Delete(ctx, privatev1.TenantsDeleteRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Waiting for organization to be fully removed")
+		By("Waiting for tenant to be fully removed")
 		Eventually(
 			func(g Gomega) {
-				_, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+				_, err := client.Get(ctx, privatev1.TenantsGetRequest_builder{
 					Id: id,
 				}.Build())
 				g.Expect(err).To(HaveOccurred())
@@ -572,9 +572,9 @@ var _ = Describe("Organization edge cases and resilience", func() {
 			time.Second,
 		).Should(Succeed())
 
-		By("Re-creating organization with the same name")
-		createResponse, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-			Object: privatev1.Organization_builder{
+		By("Re-creating tenant with the same name")
+		createResponse, err := client.Create(ctx, privatev1.TenantsCreateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Name: name,
 				}.Build(),
@@ -583,21 +583,21 @@ var _ = Describe("Organization edge cases and resilience", func() {
 		Expect(err).ToNot(HaveOccurred())
 		newId := createResponse.GetObject().GetId()
 		DeferCleanup(func() {
-			_, _ = client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+			_, _ = client.Delete(ctx, privatev1.TenantsDeleteRequest_builder{
 				Id: newId,
 			}.Build())
 		})
 
-		By("Verifying the re-created organization reaches SYNCED")
-		waitForOrgSynced(ctx, client, newId)
+		By("Verifying the re-created tenant reaches SYNCED")
+		waitForTenantSynced(ctx, client, newId)
 	})
 
 	It("Delete during sync is handled gracefully", func() {
 		name := fmt.Sprintf("test-%s", uuid.New())
 
-		By(fmt.Sprintf("Creating organization %q", name))
-		createResponse, err := client.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-			Object: privatev1.Organization_builder{
+		By(fmt.Sprintf("Creating tenant %q", name))
+		createResponse, err := client.Create(ctx, privatev1.TenantsCreateRequest_builder{
+			Object: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Name: name,
 				}.Build(),
@@ -606,16 +606,16 @@ var _ = Describe("Organization edge cases and resilience", func() {
 		Expect(err).ToNot(HaveOccurred())
 		id := createResponse.GetObject().GetId()
 
-		By("Immediately deleting the organization before it reaches SYNCED")
-		_, err = client.Delete(ctx, privatev1.OrganizationsDeleteRequest_builder{
+		By("Immediately deleting the tenant before it reaches SYNCED")
+		_, err = client.Delete(ctx, privatev1.TenantsDeleteRequest_builder{
 			Id: id,
 		}.Build())
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Verifying the organization eventually returns NotFound")
+		By("Verifying the tenant eventually returns NotFound")
 		Eventually(
 			func(g Gomega) {
-				_, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+				_, err := client.Get(ctx, privatev1.TenantsGetRequest_builder{
 					Id: id,
 				}.Build())
 				g.Expect(err).To(HaveOccurred())
@@ -627,7 +627,7 @@ var _ = Describe("Organization edge cases and resilience", func() {
 			time.Second,
 		).Should(Succeed())
 
-		By("Verifying the organization is also removed from Keycloak")
-		verifyOrgRemovedFromKeycloak(ctx, name)
+		By("Verifying the tenant is also removed from Keycloak")
+		verifyTenantRemovedFromKeycloak(ctx, name)
 	})
 })

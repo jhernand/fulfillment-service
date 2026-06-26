@@ -118,10 +118,10 @@ var _ = Describe("Multitenancy basic tenant isolation", Ordered, Label("multiten
 				})
 
 				// Create the tenants used by the tests:
-				tenantsClient := privatev1.NewOrganizationsClient(tool.InternalView().AdminConn())
+				tenantsClient := privatev1.NewTenantsClient(tool.InternalView().AdminConn())
 				for _, tenant := range ServiceAccountTenants {
-					_, err := tenantsClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-						Object: privatev1.Organization_builder{
+					_, err := tenantsClient.Create(ctx, privatev1.TenantsCreateRequest_builder{
+						Object: privatev1.Tenant_builder{
 							Metadata: privatev1.Metadata_builder{
 								Name: tenant,
 							}.Build(),
@@ -315,10 +315,10 @@ var _ = Describe("Multitenancy basic tenant isolation", Ordered, Label("multiten
 			}
 
 			// Create the tenants used by the tests:
-			tenantsClient := privatev1.NewOrganizationsClient(tool.InternalView().AdminConn())
+			tenantsClient := privatev1.NewTenantsClient(tool.InternalView().AdminConn())
 			for tenant := range tenantUserMapping {
-				_, err := tenantsClient.Create(ctx, privatev1.OrganizationsCreateRequest_builder{
-					Object: privatev1.Organization_builder{
+				_, err := tenantsClient.Create(ctx, privatev1.TenantsCreateRequest_builder{
+					Object: privatev1.Tenant_builder{
 						Metadata: privatev1.Metadata_builder{
 							Name: tenant,
 						}.Build(),
