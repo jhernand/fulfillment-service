@@ -37,8 +37,8 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/masks"
 )
 
-func hasFinalizer(organization *privatev1.Organization) bool {
-	return slices.Contains(organization.GetMetadata().GetFinalizers(), finalizers.Controller)
+func hasFinalizer(tenant *privatev1.Tenant) bool {
+	return slices.Contains(tenant.GetMetadata().GetFinalizers(), finalizers.Controller)
 }
 
 func newTenantCR(orgID, namespace, name string, deletionTimestamp *metav1.Time) *osacv1alpha1.Tenant {
@@ -67,7 +67,7 @@ func newScheme() *runtime.Scheme {
 func newFunction(
 	hubCache controllers.HubCache,
 	hubsClient privatev1.HubsClient,
-	orgClient privatev1.OrganizationsClient,
+	orgClient privatev1.TenantsClient,
 ) *function {
 	return &function{
 		logger:         logger,
@@ -81,18 +81,18 @@ func newFunction(
 var _ = Describe("addFinalizer", func() {
 	It("adds finalizer when not present and creates metadata", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{}.Build(),
+			tenant: privatev1.Tenant_builder{}.Build(),
 		}
 
 		added := t.addFinalizer()
 
 		Expect(added).To(BeTrue())
-		Expect(hasFinalizer(t.organization)).To(BeTrue())
+		Expect(hasFinalizer(t.tenant)).To(BeTrue())
 	})
 
 	It("adds finalizer when not present but metadata exists", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{
+			tenant: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{"other-finalizer"},
 				}.Build(),
@@ -102,13 +102,13 @@ var _ = Describe("addFinalizer", func() {
 		added := t.addFinalizer()
 
 		Expect(added).To(BeTrue())
-		Expect(hasFinalizer(t.organization)).To(BeTrue())
-		Expect(t.organization.GetMetadata().GetFinalizers()).To(ContainElement("other-finalizer"))
+		Expect(hasFinalizer(t.tenant)).To(BeTrue())
+		Expect(t.tenant.GetMetadata().GetFinalizers()).To(ContainElement("other-finalizer"))
 	})
 
 	It("does not add finalizer when already present", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{
+			tenant: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{finalizers.Controller},
 				}.Build(),
@@ -118,7 +118,7 @@ var _ = Describe("addFinalizer", func() {
 		added := t.addFinalizer()
 
 		Expect(added).To(BeFalse())
-		finalizerList := t.organization.GetMetadata().GetFinalizers()
+		finalizerList := t.tenant.GetMetadata().GetFinalizers()
 		Expect(finalizerList).To(HaveLen(1))
 		Expect(finalizerList[0]).To(Equal(finalizers.Controller))
 	})
@@ -127,7 +127,7 @@ var _ = Describe("addFinalizer", func() {
 var _ = Describe("removeFinalizer", func() {
 	It("removes the controller finalizer when present", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{
+			tenant: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{finalizers.Controller, "other-finalizer"},
 				}.Build(),
@@ -136,13 +136,13 @@ var _ = Describe("removeFinalizer", func() {
 
 		t.removeFinalizer()
 
-		Expect(hasFinalizer(t.organization)).To(BeFalse())
-		Expect(t.organization.GetMetadata().GetFinalizers()).To(ConsistOf("other-finalizer"))
+		Expect(hasFinalizer(t.tenant)).To(BeFalse())
+		Expect(t.tenant.GetMetadata().GetFinalizers()).To(ConsistOf("other-finalizer"))
 	})
 
 	It("does nothing when finalizer is not present", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{
+			tenant: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{"other-finalizer"},
 				}.Build(),
@@ -151,17 +151,17 @@ var _ = Describe("removeFinalizer", func() {
 
 		t.removeFinalizer()
 
-		Expect(t.organization.GetMetadata().GetFinalizers()).To(ConsistOf("other-finalizer"))
+		Expect(t.tenant.GetMetadata().GetFinalizers()).To(ConsistOf("other-finalizer"))
 	})
 
 	It("does nothing when metadata is missing", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{}.Build(),
+			tenant: privatev1.Tenant_builder{}.Build(),
 		}
 
 		t.removeFinalizer()
 
-		Expect(t.organization.HasMetadata()).To(BeFalse())
+		Expect(t.tenant.HasMetadata()).To(BeFalse())
 	})
 })
 
@@ -180,7 +180,7 @@ var _ = Describe("run", func() {
 		ctrl         *gomock.Controller
 		mockHubCache *controllers.MockHubCache
 		mockHubs     *controllers.MockHubsClient
-		mockOrgs     *MockOrganizationsClient
+		mockOrgs     *MockTenantsClient
 		scheme       *runtime.Scheme
 	)
 
@@ -189,7 +189,7 @@ var _ = Describe("run", func() {
 		ctrl = gomock.NewController(GinkgoT())
 		mockHubCache = controllers.NewMockHubCache(ctrl)
 		mockHubs = controllers.NewMockHubsClient(ctrl)
-		mockOrgs = NewMockOrganizationsClient(ctrl)
+		mockOrgs = NewMockTenantsClient(ctrl)
 		scheme = newScheme()
 	})
 
@@ -198,9 +198,9 @@ var _ = Describe("run", func() {
 	})
 
 	Describe("update (create/update path)", func() {
-		When("organization has no finalizer", func() {
+		When("tenant has no finalizer", func() {
 			It("adds finalizer and returns early", func() {
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Tenant: tenantName,
@@ -209,8 +209,8 @@ var _ = Describe("run", func() {
 
 				mockOrgs.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					})
 
 				f := newFunction(mockHubCache, mockHubs, mockOrgs)
@@ -221,7 +221,7 @@ var _ = Describe("run", func() {
 			})
 		})
 
-		When("organization is created and no Tenant CRDs exist", func() {
+		When("tenant is created and no Tenant CRDs exist", func() {
 			It("creates Tenant CRD on each hub", func() {
 				fakeClient1 := fake.NewClientBuilder().WithScheme(scheme).Build()
 				fakeClient2 := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -246,11 +246,11 @@ var _ = Describe("run", func() {
 
 				mockOrgs.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					}).AnyTimes()
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:       orgID,
@@ -302,11 +302,11 @@ var _ = Describe("run", func() {
 
 				mockOrgs.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					}).AnyTimes()
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:       orgID,
@@ -333,7 +333,7 @@ var _ = Describe("run", func() {
 					List(gomock.Any(), gomock.Any()).
 					Return(nil, expectedErr)
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Finalizers: []string{finalizers.Controller},
@@ -366,7 +366,7 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(nil, expectedErr)
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:       orgID,
@@ -406,11 +406,11 @@ var _ = Describe("run", func() {
 
 				mockOrgs.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					}).AnyTimes()
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:       orgID,
@@ -457,7 +457,7 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:       orgID,
@@ -475,7 +475,7 @@ var _ = Describe("run", func() {
 	})
 
 	Describe("delete path", func() {
-		When("organization is deleted and Tenant CRD exists on a hub", func() {
+		When("tenant is deleted and Tenant CRD exists on a hub", func() {
 			It("issues delete and keeps finalizer until object is gone", func() {
 				existing := newTenantCR(orgID, namespace1, orgID, nil)
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
@@ -494,7 +494,7 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:              orgID,
@@ -537,11 +537,11 @@ var _ = Describe("run", func() {
 
 				mockOrgs.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					})
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:              orgID,
@@ -579,7 +579,7 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:              orgID,
@@ -615,11 +615,11 @@ var _ = Describe("run", func() {
 
 				mockOrgs.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					})
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:              orgID,
@@ -655,7 +655,7 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(nil, expectedErr)
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:              orgID,
@@ -680,7 +680,7 @@ var _ = Describe("run", func() {
 					List(gomock.Any(), gomock.Any()).
 					Return(nil, expectedErr)
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Finalizers:        []string{finalizers.Controller},
@@ -723,7 +723,7 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				org := privatev1.Organization_builder{
+				org := privatev1.Tenant_builder{
 					Id: orgID,
 					Metadata: privatev1.Metadata_builder{
 						Name:              orgID,
