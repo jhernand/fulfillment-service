@@ -19,7 +19,7 @@ import "google/protobuf/timestamp.proto";
 import "osac/public/v1/condition_status_type.proto";
 import "osac/public/v1/metadata_type.proto";
 
-// A user in an organization's identity provider.
+// A user in a tenant's identity provider.
 message User {
   // Unique identifier of the user.
   string id = 1;
@@ -53,8 +53,8 @@ message UserSpec {
   // Last name of the user.
   string last_name = 6;
 
-  // Organization that this user belongs to.
-  string organization = 7;
+  // Tenant that this user belongs to.
+  string tenant = 7;
 
   // Credentials for the user. This is write-only and will not be returned in responses.
   optional UserCredentials credentials = 8;
