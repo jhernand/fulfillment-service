@@ -88,6 +88,9 @@ enum BareMetalInstanceState {
   BARE_METAL_INSTANCE_STATE_RUNNING      = 2;
   BARE_METAL_INSTANCE_STATE_FAILED       = 3;
   BARE_METAL_INSTANCE_STATE_DELETING     = 4;
+  BARE_METAL_INSTANCE_STATE_STARTING     = 5;
+  BARE_METAL_INSTANCE_STATE_STOPPING     = 6;
+  BARE_METAL_INSTANCE_STATE_STOPPED      = 7;
 }
 
 // Contains the details of a condition that describes the status of a bare metal instance.
