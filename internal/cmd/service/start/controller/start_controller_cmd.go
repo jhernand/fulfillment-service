@@ -830,12 +830,12 @@ func (r *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 	if err != nil {
 		return fmt.Errorf("failed to create onboarding reconciler function: %w", err)
 	}
-	onboardingReconciler, err := controllers.NewReconciler[*privatev1.Organization]().
+	onboardingReconciler, err := controllers.NewReconciler[*privatev1.Tenant]().
 		SetLogger(r.logger).
 		SetName("onboarding").
 		SetClient(r.client).
 		SetFunction(onboardingReconcilerFunction).
-		SetEventFilter("has(event.organization) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
+		SetEventFilter("has(event.tenant) || (has(event.hub) && event.type == EVENT_TYPE_OBJECT_CREATED)").
 		SetHealthReporter(healthAggregator).
 		Build()
 	if err != nil {
