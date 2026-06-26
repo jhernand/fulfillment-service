@@ -28,7 +28,7 @@ from . import dirs
 def run(
     args: list[str],
     **kwargs,
-) -> None:
+) -> subprocess.CompletedProcess:
     """
     Runs the given command.
     """
@@ -38,6 +38,7 @@ def run(
     logging.debug(f"Running command '{cmd}'")
     result = subprocess.run(args=args, **kwargs)
     logging.debug(f"Exit code of '{cmd}' is {result.returncode}")
+    return result
 
 
 def eval(

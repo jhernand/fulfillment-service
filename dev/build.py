@@ -14,6 +14,7 @@
 #
 
 import logging
+import sys
 
 import click
 
@@ -40,17 +41,28 @@ def binaries() -> None:
     cmd_dir = project_dir / "cmd"
     bin_dir = project_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
+    error_count = 0
     for cmd_subdir in sorted(cmd_dir.iterdir()):
         if not cmd_subdir.is_dir():
             continue
         bin_name = cmd_subdir.name
         bin_file = bin_dir / bin_name
+        if bin_file.exists():
+            bin_file.unlink()
         logging.info(f"Building binary '{bin_name}'")
-        commands.run([
+        result = commands.run([
             "go", "build",
             "-o", f"{bin_file.relative_to(project_dir)}",
             f"./{cmd_subdir.relative_to(project_dir)}",
         ])
+        if result.returncode != 0:
+            if bin_file.exists():
+                bin_file.unlink()
+            logging.error(f"Failed to build binary '{bin_name}'")
+            error_count += 1
+    if error_count > 0:
+        logging.error("Found errors while building binaries")
+        sys.exit(1)
 
 
 @build.command()
@@ -59,7 +71,10 @@ def images() -> None:
     Builds the container image using podman.
     """
     logging.info("Building container image")
-    commands.run([
+    result = commands.run([
         "podman", "build",
         ".",
     ])
+    if result.returncode != 0:
+        logging.error("Failed to build container image")
+        sys.exit(1)
