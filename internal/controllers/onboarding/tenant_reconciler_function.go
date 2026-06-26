@@ -1,0 +1,312 @@
+/*
+Copyright (c) 2026 Red Hat Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the
+License. You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific
+language governing permissions and limitations under the License.
+*/
+
+// Package tenant reconciles Organization objects into Tenant CRDs on all hub clusters.
+// The fulfillment-service calls the multi-tenancy entity "Organization"; the osac-operator
+// calls it "Tenant". OSAC-1532 tracks renaming Organization to Tenant in the fulfillment-service.
+package onboarding
+
+//go:generate mockgen -source=../../api/osac/private/v1/organizations_service_grpc.pb.go -destination=organizations_client_mock.go -package=onboarding OrganizationsClient
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"slices"
+
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clnt "sigs.k8s.io/controller-runtime/pkg/client"
+
+	osacv1alpha1 "github.com/osac-project/osac-operator/api/v1alpha1"
+
+	privatev1 "github.com/osac-project/fulfillment-service/internal/api/osac/private/v1"
+	"github.com/osac-project/fulfillment-service/internal/controllers"
+	"github.com/osac-project/fulfillment-service/internal/controllers/finalizers"
+	"github.com/osac-project/fulfillment-service/internal/kubernetes/labels"
+	"github.com/osac-project/fulfillment-service/internal/masks"
+)
+
+// FunctionBuilder contains the data and logic needed to build a function that reconciles
+// organizations into Tenant CRDs on hub clusters.
+type FunctionBuilder struct {
+	logger     *slog.Logger
+	connection *grpc.ClientConn
+	hubCache   controllers.HubCache
+}
+
+type function struct {
+	logger         *slog.Logger
+	hubCache       controllers.HubCache
+	tenantsClient  privatev1.OrganizationsClient
+	hubsClient     privatev1.HubsClient
+	maskCalculator *masks.Calculator
+}
+
+type task struct {
+	r            *function
+	organization *privatev1.Organization
+}
+
+func NewFunction() *FunctionBuilder {
+	return &FunctionBuilder{}
+}
+
+func (b *FunctionBuilder) SetLogger(value *slog.Logger) *FunctionBuilder {
+	b.logger = value
+	return b
+}
+
+func (b *FunctionBuilder) SetConnection(value *grpc.ClientConn) *FunctionBuilder {
+	b.connection = value
+	return b
+}
+
+func (b *FunctionBuilder) SetHubCache(value controllers.HubCache) *FunctionBuilder {
+	b.hubCache = value
+	return b
+}
+
+func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privatev1.Organization], err error) {
+	if b.logger == nil {
+		err = errors.New("logger is mandatory")
+		return
+	}
+	if b.connection == nil {
+		err = errors.New("connection is mandatory")
+		return
+	}
+	if b.hubCache == nil {
+		err = errors.New("hub cache is mandatory")
+		return
+	}
+
+	object := &function{
+		logger:         b.logger,
+		tenantsClient:  privatev1.NewOrganizationsClient(b.connection),
+		hubsClient:     privatev1.NewHubsClient(b.connection),
+		hubCache:       b.hubCache,
+		maskCalculator: masks.NewCalculator().Build(),
+	}
+	result = object.run
+	return
+}
+
+func (r *function) run(ctx context.Context, organization *privatev1.Organization) error {
+	oldOrganization := proto.Clone(organization).(*privatev1.Organization)
+	t := task{
+		r:            r,
+		organization: organization,
+	}
+	var err error
+	if organization.HasMetadata() && organization.GetMetadata().HasDeletionTimestamp() {
+		err = t.delete(ctx)
+	} else {
+		err = t.update(ctx)
+	}
+	if err != nil {
+		return err
+	}
+	updateMask := r.maskCalculator.Calculate(oldOrganization, organization)
+	if len(updateMask.GetPaths()) > 0 {
+		_, err = r.tenantsClient.Update(ctx, privatev1.OrganizationsUpdateRequest_builder{
+			Object:     organization,
+			UpdateMask: updateMask,
+		}.Build())
+	}
+	return err
+}
+
+func (t *task) update(ctx context.Context) error {
+	if t.addFinalizer() {
+		return nil
+	}
+
+	hubs, err := t.listAllHubs(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, hub := range hubs {
+		hubEntry, err := t.r.hubCache.Get(ctx, hub.GetId())
+		if err != nil {
+			if errors.Is(err, controllers.ErrHubNotFound) {
+				t.r.logger.DebugContext(ctx, "Hub not found, skipping",
+					slog.String("hub_id", hub.GetId()),
+				)
+				continue
+			}
+			return fmt.Errorf("failed to get hub %s: %w", hub.GetId(), err)
+		}
+
+		if err := t.createOrUpdateOnHub(ctx, hub.GetId(), hubEntry); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (t *task) createOrUpdateOnHub(ctx context.Context, hubId string, hubEntry *controllers.HubEntry) error {
+	existing, err := t.getKubeObject(ctx, hubEntry)
+	if err != nil {
+		return err
+	}
+
+	tenantName := t.organization.GetMetadata().GetName()
+	if existing == nil {
+		object := &osacv1alpha1.Tenant{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hubEntry.Namespace,
+				Name:      tenantName,
+				Labels: map[string]string{
+					labels.TenantUuid: tenantName,
+				},
+			},
+		}
+		err = hubEntry.Client.Create(ctx, object)
+		if err != nil {
+			return fmt.Errorf("failed to create tenant on hub %s: %w", hubId, err)
+		}
+		t.r.logger.DebugContext(ctx, "Created tenant",
+			slog.String("hub_id", hubId),
+			slog.String("namespace", object.GetNamespace()),
+			slog.String("name", object.GetName()),
+		)
+	} else {
+		t.r.logger.DebugContext(ctx, "Tenant already exists on hub",
+			slog.String("hub_id", hubId),
+			slog.String("namespace", existing.GetNamespace()),
+			slog.String("name", existing.GetName()),
+		)
+	}
+	return nil
+}
+
+func (t *task) delete(ctx context.Context) error {
+	hubs, err := t.listAllHubs(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, hub := range hubs {
+		hubEntry, err := t.r.hubCache.Get(ctx, hub.GetId())
+		if err != nil {
+			if errors.Is(err, controllers.ErrHubNotFound) {
+				controllers.RemoveFinalizerOnDecommissionedHub(
+					ctx, t.r.logger, hub.GetId(),
+					"organization_id", t.organization.GetId(), t.removeFinalizer,
+				)
+				continue
+			}
+			return fmt.Errorf("failed to get hub %s: %w", hub.GetId(), err)
+		}
+
+		existing, err := t.getKubeObject(ctx, hubEntry)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			continue
+		}
+
+		if existing.GetDeletionTimestamp() == nil {
+			err = hubEntry.Client.Delete(ctx, existing)
+			if err != nil {
+				return fmt.Errorf("failed to delete tenant on hub %s: %w", hub.GetId(), err)
+			}
+			t.r.logger.DebugContext(ctx, "Deleted tenant",
+				slog.String("hub_id", hub.GetId()),
+				slog.String("namespace", existing.GetNamespace()),
+				slog.String("name", existing.GetName()),
+			)
+		} else {
+			t.r.logger.DebugContext(ctx, "Tenant is still being deleted, waiting for K8s finalizers",
+				slog.String("hub_id", hub.GetId()),
+				slog.String("namespace", existing.GetNamespace()),
+				slog.String("name", existing.GetName()),
+			)
+		}
+		return nil
+	}
+
+	t.removeFinalizer()
+	return nil
+}
+
+func (t *task) getKubeObject(ctx context.Context, hubEntry *controllers.HubEntry) (result *osacv1alpha1.Tenant, err error) {
+	tenantName := t.organization.GetMetadata().GetName()
+	object := &osacv1alpha1.Tenant{}
+	err = hubEntry.Client.Get(ctx, clnt.ObjectKey{
+		Namespace: hubEntry.Namespace,
+		Name:      tenantName,
+	}, object)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			err = nil
+			return
+		}
+		return
+	}
+	result = object
+	return
+}
+
+func (t *task) listAllHubs(ctx context.Context) ([]*privatev1.Hub, error) {
+	var allHubs []*privatev1.Hub
+	var offset int32
+	for {
+		response, err := t.r.hubsClient.List(ctx, privatev1.HubsListRequest_builder{
+			Offset: &offset,
+		}.Build())
+		if err != nil {
+			return nil, fmt.Errorf("failed to list hubs: %w", err)
+		}
+		allHubs = append(allHubs, response.GetItems()...)
+		total := response.GetTotal()
+		if total <= 0 || offset+response.GetSize() >= total {
+			break
+		}
+		offset += response.GetSize()
+	}
+	return allHubs, nil
+}
+
+func (t *task) addFinalizer() bool {
+	if !t.organization.HasMetadata() {
+		t.organization.SetMetadata(&privatev1.Metadata{})
+	}
+	list := t.organization.GetMetadata().GetFinalizers()
+	if !slices.Contains(list, finalizers.Controller) {
+		list = append(list, finalizers.Controller)
+		t.organization.GetMetadata().SetFinalizers(list)
+		return true
+	}
+	return false
+}
+
+func (t *task) removeFinalizer() {
+	if !t.organization.HasMetadata() {
+		return
+	}
+	list := t.organization.GetMetadata().GetFinalizers()
+	if slices.Contains(list, finalizers.Controller) {
+		list = slices.DeleteFunc(list, func(item string) bool {
+			return item == finalizers.Controller
+		})
+		t.organization.GetMetadata().SetFinalizers(list)
+	}
+}
