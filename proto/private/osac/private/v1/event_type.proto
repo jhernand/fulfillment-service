@@ -29,7 +29,6 @@ import "osac/private/v1/hub_type.proto";
 import "osac/private/v1/identity_provider_type.proto";
 import "osac/private/v1/instance_type_type.proto";
 import "osac/private/v1/network_class_type.proto";
-import "osac/private/v1/organization_type.proto";
 import "osac/private/v1/project_type.proto";
 import "osac/private/v1/tenant_type.proto";
 import "osac/private/v1/public_ip_attachment_type.proto";
@@ -65,7 +64,7 @@ message Event {
     SecurityGroup security_group = 14;
     PublicIPPool public_ip_pool = 16;
     PublicIP public_ip = 17;
-    Organization organization = 18;
+    // 18 was Organization, removed in OSAC-1532.
     User user = 19;
     Role role = 20;
     RoleBinding role_binding = 21;
