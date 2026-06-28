@@ -673,6 +673,160 @@ var _ = Describe("Private bare metal instances server", func() {
 			Expect(response.GetObject().GetSpec().GetTemplateParameters()).To(HaveKey("os_version"))
 		})
 
+		It("Overrides non-editable field_definition alongside template_parameters", func() {
+			createTemplate("override-combo-template", []*privatev1.BareMetalInstanceTemplateParameterDefinition{
+				{Name: "os_version", Required: true, Type: "type.googleapis.com/google.protobuf.StringValue"},
+			})
+
+			catResp, err := catalogServer.Create(ctx, privatev1.BareMetalInstanceCatalogItemsCreateRequest_builder{
+				Object: privatev1.BareMetalInstanceCatalogItem_builder{
+					Title:     "Override + template params",
+					Template:  "override-combo-template",
+					Published: true,
+					FieldDefinitions: []*privatev1.FieldDefinition{
+						privatev1.FieldDefinition_builder{
+							Path:     "ssh_public_key",
+							Editable: false,
+							Default:  structpb.NewStringValue(testSSHPublicKey),
+						}.Build(),
+					},
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catID := catResp.GetObject().GetId()
+
+			osParam, err := anypb.New(wrapperspb.String("rhel9.4"))
+			Expect(err).ToNot(HaveOccurred())
+
+			userKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUserProvidedKeyThatShouldBeOverridden user@test"
+			response, err := server.Create(ctx, privatev1.BareMetalInstancesCreateRequest_builder{
+				Object: privatev1.BareMetalInstance_builder{
+					Spec: privatev1.BareMetalInstanceSpec_builder{
+						CatalogItem:        catID,
+						SshPublicKey:        &userKey,
+						TemplateParameters: map[string]*anypb.Any{"os_version": osParam},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.GetObject().GetSpec().GetSshPublicKey()).To(Equal(testSSHPublicKey))
+			Expect(response.GetObject().GetSpec().GetTemplateParameters()).To(HaveKey("os_version"))
+		})
+
+		It("Accepts editable field_definition alongside template_parameters", func() {
+			createTemplate("editable-combo-template", []*privatev1.BareMetalInstanceTemplateParameterDefinition{
+				{Name: "os_version", Required: true, Type: "type.googleapis.com/google.protobuf.StringValue"},
+			})
+
+			catResp, err := catalogServer.Create(ctx, privatev1.BareMetalInstanceCatalogItemsCreateRequest_builder{
+				Object: privatev1.BareMetalInstanceCatalogItem_builder{
+					Title:     "Editable + template params",
+					Template:  "editable-combo-template",
+					Published: true,
+					FieldDefinitions: []*privatev1.FieldDefinition{
+						privatev1.FieldDefinition_builder{
+							Path:     "ssh_public_key",
+							Editable: true,
+						}.Build(),
+					},
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catID := catResp.GetObject().GetId()
+
+			osParam, err := anypb.New(wrapperspb.String("rhel9.4"))
+			Expect(err).ToNot(HaveOccurred())
+
+			response, err := server.Create(ctx, privatev1.BareMetalInstancesCreateRequest_builder{
+				Object: privatev1.BareMetalInstance_builder{
+					Spec: privatev1.BareMetalInstanceSpec_builder{
+						CatalogItem:        catID,
+						SshPublicKey:        new(testSSHPublicKey),
+						TemplateParameters: map[string]*anypb.Any{"os_version": osParam},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.GetObject().GetSpec().GetSshPublicKey()).To(Equal(testSSHPublicKey))
+			Expect(response.GetObject().GetSpec().GetTemplateParameters()).To(HaveKey("os_version"))
+		})
+
+		It("Rejects missing required field_definition even with valid template_parameters", func() {
+			createTemplate("fd-fail-template", []*privatev1.BareMetalInstanceTemplateParameterDefinition{
+				{Name: "os_version", Required: true, Type: "type.googleapis.com/google.protobuf.StringValue"},
+			})
+
+			catResp, err := catalogServer.Create(ctx, privatev1.BareMetalInstanceCatalogItemsCreateRequest_builder{
+				Object: privatev1.BareMetalInstanceCatalogItem_builder{
+					Title:     "FD fail + valid TP",
+					Template:  "fd-fail-template",
+					Published: true,
+					FieldDefinitions: []*privatev1.FieldDefinition{
+						privatev1.FieldDefinition_builder{
+							Path:     "ssh_public_key",
+							Editable: true,
+						}.Build(),
+					},
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catID := catResp.GetObject().GetId()
+
+			osParam, err := anypb.New(wrapperspb.String("rhel9.4"))
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = server.Create(ctx, privatev1.BareMetalInstancesCreateRequest_builder{
+				Object: privatev1.BareMetalInstance_builder{
+					Spec: privatev1.BareMetalInstanceSpec_builder{
+						CatalogItem:        catID,
+						TemplateParameters: map[string]*anypb.Any{"os_version": osParam},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(ContainSubstring("ssh_public_key"))
+		})
+
+		It("Rejects missing required template_parameter even with valid field_definitions", func() {
+			createTemplate("tp-fail-template", []*privatev1.BareMetalInstanceTemplateParameterDefinition{
+				{Name: "os_version", Required: true, Type: "type.googleapis.com/google.protobuf.StringValue"},
+			})
+
+			catResp, err := catalogServer.Create(ctx, privatev1.BareMetalInstanceCatalogItemsCreateRequest_builder{
+				Object: privatev1.BareMetalInstanceCatalogItem_builder{
+					Title:     "Valid FD + TP fail",
+					Template:  "tp-fail-template",
+					Published: true,
+					FieldDefinitions: []*privatev1.FieldDefinition{
+						privatev1.FieldDefinition_builder{
+							Path:     "ssh_public_key",
+							Editable: false,
+							Default:  structpb.NewStringValue(testSSHPublicKey),
+						}.Build(),
+					},
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			catID := catResp.GetObject().GetId()
+
+			_, err = server.Create(ctx, privatev1.BareMetalInstancesCreateRequest_builder{
+				Object: privatev1.BareMetalInstance_builder{
+					Spec: privatev1.BareMetalInstanceSpec_builder{
+						CatalogItem:        catID,
+						TemplateParameters: map[string]*anypb.Any{},
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(status.Message()).To(ContainSubstring("os_version"))
+		})
+
 		It("Rejects template_parameters when catalog item has no template", func() {
 			noTemplateResp, err := catalogServer.Create(ctx, privatev1.BareMetalInstanceCatalogItemsCreateRequest_builder{
 				Object: privatev1.BareMetalInstanceCatalogItem_builder{
