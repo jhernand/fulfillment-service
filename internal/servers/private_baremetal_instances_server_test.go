@@ -703,7 +703,7 @@ var _ = Describe("Private bare metal instances server", func() {
 				Object: privatev1.BareMetalInstance_builder{
 					Spec: privatev1.BareMetalInstanceSpec_builder{
 						CatalogItem:        catID,
-						SshPublicKey:        &userKey,
+						SshPublicKey:       &userKey,
 						TemplateParameters: map[string]*anypb.Any{"os_version": osParam},
 					}.Build(),
 				}.Build(),
@@ -741,7 +741,7 @@ var _ = Describe("Private bare metal instances server", func() {
 				Object: privatev1.BareMetalInstance_builder{
 					Spec: privatev1.BareMetalInstanceSpec_builder{
 						CatalogItem:        catID,
-						SshPublicKey:        new(testSSHPublicKey),
+						SshPublicKey:       new(testSSHPublicKey),
 						TemplateParameters: map[string]*anypb.Any{"os_version": osParam},
 					}.Build(),
 				}.Build(),
