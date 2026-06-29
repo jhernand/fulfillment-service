@@ -16,10 +16,8 @@ package servers
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"maps"
-	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -225,25 +223,20 @@ func (s *PrivateBareMetalInstancesServer) validateAndApplyCatalogItem(ctx contex
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "spec.catalog_item is mandatory")
 	}
 
-	response, err := s.catalogItemsDao.List().
-		SetFilter(fmt.Sprintf("this.id == %[1]s || this.metadata.name == %[1]s", strconv.Quote(ref))).
-		SetLimit(1).
+	response, err := s.catalogItemsDao.Get().
+		SetId(ref).
 		Do(ctx)
 	if err != nil {
-		var deniedErr *dao.ErrDenied
-		if errors.As(err, &deniedErr) {
-			return grpcstatus.Errorf(grpccodes.PermissionDenied, "%s", deniedErr.Reason)
+		var notFoundErr *dao.ErrNotFound
+		if errors.As(err, &notFoundErr) {
+			return grpcstatus.Errorf(grpccodes.NotFound,
+				"catalog item '%s' not found", ref)
 		}
 		s.logger.ErrorContext(ctx, "Failed to lookup bare metal instance catalog item",
 			slog.Any("error", err))
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to lookup catalog item")
 	}
-	items := response.GetItems()
-	if len(items) == 0 {
-		return grpcstatus.Errorf(grpccodes.NotFound,
-			"there is no catalog item with identifier or name '%s'", ref)
-	}
-	item := items[0]
+	item := response.GetObject()
 
 	if err := validateCatalogItemAccess(item, ref); err != nil {
 		return err
