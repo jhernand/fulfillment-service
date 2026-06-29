@@ -15,6 +15,8 @@ package consoleproxy
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -23,6 +25,9 @@ import (
 
 	"errors"
 
+	"github.com/lestrrat-go/httprc/v3"
+	"github.com/lestrrat-go/httprc/v3/errsink"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
@@ -141,11 +146,16 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		return fmt.Errorf("flag '--token-decryption-key' is required")
 	}
 
-	// Create the token opener (decrypt JWE + verify JWS infrastructure):
+	// Create the JWKS cache for background key refresh:
 	jwksURL := c.args.tokenIssuer + "/.well-known/jwks.json"
+	jwksCache, err := c.createJWKSCache(ctx, jwksURL, caPool)
+	if err != nil {
+		return err
+	}
+
+	// Create the token opener (decrypt JWE + verify JWS):
 	c.logger.InfoContext(ctx, "Creating token opener",
 		slog.String("issuer", c.args.tokenIssuer),
-		slog.String("jwks_url", jwksURL),
 		slog.String("decryption_key", c.args.tokenDecryptionKey),
 	)
 	tokenOpener, err := jwe.NewOpener().
@@ -155,7 +165,7 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		SetJWKSURL(jwksURL).
 		SetIssuer(c.args.tokenIssuer).
 		SetAudience(console.TicketAudience).
-		SetCAPool(caPool).
+		SetCache(jwksCache).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create token opener: %w", err)
@@ -266,10 +276,12 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 	)
 	shutdown.AddGrpcServer(network.GrpcListenerName, 0, grpcServer)
 
-	// Register the reflection and health servers:
+	// Register the reflection and health servers. Start as NOT_SERVING so
+	// that the readiness probe fails until the JWKS cache is warm.
 	c.logger.InfoContext(ctx, "Registering gRPC reflection server")
 	reflection.RegisterV1(grpcServer)
 	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_NOT_SERVING)
 	healthv1.RegisterHealthServer(grpcServer, healthServer)
 
 	// Register the ConsoleProxy gRPC server:
@@ -386,6 +398,9 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		}
 	}()
 
+	// Wait for JWKS keys in the background, then mark the service as ready:
+	go c.waitForJWKSReady(ctx, jwksCache, jwksURL, healthServer)
+
 	// Keep running till the shutdown sequence finishes or a server fails:
 	c.logger.InfoContext(ctx, "Waiting for shutdown sequence to complete")
 	shutdownDone := make(chan struct{})
@@ -404,6 +419,59 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error {
 		return err
 	case <-shutdownDone:
 		return nil
+	}
+}
+
+// createJWKSCache creates a JWKS cache and registers the given URL without
+// blocking on the first fetch. The cache starts fetching in the background;
+// callers should poll cache.Lookup to detect when keys are available.
+func (c *runnerContext) createJWKSCache(ctx context.Context, jwksURL string, caPool *x509.CertPool) (*jwk.Cache, error) {
+	c.logger.InfoContext(ctx, "Creating JWKS cache",
+		slog.String("jwks_url", jwksURL),
+	)
+	cache, err := jwk.NewCache(ctx, httprc.NewClient(
+		httprc.WithErrorSink(errsink.NewSlog(c.logger)),
+	))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create JWKS cache: %w", err)
+	}
+
+	registerOpts := []jwk.RegisterOption{
+		jwk.WithWaitReady(false),
+		jwk.WithHttprcResourceOption(httprc.WithMinInterval(time.Minute)),
+	}
+	if caPool != nil {
+		registerOpts = append(registerOpts, jwk.WithHTTPClient(
+			jwk.WrapHTTPClientDefaults(&http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						RootCAs:    caPool,
+						MinVersion: tls.VersionTLS13,
+					},
+				},
+			}),
+		))
+	}
+	if err := cache.Register(ctx, jwksURL, registerOpts...); err != nil {
+		return nil, fmt.Errorf("failed to register JWKS URL: %w", err)
+	}
+	return cache, nil
+}
+
+// waitForJWKSReady polls the JWKS cache until keys are available, then sets
+// the health server to SERVING. Exits if ctx is cancelled.
+func (c *runnerContext) waitForJWKSReady(ctx context.Context, cache *jwk.Cache, jwksURL string, healthServer *health.Server) {
+	for {
+		if _, err := cache.Lookup(ctx, jwksURL); err == nil {
+			c.logger.InfoContext(ctx, "JWKS keys available, setting health to SERVING")
+			healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
 	}
 }
 
