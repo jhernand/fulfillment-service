@@ -185,6 +185,41 @@ var _ = Describe("Private bare metal instances server", func() {
 			Expect(status.Message()).To(ContainSubstring("does-not-exist"))
 		})
 
+		It("Rejects catalog item referenced by name instead of ID", func() {
+			namedResp, err := catalogServer.Create(ctx, privatev1.BareMetalInstanceCatalogItemsCreateRequest_builder{
+				Object: privatev1.BareMetalInstanceCatalogItem_builder{
+					Metadata: privatev1.Metadata_builder{
+						Name: "my-named-catalog-item",
+					}.Build(),
+					Title:     "Named catalog item",
+					Template:  "test-template",
+					Published: true,
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			namedID := namedResp.GetObject().GetId()
+			DeferCleanup(func() {
+				_, err := catalogServer.Delete(ctx, privatev1.BareMetalInstanceCatalogItemsDeleteRequest_builder{
+					Id: namedID,
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+			})
+			Expect(namedResp.GetObject().GetMetadata().GetName()).To(Equal("my-named-catalog-item"))
+
+			_, err = server.Create(ctx, privatev1.BareMetalInstancesCreateRequest_builder{
+				Object: privatev1.BareMetalInstance_builder{
+					Spec: privatev1.BareMetalInstanceSpec_builder{
+						CatalogItem: "my-named-catalog-item",
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.NotFound))
+			Expect(status.Message()).To(ContainSubstring("my-named-catalog-item"))
+		})
+
 		It("Rejects unpublished catalog item", func() {
 			unpubResp, err := catalogServer.Create(ctx, privatev1.BareMetalInstanceCatalogItemsCreateRequest_builder{
 				Object: privatev1.BareMetalInstanceCatalogItem_builder{
