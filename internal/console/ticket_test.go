@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -28,6 +29,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/lestrrat-go/httprc/v3"
+	"github.com/lestrrat-go/jwx/v3/jwk"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -104,7 +107,7 @@ var _ = Describe("Ticket", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(TicketAudience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTicketTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			opener := NewTicketOpener(tokenOpener)
@@ -139,7 +142,7 @@ var _ = Describe("Ticket", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(TicketAudience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTicketTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 			opener := NewTicketOpener(tokenOpener)
@@ -205,6 +208,26 @@ func generateTicketTestCA() *testTicketCAInfo {
 	pool := x509.NewCertPool()
 	pool.AddCert(caCert)
 	return &testTicketCAInfo{key: caKey, cert: caCert, pool: pool}
+}
+
+// newTicketTestCache creates a jwk.Cache registered to the given JWKS server URL,
+// optionally configured with a custom CA pool for TLS.
+func newTicketTestCache(serverURL string, caPool *x509.CertPool) *jwk.Cache {
+	cache, err := jwk.NewCache(context.Background(), httprc.NewClient())
+	Expect(err).ToNot(HaveOccurred())
+	opts := []jwk.RegisterOption{}
+	if caPool != nil {
+		opts = append(opts, jwk.WithHTTPClient(
+			jwk.WrapHTTPClientDefaults(&http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{RootCAs: caPool},
+				},
+			}),
+		))
+	}
+	err = cache.Register(context.Background(), serverURL, opts...)
+	Expect(err).ToNot(HaveOccurred())
+	return cache
 }
 
 // generateTicketLeafCert generates a leaf certificate signed by the given CA and writes

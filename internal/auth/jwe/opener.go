@@ -15,12 +15,9 @@ package jwe
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -52,23 +49,22 @@ type OpenerBuilder struct {
 	jwksURL           string
 	issuer            string
 	audience          string
-	caPool            *x509.CertPool
+	cache             *jwk.Cache
 }
 
 // Opener decrypts nested JWTs (JWE, RSA-OAEP-256) and verifies the inner
 // JWS (RS256) against a JWKS fetched on demand when the token's kid is
-// unknown. Enforces single-use via JTI tracking.
+// unknown. Uses jwk.Cache for periodic background refresh and forces an
+// immediate re-fetch when a token's kid is not in the cached set.
+// Enforces single-use via JTI tracking.
 type Opener struct {
 	logger        *slog.Logger
 	decryptionKey *privateKeyReloader
 	jwksURL       string
 	issuer        string
 	audience      string
-	fetchOpts     []jwk.FetchOption  // TLS config reused for every jwk.Fetch call
-	jwks          jwk.Set            // cached JWKS, refreshed on unknown kid
-	jwksMu        sync.Mutex         // protects jwks and lastAttempt
-	lastAttempt   time.Time          // last JWKS refresh attempt, zero after Build
-	refreshGroup  singleflight.Group // coalesces concurrent JWKS refreshes
+	cache         *jwk.Cache         // periodically refreshes JWKS in background
+	refreshGroup  singleflight.Group // coalesces concurrent forced JWKS refreshes
 	mu            sync.Mutex
 	seen          map[string]time.Time // jti -> cleanup expiry
 }
@@ -78,7 +74,7 @@ func NewOpener() *OpenerBuilder {
 	return &OpenerBuilder{}
 }
 
-// SetContext sets the context used for the initial JWKS fetch and the JTI cleanup goroutine. This is mandatory.
+// SetContext sets the context used for loading the decryption key and the JTI cleanup goroutine. This is mandatory.
 func (b *OpenerBuilder) SetContext(value context.Context) *OpenerBuilder {
 	b.ctx = value
 	return b
@@ -114,10 +110,10 @@ func (b *OpenerBuilder) SetAudience(value string) *OpenerBuilder {
 	return b
 }
 
-// SetCAPool sets the CA certificate pool for TLS when fetching JWKS. This is optional; if not set, system roots
-// are used.
-func (b *OpenerBuilder) SetCAPool(value *x509.CertPool) *OpenerBuilder {
-	b.caPool = value
+// SetCache sets the JWKS cache used for key discovery and periodic refresh. The caller must
+// create the cache, register the JWKS URL, and configure TLS before passing it in. This is mandatory.
+func (b *OpenerBuilder) SetCache(value *jwk.Cache) *OpenerBuilder {
+	b.cache = value
 	return b
 }
 
@@ -136,11 +132,22 @@ func (b *OpenerBuilder) Build() (*Opener, error) {
 	if b.jwksURL == "" {
 		return nil, errors.New("JWKS URL is mandatory")
 	}
+	// OIDC Discovery (RFC 8414) requires jwks_uri to use HTTPS.
+	parsed, err := url.Parse(b.jwksURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse JWKS URL %q: %w", b.jwksURL, err)
+	}
+	if parsed.Scheme != "https" {
+		return nil, fmt.Errorf("JWKS URL %q must use HTTPS scheme", b.jwksURL)
+	}
 	if b.issuer == "" {
 		return nil, errors.New("issuer is mandatory")
 	}
 	if b.audience == "" {
 		return nil, errors.New("audience is mandatory")
+	}
+	if b.cache == nil {
+		return nil, errors.New("cache is mandatory")
 	}
 
 	// Load the decryption key:
@@ -152,36 +159,6 @@ func (b *OpenerBuilder) Build() (*Opener, error) {
 		return nil, fmt.Errorf("initial load of decryption key: %w", err)
 	}
 
-	// OIDC Discovery (RFC 8414) requires jwks_uri to use HTTPS.
-	parsed, err := url.Parse(b.jwksURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse JWKS URL %q: %w", b.jwksURL, err)
-	}
-	if parsed.Scheme != "https" {
-		return nil, fmt.Errorf("JWKS URL %q must use HTTPS scheme", b.jwksURL)
-	}
-
-	// Build fetch options for the JWKS endpoint.
-	var fetchOpts []jwk.FetchOption
-	if b.caPool != nil {
-		fetchOpts = append(fetchOpts, jwk.WithHTTPClient(
-			jwk.WrapHTTPClientDefaults(&http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						RootCAs:    b.caPool,
-						MinVersion: tls.VersionTLS13,
-					},
-				},
-			}),
-		))
-	}
-
-	// Seed the cache; validates that the endpoint is reachable.
-	jwks, err := jwk.Fetch(b.ctx, b.jwksURL, fetchOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("initial JWKS fetch from %q: %w", b.jwksURL, err)
-	}
-
 	// Create and populate the object:
 	o := &Opener{
 		logger:        b.logger,
@@ -189,11 +166,8 @@ func (b *OpenerBuilder) Build() (*Opener, error) {
 		jwksURL:       b.jwksURL,
 		issuer:        b.issuer,
 		audience:      b.audience,
-		fetchOpts:     fetchOpts,
-		jwks:          jwks,
-		// lastAttempt intentionally zero: the bootstrap fetch does not count
-		// toward the rate limit, so the first unknown-kid refresh is immediate.
-		seen: make(map[string]time.Time),
+		cache:         b.cache,
+		seen:          make(map[string]time.Time),
 	}
 	go o.cleanupLoop(b.ctx)
 	return o, nil
@@ -265,9 +239,10 @@ func (o *Opener) resolveKeySet(ctx context.Context, jwsPayload []byte) (jwk.Set,
 		return nil, fmt.Errorf("parse JWS: %w", err)
 	}
 
-	o.jwksMu.Lock()
-	set := o.jwks
-	o.jwksMu.Unlock()
+	set, err := o.cache.Lookup(ctx, o.jwksURL)
+	if err != nil {
+		return o.refreshJWKS(ctx)
+	}
 
 	sigs := jwsMsg.Signatures()
 	if len(sigs) == 0 {
@@ -280,50 +255,36 @@ func (o *Opener) resolveKeySet(ctx context.Context, jwsPayload []byte) (jwk.Set,
 	if _, found := set.LookupKeyID(kid); found {
 		return set, nil
 	}
-	return o.refreshJWKS(ctx), nil
+	return o.refreshJWKS(ctx)
 }
 
-// minRefreshInterval is the minimum time between JWKS refresh attempts.
-// Prevents amplification attacks where forged kid values trigger unbounded
-// outbound HTTP requests to the JWKS endpoint.
-const minRefreshInterval = 60 * time.Second
-
-// refreshJWKS coalesces concurrent JWKS refreshes via singleflight.
-// Rate-limited to one fetch per minRefreshInterval.
-func (o *Opener) refreshJWKS(ctx context.Context) jwk.Set {
+// refreshJWKS forces an immediate JWKS re-fetch via the cache, coalescing
+// concurrent callers via singleflight.
+func (o *Opener) refreshJWKS(ctx context.Context) (jwk.Set, error) {
 	// Detach from the caller's context so one cancelled request does
 	// not abort the shared fetch. Also strips deadline intentionally —
 	// the HTTP transport timeout bounds the fetch.
 	ctx = context.WithoutCancel(ctx)
 
-	v, _, _ := o.refreshGroup.Do("jwks", func() (any, error) {
-		o.jwksMu.Lock()
-		if time.Since(o.lastAttempt) < minRefreshInterval {
-			set := o.jwks
-			o.jwksMu.Unlock()
-			return set, nil
-		}
-		o.lastAttempt = time.Now()
-		o.jwksMu.Unlock()
-
-		set, err := jwk.Fetch(ctx, o.jwksURL, o.fetchOpts...)
+	v, err, _ := o.refreshGroup.Do("jwks", func() (any, error) {
+		set, err := o.cache.Refresh(ctx, o.jwksURL)
 		if err != nil {
 			o.logger.WarnContext(ctx, "JWKS refresh failed, using cached keyset",
 				slog.String("jwks_url", o.jwksURL),
 				slog.Any("error", err),
 			)
-			o.jwksMu.Lock()
-			cached := o.jwks
-			o.jwksMu.Unlock()
+			cached, lookupErr := o.cache.Lookup(ctx, o.jwksURL)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("JWKS refresh failed and no cached keyset available: %w", err)
+			}
 			return cached, nil
 		}
-
-		o.jwksMu.Lock()
-		o.jwks = set
-		o.jwksMu.Unlock()
 		return set, nil
 	})
-	return v.(jwk.Set)
+	if err != nil {
+		return nil, err
+	}
+	return v.(jwk.Set), nil
 }
 
 // extractClaims reads standard and custom claims from a verified JWT token.

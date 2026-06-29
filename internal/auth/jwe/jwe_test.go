@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -33,6 +34,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lestrrat-go/httprc/v3"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
 	"github.com/lestrrat-go/jwx/v3/jwk"
@@ -130,7 +132,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(audience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -160,7 +162,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(audience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -186,7 +188,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(audience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -211,7 +213,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(audience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -244,7 +246,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(audience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -282,7 +284,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(audience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -343,7 +345,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience("aud-b").
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -366,7 +368,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience("my-service").
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -426,7 +428,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience("aud-b").
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -568,7 +570,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(audience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -606,7 +608,7 @@ var _ = Describe("Token", func() {
 				SetJWKSURL(jwksServer.URL).
 				SetIssuer(issuer).
 				SetAudience(audience).
-				SetCAPool(jwksCAPool).
+				SetCache(newTestCache(jwksServer.URL, jwksCAPool)).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -659,6 +661,25 @@ func countDots(s string) int {
 		}
 	}
 	return count
+}
+
+// newTestCache creates a jwk.Cache with the given test server URL registered and ready.
+func newTestCache(serverURL string, caPool *x509.CertPool) *jwk.Cache {
+	cache, err := jwk.NewCache(context.Background(), httprc.NewClient())
+	Expect(err).ToNot(HaveOccurred())
+	opts := []jwk.RegisterOption{}
+	if caPool != nil {
+		opts = append(opts, jwk.WithHTTPClient(
+			jwk.WrapHTTPClientDefaults(&http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{RootCAs: caPool},
+				},
+			}),
+		))
+	}
+	err = cache.Register(context.Background(), serverURL, opts...)
+	Expect(err).ToNot(HaveOccurred())
+	return cache
 }
 
 // serveJWKS starts a TLS test server serving the sealer's JWKS and returns

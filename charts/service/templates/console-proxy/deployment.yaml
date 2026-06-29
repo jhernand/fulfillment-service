@@ -91,14 +91,8 @@ spec:
           containerPort: 8002
           protocol: TCP
         livenessProbe:
-          exec:
-            command:
-            - /usr/local/bin/fulfillment-service
-            - probe
-            - grpc-server
-            - --ca-file=/etc/fulfillment-console-proxy/tls/cas
-            - --grpc-server-address=localhost:8000
-            - --grpc-server-timeout=1s
+          tcpSocket:
+            port: 8000
           initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 5
