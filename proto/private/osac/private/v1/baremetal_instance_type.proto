@@ -16,6 +16,7 @@ syntax = "proto3";
 package osac.private.v1;
 
 import "google/api/field_behavior.proto";
+import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
 import "osac/private/v1/condition_status_type.proto";
 import "osac/private/v1/metadata_type.proto";
@@ -55,6 +56,8 @@ message BareMetalInstanceSpec {
   // The value itself is not important; only the change matters.
   // The controller compares this with `status.restart_trigger` and initiates a power cycle when they differ.
   int64 restart_trigger = 5;
+
+  map<string, google.protobuf.Any> template_parameters = 6 [(google.api.field_behavior) = IMMUTABLE];
 }
 
 // The status contains the details of the bare metal instance provided by the system.

@@ -38,6 +38,7 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/kubernetes/annotations"
 	"github.com/osac-project/fulfillment-service/internal/kubernetes/labels"
 	"github.com/osac-project/fulfillment-service/internal/masks"
+	"github.com/osac-project/fulfillment-service/internal/utils"
 )
 
 const objectPrefix = "bmi-"
@@ -571,7 +572,19 @@ func (t *task) mutateBMI(ctx context.Context, object *bmfov1alpha1.BareMetalInst
 	object.Spec.TemplateParameters = ""
 	object.Spec.RunStrategy = bmfov1alpha1.RunStrategyUnspecified
 
-	params := map[string]string{}
+	params := map[string]any{}
+
+	userTemplateParams := t.bareMetalInstance.GetSpec().GetTemplateParameters()
+	if len(userTemplateParams) > 0 {
+		userParamsJSON, err := utils.ConvertTemplateParametersToJSON(userTemplateParams)
+		if err != nil {
+			return fmt.Errorf("failed to convert template parameters: %w", err)
+		}
+		if err := json.Unmarshal([]byte(userParamsJSON), &params); err != nil {
+			return fmt.Errorf("failed to unmarshal template parameters: %w", err)
+		}
+	}
+
 	if t.bareMetalInstance.GetSpec().HasSshPublicKey() {
 		params["sshPublicKey"] = t.bareMetalInstance.GetSpec().GetSshPublicKey()
 	}
