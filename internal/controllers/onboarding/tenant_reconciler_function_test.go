@@ -37,17 +37,17 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/masks"
 )
 
-func hasFinalizer(organization *privatev1.Organization) bool {
-	return slices.Contains(organization.GetMetadata().GetFinalizers(), finalizers.Controller)
+func hasFinalizer(tenant *privatev1.Tenant) bool {
+	return slices.Contains(tenant.GetMetadata().GetFinalizers(), finalizers.Controller)
 }
 
-func newTenantCR(orgID, namespace, name string, deletionTimestamp *metav1.Time) *osacv1alpha1.Tenant {
+func newTenantCR(tenantID, namespace, name string, deletionTimestamp *metav1.Time) *osacv1alpha1.Tenant {
 	obj := &osacv1alpha1.Tenant{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      name,
 			Labels: map[string]string{
-				labels.TenantUuid: orgID,
+				labels.TenantUuid: tenantID,
 			},
 		},
 	}
@@ -67,13 +67,13 @@ func newScheme() *runtime.Scheme {
 func newFunction(
 	hubCache controllers.HubCache,
 	hubsClient privatev1.HubsClient,
-	orgClient privatev1.OrganizationsClient,
+	tenantsClient privatev1.TenantsClient,
 ) *function {
 	return &function{
 		logger:         logger,
 		hubCache:       hubCache,
 		hubsClient:     hubsClient,
-		tenantsClient:  orgClient,
+		tenantsClient:  tenantsClient,
 		maskCalculator: masks.NewCalculator().Build(),
 	}
 }
@@ -81,18 +81,18 @@ func newFunction(
 var _ = Describe("addFinalizer", func() {
 	It("adds finalizer when not present and creates metadata", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{}.Build(),
+			tenant: privatev1.Tenant_builder{}.Build(),
 		}
 
 		added := t.addFinalizer()
 
 		Expect(added).To(BeTrue())
-		Expect(hasFinalizer(t.organization)).To(BeTrue())
+		Expect(hasFinalizer(t.tenant)).To(BeTrue())
 	})
 
 	It("adds finalizer when not present but metadata exists", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{
+			tenant: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{"other-finalizer"},
 				}.Build(),
@@ -102,13 +102,13 @@ var _ = Describe("addFinalizer", func() {
 		added := t.addFinalizer()
 
 		Expect(added).To(BeTrue())
-		Expect(hasFinalizer(t.organization)).To(BeTrue())
-		Expect(t.organization.GetMetadata().GetFinalizers()).To(ContainElement("other-finalizer"))
+		Expect(hasFinalizer(t.tenant)).To(BeTrue())
+		Expect(t.tenant.GetMetadata().GetFinalizers()).To(ContainElement("other-finalizer"))
 	})
 
 	It("does not add finalizer when already present", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{
+			tenant: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{finalizers.Controller},
 				}.Build(),
@@ -118,7 +118,7 @@ var _ = Describe("addFinalizer", func() {
 		added := t.addFinalizer()
 
 		Expect(added).To(BeFalse())
-		finalizerList := t.organization.GetMetadata().GetFinalizers()
+		finalizerList := t.tenant.GetMetadata().GetFinalizers()
 		Expect(finalizerList).To(HaveLen(1))
 		Expect(finalizerList[0]).To(Equal(finalizers.Controller))
 	})
@@ -127,7 +127,7 @@ var _ = Describe("addFinalizer", func() {
 var _ = Describe("removeFinalizer", func() {
 	It("removes the controller finalizer when present", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{
+			tenant: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{finalizers.Controller, "other-finalizer"},
 				}.Build(),
@@ -136,13 +136,13 @@ var _ = Describe("removeFinalizer", func() {
 
 		t.removeFinalizer()
 
-		Expect(hasFinalizer(t.organization)).To(BeFalse())
-		Expect(t.organization.GetMetadata().GetFinalizers()).To(ConsistOf("other-finalizer"))
+		Expect(hasFinalizer(t.tenant)).To(BeFalse())
+		Expect(t.tenant.GetMetadata().GetFinalizers()).To(ConsistOf("other-finalizer"))
 	})
 
 	It("does nothing when finalizer is not present", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{
+			tenant: privatev1.Tenant_builder{
 				Metadata: privatev1.Metadata_builder{
 					Finalizers: []string{"other-finalizer"},
 				}.Build(),
@@ -151,23 +151,23 @@ var _ = Describe("removeFinalizer", func() {
 
 		t.removeFinalizer()
 
-		Expect(t.organization.GetMetadata().GetFinalizers()).To(ConsistOf("other-finalizer"))
+		Expect(t.tenant.GetMetadata().GetFinalizers()).To(ConsistOf("other-finalizer"))
 	})
 
 	It("does nothing when metadata is missing", func() {
 		t := &task{
-			organization: privatev1.Organization_builder{}.Build(),
+			tenant: privatev1.Tenant_builder{}.Build(),
 		}
 
 		t.removeFinalizer()
 
-		Expect(t.organization.HasMetadata()).To(BeFalse())
+		Expect(t.tenant.HasMetadata()).To(BeFalse())
 	})
 })
 
 var _ = Describe("run", func() {
 	const (
-		orgID      = "org-123"
+		tenantID   = "tenant-123"
 		tenantName = "my-tenant"
 		hub1ID     = "hub-1"
 		hub2ID     = "hub-2"
@@ -180,7 +180,7 @@ var _ = Describe("run", func() {
 		ctrl         *gomock.Controller
 		mockHubCache *controllers.MockHubCache
 		mockHubs     *controllers.MockHubsClient
-		mockOrgs     *MockOrganizationsClient
+		mockTenants  *MockTenantsClient
 		scheme       *runtime.Scheme
 	)
 
@@ -189,7 +189,7 @@ var _ = Describe("run", func() {
 		ctrl = gomock.NewController(GinkgoT())
 		mockHubCache = controllers.NewMockHubCache(ctrl)
 		mockHubs = controllers.NewMockHubsClient(ctrl)
-		mockOrgs = NewMockOrganizationsClient(ctrl)
+		mockTenants = NewMockTenantsClient(ctrl)
 		scheme = newScheme()
 	})
 
@@ -198,30 +198,30 @@ var _ = Describe("run", func() {
 	})
 
 	Describe("update (create/update path)", func() {
-		When("organization has no finalizer", func() {
+		When("tenant has no finalizer", func() {
 			It("adds finalizer and returns early", func() {
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
 						Tenant: tenantName,
 					}.Build(),
 				}.Build()
 
-				mockOrgs.EXPECT().
+				mockTenants.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					})
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(hasFinalizer(org)).To(BeTrue())
+				Expect(hasFinalizer(tenant)).To(BeTrue())
 			})
 		})
 
-		When("organization is created and no Tenant CRDs exist", func() {
+		When("tenant is created and no Tenant CRDs exist", func() {
 			It("creates Tenant CRD on each hub", func() {
 				fakeClient1 := fake.NewClientBuilder().WithScheme(scheme).Build()
 				fakeClient2 := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -244,43 +244,43 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub2ID).
 					Return(&controllers.HubEntry{Namespace: namespace2, Client: fakeClient2}, nil)
 
-				mockOrgs.EXPECT().
+				mockTenants.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					}).AnyTimes()
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:       orgID,
+						Name:       tenantID,
 						Finalizers: []string{finalizers.Controller},
 						Tenant:     tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).ToNot(HaveOccurred())
 
 				list1 := &osacv1alpha1.TenantList{}
 				Expect(fakeClient1.List(ctx, list1)).To(Succeed())
 				Expect(list1.Items).To(HaveLen(1))
-				Expect(list1.Items[0].Labels[labels.TenantUuid]).To(Equal(orgID))
+				Expect(list1.Items[0].Labels[labels.TenantUuid]).To(Equal(tenantID))
 				Expect(list1.Items[0].Namespace).To(Equal(namespace1))
 
 				list2 := &osacv1alpha1.TenantList{}
 				Expect(fakeClient2.List(ctx, list2)).To(Succeed())
 				Expect(list2.Items).To(HaveLen(1))
-				Expect(list2.Items[0].Labels[labels.TenantUuid]).To(Equal(orgID))
+				Expect(list2.Items[0].Labels[labels.TenantUuid]).To(Equal(tenantID))
 				Expect(list2.Items[0].Namespace).To(Equal(namespace2))
 			})
 		})
 
 		When("Tenant CRD already exists on a hub", func() {
 			It("does not create a duplicate", func() {
-				existing := newTenantCR(orgID, namespace1, orgID, nil)
+				existing := newTenantCR(tenantID, namespace1, tenantID, nil)
 				fakeClient := fake.NewClientBuilder().
 					WithScheme(scheme).
 					WithObjects(existing).
@@ -300,23 +300,23 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				mockOrgs.EXPECT().
+				mockTenants.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					}).AnyTimes()
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:       orgID,
+						Name:       tenantID,
 						Finalizers: []string{finalizers.Controller},
 						Tenant:     tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).ToNot(HaveOccurred())
 
@@ -333,16 +333,16 @@ var _ = Describe("run", func() {
 					List(gomock.Any(), gomock.Any()).
 					Return(nil, expectedErr)
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
 						Finalizers: []string{finalizers.Controller},
 						Tenant:     tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).To(MatchError(ContainSubstring("hubs unavailable")))
 			})
@@ -366,17 +366,17 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(nil, expectedErr)
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:       orgID,
+						Name:       tenantID,
 						Finalizers: []string{finalizers.Controller},
 						Tenant:     tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).To(MatchError(ContainSubstring("cache temporarily unavailable")))
 			})
@@ -404,30 +404,30 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub2ID).
 					Return(&controllers.HubEntry{Namespace: namespace2, Client: fakeClient}, nil)
 
-				mockOrgs.EXPECT().
+				mockTenants.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					}).AnyTimes()
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:       orgID,
+						Name:       tenantID,
 						Finalizers: []string{finalizers.Controller},
 						Tenant:     tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).ToNot(HaveOccurred())
 
 				list := &osacv1alpha1.TenantList{}
 				Expect(fakeClient.List(ctx, list)).To(Succeed())
 				Expect(list.Items).To(HaveLen(1))
-				Expect(list.Items[0].Labels[labels.TenantUuid]).To(Equal(orgID))
+				Expect(list.Items[0].Labels[labels.TenantUuid]).To(Equal(tenantID))
 			})
 		})
 
@@ -457,17 +457,17 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:       orgID,
+						Name:       tenantID,
 						Finalizers: []string{finalizers.Controller},
 						Tenant:     tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).To(MatchError(ContainSubstring("create failed")))
 			})
@@ -475,9 +475,9 @@ var _ = Describe("run", func() {
 	})
 
 	Describe("delete path", func() {
-		When("organization is deleted and Tenant CRD exists on a hub", func() {
+		When("tenant is deleted and Tenant CRD exists on a hub", func() {
 			It("issues delete and keeps finalizer until object is gone", func() {
-				existing := newTenantCR(orgID, namespace1, orgID, nil)
+				existing := newTenantCR(tenantID, namespace1, tenantID, nil)
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
 
 				mockHubs.EXPECT().
@@ -494,21 +494,21 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:              orgID,
+						Name:              tenantID,
 						Finalizers:        []string{finalizers.Controller},
 						DeletionTimestamp: timestamppb.Now(),
 						Tenant:            tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(hasFinalizer(org)).To(BeTrue())
+				Expect(hasFinalizer(tenant)).To(BeTrue())
 			})
 		})
 
@@ -535,34 +535,34 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub2ID).
 					Return(&controllers.HubEntry{Namespace: namespace2, Client: fakeClient2}, nil)
 
-				mockOrgs.EXPECT().
+				mockTenants.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					})
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:              orgID,
+						Name:              tenantID,
 						Finalizers:        []string{finalizers.Controller},
 						DeletionTimestamp: timestamppb.Now(),
 						Tenant:            tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(hasFinalizer(org)).To(BeFalse())
+				Expect(hasFinalizer(tenant)).To(BeFalse())
 			})
 		})
 
 		When("Tenant CRD still has a deletion timestamp (K8s finalizers processing)", func() {
 			It("keeps the finalizer and waits", func() {
 				now := metav1.Now()
-				existing := newTenantCR(orgID, namespace1, orgID, &now)
+				existing := newTenantCR(tenantID, namespace1, tenantID, &now)
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
 
 				mockHubs.EXPECT().
@@ -579,21 +579,21 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:              orgID,
+						Name:              tenantID,
 						Finalizers:        []string{finalizers.Controller},
 						DeletionTimestamp: timestamppb.Now(),
 						Tenant:            tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(hasFinalizer(org)).To(BeTrue())
+				Expect(hasFinalizer(tenant)).To(BeTrue())
 			})
 		})
 
@@ -613,27 +613,27 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(nil, controllers.ErrHubNotFound)
 
-				mockOrgs.EXPECT().
+				mockTenants.EXPECT().
 					Update(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, req *privatev1.OrganizationsUpdateRequest, opts ...grpc.CallOption) (*privatev1.OrganizationsUpdateResponse, error) {
-						return &privatev1.OrganizationsUpdateResponse{Object: req.GetObject()}, nil
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
 					})
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:              orgID,
+						Name:              tenantID,
 						Finalizers:        []string{finalizers.Controller},
 						DeletionTimestamp: timestamppb.Now(),
 						Tenant:            tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(hasFinalizer(org)).To(BeFalse())
+				Expect(hasFinalizer(tenant)).To(BeFalse())
 			})
 		})
 
@@ -655,21 +655,21 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(nil, expectedErr)
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:              orgID,
+						Name:              tenantID,
 						Finalizers:        []string{finalizers.Controller},
 						DeletionTimestamp: timestamppb.Now(),
 						Tenant:            tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).To(MatchError(ContainSubstring("cache temporarily unavailable")))
-				Expect(hasFinalizer(org)).To(BeTrue())
+				Expect(hasFinalizer(tenant)).To(BeTrue())
 			})
 		})
 
@@ -680,8 +680,8 @@ var _ = Describe("run", func() {
 					List(gomock.Any(), gomock.Any()).
 					Return(nil, expectedErr)
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
 						Finalizers:        []string{finalizers.Controller},
 						DeletionTimestamp: timestamppb.Now(),
@@ -689,11 +689,11 @@ var _ = Describe("run", func() {
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).To(MatchError(ContainSubstring("hubs unavailable")))
-				Expect(hasFinalizer(org)).To(BeTrue())
+				Expect(hasFinalizer(tenant)).To(BeTrue())
 			})
 		})
 
@@ -723,21 +723,21 @@ var _ = Describe("run", func() {
 					Get(gomock.Any(), hub1ID).
 					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
 
-				org := privatev1.Organization_builder{
-					Id: orgID,
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
 					Metadata: privatev1.Metadata_builder{
-						Name:              orgID,
+						Name:              tenantID,
 						Finalizers:        []string{finalizers.Controller},
 						DeletionTimestamp: timestamppb.Now(),
 						Tenant:            tenantName,
 					}.Build(),
 				}.Build()
 
-				f := newFunction(mockHubCache, mockHubs, mockOrgs)
-				err := f.run(ctx, org)
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
 
 				Expect(err).To(MatchError(expectedErr))
-				Expect(hasFinalizer(org)).To(BeTrue())
+				Expect(hasFinalizer(tenant)).To(BeTrue())
 			})
 		})
 	})

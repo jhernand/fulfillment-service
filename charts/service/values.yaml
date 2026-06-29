@@ -150,8 +150,8 @@ database:
   # `uri` key but the connection parameter name is `url`.
   connection: []
 
-# Identity provider configuration. The controller uses this to manage organizations in the identity provider via the
-# organization reconciler. This parameter is mandatory.
+# Identity provider configuration. The controller uses this to manage tenants in the identity provider via the
+# tenant reconciler. This parameter is mandatory.
 idp:
 
   # IDP provider type. Currently only 'keycloak' is supported.

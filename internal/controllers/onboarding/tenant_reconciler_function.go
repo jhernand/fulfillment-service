@@ -11,12 +11,10 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-// Package tenant reconciles Organization objects into Tenant CRDs on all hub clusters.
-// The fulfillment-service calls the multi-tenancy entity "Organization"; the osac-operator
-// calls it "Tenant". OSAC-1532 tracks renaming Organization to Tenant in the fulfillment-service.
+// Package onboarding reconciles Tenant objects into Tenant CRDs on all hub clusters.
 package onboarding
 
-//go:generate mockgen -source=../../api/osac/private/v1/organizations_service_grpc.pb.go -destination=organizations_client_mock.go -package=onboarding OrganizationsClient
+//go:generate mockgen -source=../../api/osac/private/v1/tenants_service_grpc.pb.go -destination=tenants_client_mock.go -package=onboarding TenantsClient
 
 import (
 	"context"
@@ -40,8 +38,6 @@ import (
 	"github.com/osac-project/fulfillment-service/internal/masks"
 )
 
-// FunctionBuilder contains the data and logic needed to build a function that reconciles
-// organizations into Tenant CRDs on hub clusters.
 type FunctionBuilder struct {
 	logger     *slog.Logger
 	connection *grpc.ClientConn
@@ -51,14 +47,14 @@ type FunctionBuilder struct {
 type function struct {
 	logger         *slog.Logger
 	hubCache       controllers.HubCache
-	tenantsClient  privatev1.OrganizationsClient
+	tenantsClient  privatev1.TenantsClient
 	hubsClient     privatev1.HubsClient
 	maskCalculator *masks.Calculator
 }
 
 type task struct {
-	r            *function
-	organization *privatev1.Organization
+	r      *function
+	tenant *privatev1.Tenant
 }
 
 func NewFunction() *FunctionBuilder {
@@ -80,7 +76,7 @@ func (b *FunctionBuilder) SetHubCache(value controllers.HubCache) *FunctionBuild
 	return b
 }
 
-func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privatev1.Organization], err error) {
+func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privatev1.Tenant], err error) {
 	if b.logger == nil {
 		err = errors.New("logger is mandatory")
 		return
@@ -96,7 +92,7 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 
 	object := &function{
 		logger:         b.logger,
-		tenantsClient:  privatev1.NewOrganizationsClient(b.connection),
+		tenantsClient:  privatev1.NewTenantsClient(b.connection),
 		hubsClient:     privatev1.NewHubsClient(b.connection),
 		hubCache:       b.hubCache,
 		maskCalculator: masks.NewCalculator().Build(),
@@ -105,14 +101,14 @@ func (b *FunctionBuilder) Build() (result controllers.ReconcilerFunction[*privat
 	return
 }
 
-func (r *function) run(ctx context.Context, organization *privatev1.Organization) error {
-	oldOrganization := proto.Clone(organization).(*privatev1.Organization)
+func (r *function) run(ctx context.Context, tenant *privatev1.Tenant) error {
+	oldTenant := proto.Clone(tenant).(*privatev1.Tenant)
 	t := task{
-		r:            r,
-		organization: organization,
+		r:      r,
+		tenant: tenant,
 	}
 	var err error
-	if organization.HasMetadata() && organization.GetMetadata().HasDeletionTimestamp() {
+	if tenant.HasMetadata() && tenant.GetMetadata().HasDeletionTimestamp() {
 		err = t.delete(ctx)
 	} else {
 		err = t.update(ctx)
@@ -120,10 +116,10 @@ func (r *function) run(ctx context.Context, organization *privatev1.Organization
 	if err != nil {
 		return err
 	}
-	updateMask := r.maskCalculator.Calculate(oldOrganization, organization)
+	updateMask := r.maskCalculator.Calculate(oldTenant, tenant)
 	if len(updateMask.GetPaths()) > 0 {
-		_, err = r.tenantsClient.Update(ctx, privatev1.OrganizationsUpdateRequest_builder{
-			Object:     organization,
+		_, err = r.tenantsClient.Update(ctx, privatev1.TenantsUpdateRequest_builder{
+			Object:     tenant,
 			UpdateMask: updateMask,
 		}.Build())
 	}
@@ -166,7 +162,7 @@ func (t *task) createOrUpdateOnHub(ctx context.Context, hubId string, hubEntry *
 		return err
 	}
 
-	tenantName := t.organization.GetMetadata().GetName()
+	tenantName := t.tenant.GetMetadata().GetName()
 	if existing == nil {
 		object := &osacv1alpha1.Tenant{
 			ObjectMeta: metav1.ObjectMeta{
@@ -208,7 +204,7 @@ func (t *task) delete(ctx context.Context) error {
 			if errors.Is(err, controllers.ErrHubNotFound) {
 				controllers.RemoveFinalizerOnDecommissionedHub(
 					ctx, t.r.logger, hub.GetId(),
-					"organization_id", t.organization.GetId(), t.removeFinalizer,
+					"tenant_id", t.tenant.GetId(), t.removeFinalizer,
 				)
 				continue
 			}
@@ -248,7 +244,7 @@ func (t *task) delete(ctx context.Context) error {
 }
 
 func (t *task) getKubeObject(ctx context.Context, hubEntry *controllers.HubEntry) (result *osacv1alpha1.Tenant, err error) {
-	tenantName := t.organization.GetMetadata().GetName()
+	tenantName := t.tenant.GetMetadata().GetName()
 	object := &osacv1alpha1.Tenant{}
 	err = hubEntry.Client.Get(ctx, clnt.ObjectKey{
 		Namespace: hubEntry.Namespace,
@@ -286,27 +282,27 @@ func (t *task) listAllHubs(ctx context.Context) ([]*privatev1.Hub, error) {
 }
 
 func (t *task) addFinalizer() bool {
-	if !t.organization.HasMetadata() {
-		t.organization.SetMetadata(&privatev1.Metadata{})
+	if !t.tenant.HasMetadata() {
+		t.tenant.SetMetadata(&privatev1.Metadata{})
 	}
-	list := t.organization.GetMetadata().GetFinalizers()
+	list := t.tenant.GetMetadata().GetFinalizers()
 	if !slices.Contains(list, finalizers.Controller) {
 		list = append(list, finalizers.Controller)
-		t.organization.GetMetadata().SetFinalizers(list)
+		t.tenant.GetMetadata().SetFinalizers(list)
 		return true
 	}
 	return false
 }
 
 func (t *task) removeFinalizer() {
-	if !t.organization.HasMetadata() {
+	if !t.tenant.HasMetadata() {
 		return
 	}
-	list := t.organization.GetMetadata().GetFinalizers()
+	list := t.tenant.GetMetadata().GetFinalizers()
 	if slices.Contains(list, finalizers.Controller) {
 		list = slices.DeleteFunc(list, func(item string) bool {
 			return item == finalizers.Controller
 		})
-		t.organization.GetMetadata().SetFinalizers(list)
+		t.tenant.GetMetadata().SetFinalizers(list)
 	}
 }

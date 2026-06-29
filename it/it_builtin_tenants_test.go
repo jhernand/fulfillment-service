@@ -25,16 +25,16 @@ import (
 )
 
 var _ = Describe("Builtin tenants", func() {
-	var client privatev1.OrganizationsClient
+	var client privatev1.TenantsClient
 
 	BeforeEach(func() {
-		client = privatev1.NewOrganizationsClient(tool.InternalView().AdminConn())
+		client = privatev1.NewTenantsClient(tool.InternalView().AdminConn())
 	})
 
 	DescribeTable(
 		"Can be retrieved via the private API",
 		func(ctx context.Context, id string) {
-			response, err := client.Get(ctx, privatev1.OrganizationsGetRequest_builder{
+			response, err := client.Get(ctx, privatev1.TenantsGetRequest_builder{
 				Id: id,
 			}.Build())
 			Expect(err).ToNot(HaveOccurred())
@@ -51,7 +51,7 @@ var _ = Describe("Builtin tenants", func() {
 	)
 
 	It("Includes builtin tenants in the list", func(ctx context.Context) {
-		response, err := client.List(ctx, privatev1.OrganizationsListRequest_builder{}.Build())
+		response, err := client.List(ctx, privatev1.TenantsListRequest_builder{}.Build())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(response).ToNot(BeNil())
 		ids := make([]string, len(response.GetItems()))
