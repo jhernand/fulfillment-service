@@ -330,6 +330,51 @@ var _ = Describe("ApplySpecDefaults", func() {
 		defaultImage.SetSourceRef("changed")
 		Expect(spec.GetImage().GetSourceRef()).To(Equal("quay.io/containerdisks/fedora:latest"))
 	})
+
+	It("Applies is_windows default when user does not provide value", func() {
+		spec := privatev1.ComputeInstanceSpec_builder{
+			Template: "test.template",
+		}.Build()
+
+		trueVal := true
+		defaults := privatev1.ComputeInstanceTemplateSpecDefaults_builder{
+			IsWindows: &trueVal,
+		}.Build()
+
+		ApplySpecDefaults(spec, defaults)
+
+		Expect(spec.HasIsWindows()).To(BeTrue())
+		Expect(spec.GetIsWindows()).To(BeTrue())
+	})
+
+	It("Does not override user-provided is_windows value with template default", func() {
+		falseVal := false
+		spec := privatev1.ComputeInstanceSpec_builder{
+			Template:  "test.template",
+			IsWindows: &falseVal,
+		}.Build()
+
+		trueVal := true
+		defaults := privatev1.ComputeInstanceTemplateSpecDefaults_builder{
+			IsWindows: &trueVal,
+		}.Build()
+
+		ApplySpecDefaults(spec, defaults)
+
+		Expect(spec.GetIsWindows()).To(BeFalse())
+	})
+
+	It("Does nothing when template has no is_windows default", func() {
+		spec := privatev1.ComputeInstanceSpec_builder{
+			Template: "test.template",
+		}.Build()
+
+		defaults := privatev1.ComputeInstanceTemplateSpecDefaults_builder{}.Build()
+
+		ApplySpecDefaults(spec, defaults)
+
+		Expect(spec.HasIsWindows()).To(BeFalse())
+	})
 })
 
 var _ = Describe("ValidateRequiredSpecFields", func() {
