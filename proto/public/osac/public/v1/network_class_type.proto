@@ -71,6 +71,9 @@ message NetworkClassCapabilities {
 
   // Whether this network class supports dual-stack (IPv4 + IPv6) configuration.
   bool supports_dual_stack = 3;
+
+  // Whether this network class supports DPU (Data Processing Unit) offloading.
+  bool dpu_support = 4;
 }
 
 // Represents the current operational state of a NetworkClass.
