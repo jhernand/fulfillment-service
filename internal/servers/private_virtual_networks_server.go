@@ -176,7 +176,7 @@ func (s *PrivateVirtualNetworksServer) Update(ctx context.Context,
 		return
 	}
 
-	// Preserve implementation_strategy from existing object (it's immutable)
+	// Preserve immutable implementation_strategy from existing object.
 	if request.GetObject().GetSpec() != nil && existingVN.GetSpec() != nil {
 		request.GetObject().GetSpec().SetImplementationStrategy(existingVN.GetSpec().GetImplementationStrategy())
 	}
@@ -275,6 +275,13 @@ func validateImmutableFields(newVN *privatev1.VirtualNetwork, existingVN *privat
 		return grpcstatus.Errorf(grpccodes.InvalidArgument,
 			"field 'spec.network_class' is immutable and cannot be changed from '%s' to '%s'",
 			existingSpec.GetNetworkClass(), newSpec.GetNetworkClass())
+	}
+
+	// Check immutable implementation_strategy field.
+	if newStrategy := newSpec.GetImplementationStrategy(); newStrategy != "" && newStrategy != existingSpec.GetImplementationStrategy() {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument,
+			"field 'spec.implementation_strategy' is immutable and cannot be changed from '%s' to '%s'",
+			existingSpec.GetImplementationStrategy(), newStrategy)
 	}
 
 	// VN-VAL-11, VN-VAL-12: Preserve and check immutable CIDR fields.

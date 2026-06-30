@@ -164,9 +164,16 @@ func (s *PrivatePublicIPPoolsServer) Update(ctx context.Context,
 		return
 	}
 
-	err = validateUpdate(request.GetObject(), getResponse.GetObject())
+	existing := getResponse.GetObject()
+
+	err = validateUpdate(request.GetObject(), existing)
 	if err != nil {
 		return
+	}
+
+	// Preserve immutable implementation_strategy from existing object.
+	if request.GetObject().GetSpec() != nil && existing.GetSpec() != nil {
+		request.GetObject().GetSpec().SetImplementationStrategy(existing.GetSpec().GetImplementationStrategy())
 	}
 
 	err = s.generic.Update(ctx, request, &response)
@@ -233,6 +240,12 @@ func validateUpdate(newPool *privatev1.PublicIPPool, existing *privatev1.PublicI
 	if newCIDRs := spec.GetCidrs(); len(newCIDRs) > 0 && !cidrSlicesEqual(newCIDRs, existing.GetSpec().GetCidrs()) {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument,
 			"field 'spec.cidrs' is immutable and cannot be changed after creation")
+	}
+
+	if newStrategy := spec.GetImplementationStrategy(); newStrategy != "" && newStrategy != existing.GetSpec().GetImplementationStrategy() {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument,
+			"field 'spec.implementation_strategy' is immutable and cannot be changed from '%s' to '%s'",
+			existing.GetSpec().GetImplementationStrategy(), newStrategy)
 	}
 
 	return nil
