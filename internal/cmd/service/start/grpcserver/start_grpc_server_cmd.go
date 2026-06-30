@@ -1092,6 +1092,62 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 	}
 	publicv1.RegisterPublicIPAttachmentsServer(grpcServer, publicIPAttachmentsServer)
 
+	// Create the external IP pools server (read-only: List + Get):
+	c.logger.InfoContext(ctx, "Creating external IP pools server")
+	externalIPPoolsServer, err := servers.NewExternalIPPoolsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(publicAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create external IP pools server: %w", err)
+	}
+	publicv1.RegisterExternalIPPoolsServer(grpcServer, externalIPPoolsServer)
+
+	// Create the private external IP pools server:
+	c.logger.InfoContext(ctx, "Creating private external IP pools server")
+	privateExternalIPPoolsServer, err := servers.NewPrivateExternalIPPoolsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(privateAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create private external IP pools server: %w", err)
+	}
+	privatev1.RegisterExternalIPPoolsServer(grpcServer, privateExternalIPPoolsServer)
+
+	// Create the external IPs server:
+	c.logger.InfoContext(ctx, "Creating external IPs server")
+	externalIPsServer, err := servers.NewExternalIPsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(publicAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create external IPs server: %w", err)
+	}
+	publicv1.RegisterExternalIPsServer(grpcServer, externalIPsServer)
+
+	// Create the private external IPs server:
+	c.logger.InfoContext(ctx, "Creating private external IPs server")
+	privateExternalIPsServer, err := servers.NewPrivateExternalIPsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(privateAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create private external IPs server: %w", err)
+	}
+	privatev1.RegisterExternalIPsServer(grpcServer, privateExternalIPsServer)
+
 	// Create the public tenants server:
 	c.logger.InfoContext(ctx, "Creating public tenants server")
 	publicTenantsServer, err := servers.NewTenantsServer().

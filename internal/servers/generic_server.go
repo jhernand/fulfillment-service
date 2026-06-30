@@ -897,6 +897,12 @@ func (s *GenericServer[O]) setPayload(event *privatev1.Event, object proto.Messa
 		event.SetPublicIp(object)
 	case *privatev1.PublicIPAttachment:
 		event.SetPublicIpAttachment(object)
+	case *privatev1.ExternalIPPool:
+		// Event proto does not yet have ExternalIPPool payload fields; skip notification payload.
+	case *privatev1.ExternalIP:
+		// Event proto does not yet have ExternalIP payload fields; skip notification payload.
+	case *privatev1.ExternalIPAttachment:
+		// Event proto does not yet have ExternalIPAttachment payload fields; skip notification payload.
 	case *privatev1.Tenant:
 		event.SetTenant(object)
 	case *privatev1.User:
