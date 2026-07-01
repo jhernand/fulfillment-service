@@ -24,6 +24,7 @@ import (
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,6 +62,7 @@ func newTenantCR(tenantID, namespace, name string, deletionTimestamp *metav1.Tim
 func newScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	Expect(osacv1alpha1.AddToScheme(scheme)).To(Succeed())
+	Expect(corev1.AddToScheme(scheme)).To(Succeed())
 	return scheme
 }
 
@@ -275,11 +277,21 @@ var _ = Describe("run", func() {
 				Expect(list2.Items).To(HaveLen(1))
 				Expect(list2.Items[0].Labels[labels.TenantUuid]).To(Equal(tenantID))
 				Expect(list2.Items[0].Namespace).To(Equal(namespace2))
+
+				ns1 := &corev1.Namespace{}
+				Expect(fakeClient1.Get(ctx, clnt.ObjectKey{Name: tenantID}, ns1)).To(Succeed())
+				Expect(ns1.Labels[labels.TenantRef]).To(Equal(tenantID))
+				Expect(ns1.Labels[labels.Project]).To(Equal(namespace1))
+
+				ns2 := &corev1.Namespace{}
+				Expect(fakeClient2.Get(ctx, clnt.ObjectKey{Name: tenantID}, ns2)).To(Succeed())
+				Expect(ns2.Labels[labels.TenantRef]).To(Equal(tenantID))
+				Expect(ns2.Labels[labels.Project]).To(Equal(namespace2))
 			})
 		})
 
 		When("Tenant CRD already exists on a hub", func() {
-			It("does not create a duplicate", func() {
+			It("does not create a duplicate but still ensures namespace", func() {
 				existing := newTenantCR(tenantID, namespace1, tenantID, nil)
 				fakeClient := fake.NewClientBuilder().
 					WithScheme(scheme).
@@ -323,6 +335,66 @@ var _ = Describe("run", func() {
 				list := &osacv1alpha1.TenantList{}
 				Expect(fakeClient.List(ctx, list)).To(Succeed())
 				Expect(list.Items).To(HaveLen(1))
+
+				ns := &corev1.Namespace{}
+				Expect(fakeClient.Get(ctx, clnt.ObjectKey{Name: tenantID}, ns)).To(Succeed())
+				Expect(ns.Labels[labels.TenantRef]).To(Equal(tenantID))
+			})
+		})
+
+		When("tenant namespace already exists on a hub", func() {
+			It("does not create a duplicate namespace", func() {
+				existingNS := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tenantID,
+						Labels: map[string]string{
+							labels.TenantRef: tenantID,
+							labels.Project:   namespace1,
+						},
+					},
+				}
+				fakeClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(existingNS).
+					Build()
+
+				mockHubs.EXPECT().
+					List(gomock.Any(), gomock.Any()).
+					Return(&privatev1.HubsListResponse{
+						Size:  1,
+						Total: 1,
+						Items: []*privatev1.Hub{
+							privatev1.Hub_builder{Id: hub1ID}.Build(),
+						},
+					}, nil)
+
+				mockHubCache.EXPECT().
+					Get(gomock.Any(), hub1ID).
+					Return(&controllers.HubEntry{Namespace: namespace1, Client: fakeClient}, nil)
+
+				mockTenants.EXPECT().
+					Update(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, req *privatev1.TenantsUpdateRequest, opts ...grpc.CallOption) (*privatev1.TenantsUpdateResponse, error) {
+						return &privatev1.TenantsUpdateResponse{Object: req.GetObject()}, nil
+					}).AnyTimes()
+
+				tenant := privatev1.Tenant_builder{
+					Id: tenantID,
+					Metadata: privatev1.Metadata_builder{
+						Name:       tenantID,
+						Finalizers: []string{finalizers.Controller},
+						Tenant:     tenantName,
+					}.Build(),
+				}.Build()
+
+				f := newFunction(mockHubCache, mockHubs, mockTenants)
+				err := f.run(ctx, tenant)
+
+				Expect(err).ToNot(HaveOccurred())
+
+				nsList := &corev1.NamespaceList{}
+				Expect(fakeClient.List(ctx, nsList)).To(Succeed())
+				Expect(nsList.Items).To(HaveLen(1))
 			})
 		})
 
@@ -428,6 +500,10 @@ var _ = Describe("run", func() {
 				Expect(fakeClient.List(ctx, list)).To(Succeed())
 				Expect(list.Items).To(HaveLen(1))
 				Expect(list.Items[0].Labels[labels.TenantUuid]).To(Equal(tenantID))
+
+				ns := &corev1.Namespace{}
+				Expect(fakeClient.Get(ctx, clnt.ObjectKey{Name: tenantID}, ns)).To(Succeed())
+				Expect(ns.Labels[labels.TenantRef]).To(Equal(tenantID))
 			})
 		})
 
@@ -476,9 +552,18 @@ var _ = Describe("run", func() {
 
 	Describe("delete path", func() {
 		When("tenant is deleted and Tenant CRD exists on a hub", func() {
-			It("issues delete and keeps finalizer until object is gone", func() {
+			It("issues delete for tenant and namespace, keeps finalizer until object is gone", func() {
 				existing := newTenantCR(tenantID, namespace1, tenantID, nil)
-				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
+				existingNS := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tenantID,
+						Labels: map[string]string{
+							labels.TenantRef: tenantID,
+							labels.Project:   namespace1,
+						},
+					},
+				}
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing, existingNS).Build()
 
 				mockHubs.EXPECT().
 					List(gomock.Any(), gomock.Any()).

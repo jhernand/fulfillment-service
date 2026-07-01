@@ -56,3 +56,9 @@ var BareMetalInstanceUuid = fmt.Sprintf("%s/%s", group, "baremetalinstance-uuid"
 
 // TenantUuid is the label where the fulfillment API will write the identifier of the tenant.
 var TenantUuid = fmt.Sprintf("%s/%s", group, "tenant-uuid")
+
+// TenantRef is the label used to reference the tenant object from associated resources (e.g., namespaces).
+var TenantRef = fmt.Sprintf("%s/%s", group, "tenant-ref")
+
+// Project is the label used to reference the project (namespace) in which the tenant object lives.
+var Project = fmt.Sprintf("%s/%s", group, "project")

@@ -25,6 +25,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clnt "sigs.k8s.io/controller-runtime/pkg/client"
@@ -189,6 +190,46 @@ func (t *task) createOrUpdateOnHub(ctx context.Context, hubId string, hubEntry *
 			slog.String("name", existing.GetName()),
 		)
 	}
+
+	if err := t.ensureNamespaceOnHub(ctx, hubId, hubEntry); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *task) ensureNamespaceOnHub(ctx context.Context, hubId string, hubEntry *controllers.HubEntry) error {
+	tenantName := t.tenant.GetMetadata().GetName()
+	ns := &corev1.Namespace{}
+	err := hubEntry.Client.Get(ctx, clnt.ObjectKey{Name: tenantName}, ns)
+	if err == nil {
+		t.r.logger.DebugContext(ctx, "Tenant namespace already exists on hub",
+			slog.String("hub_id", hubId),
+			slog.String("name", tenantName),
+		)
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to get namespace on hub %s: %w", hubId, err)
+	}
+
+	ns = &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: tenantName,
+			Labels: map[string]string{
+				labels.TenantRef: tenantName,
+				labels.Project:   hubEntry.Namespace,
+			},
+		},
+	}
+	err = hubEntry.Client.Create(ctx, ns)
+	if err != nil {
+		return fmt.Errorf("failed to create namespace on hub %s: %w", hubId, err)
+	}
+	t.r.logger.DebugContext(ctx, "Created tenant namespace",
+		slog.String("hub_id", hubId),
+		slog.String("name", tenantName),
+	)
 	return nil
 }
 
@@ -236,10 +277,43 @@ func (t *task) delete(ctx context.Context) error {
 				slog.String("name", existing.GetName()),
 			)
 		}
+
+		if err := t.deleteNamespaceOnHub(ctx, hub.GetId(), hubEntry); err != nil {
+			return err
+		}
+
 		return nil
 	}
 
 	t.removeFinalizer()
+	return nil
+}
+
+func (t *task) deleteNamespaceOnHub(ctx context.Context, hubId string, hubEntry *controllers.HubEntry) error {
+	tenantName := t.tenant.GetMetadata().GetName()
+	ns := &corev1.Namespace{}
+	err := hubEntry.Client.Get(ctx, clnt.ObjectKey{Name: tenantName}, ns)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get namespace on hub %s: %w", hubId, err)
+	}
+	if ns.GetDeletionTimestamp() != nil {
+		t.r.logger.DebugContext(ctx, "Tenant namespace is already being deleted",
+			slog.String("hub_id", hubId),
+			slog.String("name", tenantName),
+		)
+		return nil
+	}
+	err = hubEntry.Client.Delete(ctx, ns)
+	if err != nil {
+		return fmt.Errorf("failed to delete namespace on hub %s: %w", hubId, err)
+	}
+	t.r.logger.DebugContext(ctx, "Deleted tenant namespace",
+		slog.String("hub_id", hubId),
+		slog.String("name", tenantName),
+	)
 	return nil
 }
 
