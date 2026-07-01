@@ -171,6 +171,20 @@ func (mr *MockObjectHelperMockRecorder) GetName(object any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetName", reflect.TypeOf((*MockObjectHelper)(nil).GetName), object)
 }
 
+// GetTenant mocks base method.
+func (m *MockObjectHelper) GetTenant(object proto.Message) string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTenant", object)
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetTenant indicates an expected call of GetTenant.
+func (mr *MockObjectHelperMockRecorder) GetTenant(object any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTenant", reflect.TypeOf((*MockObjectHelper)(nil).GetTenant), object)
+}
+
 // Instance mocks base method.
 func (m *MockObjectHelper) Instance() proto.Message {
 	m.ctrl.T.Helper()
@@ -183,6 +197,20 @@ func (m *MockObjectHelper) Instance() proto.Message {
 func (mr *MockObjectHelperMockRecorder) Instance() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Instance", reflect.TypeOf((*MockObjectHelper)(nil).Instance))
+}
+
+// IsTenantScoped mocks base method.
+func (m *MockObjectHelper) IsTenantScoped() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsTenantScoped")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsTenantScoped indicates an expected call of IsTenantScoped.
+func (mr *MockObjectHelperMockRecorder) IsTenantScoped() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTenantScoped", reflect.TypeOf((*MockObjectHelper)(nil).IsTenantScoped))
 }
 
 // List mocks base method.
@@ -212,6 +240,18 @@ func (m *MockObjectHelper) Plural() string {
 func (mr *MockObjectHelperMockRecorder) Plural() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Plural", reflect.TypeOf((*MockObjectHelper)(nil).Plural))
+}
+
+// SetTenant mocks base method.
+func (m *MockObjectHelper) SetTenant(object proto.Message, tenant string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetTenant", object, tenant)
+}
+
+// SetTenant indicates an expected call of SetTenant.
+func (mr *MockObjectHelperMockRecorder) SetTenant(object, tenant any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTenant", reflect.TypeOf((*MockObjectHelper)(nil).SetTenant), object, tenant)
 }
 
 // Singular mocks base method.

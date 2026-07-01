@@ -103,6 +103,7 @@ type generalSettings struct {
 	Issuer      string     `json:"issuer,omitempty"`
 	Scopes      []string   `json:"scopes,omitempty"`
 	RedirectUri string     `json:"redirect_uri,omitempty"`
+	Tenant      string     `json:"tenant,omitempty"`
 }
 
 // secretSettings contains the secret fields of the configuration. These are stored as a single
@@ -270,6 +271,16 @@ func (s *Settings) SetUser(value string) {
 // SetPassword sets the OAuth password.
 func (s *Settings) SetPassword(value string) {
 	s.secret.Password = value
+}
+
+// Tenant returns the saved tenant name.
+func (s *Settings) Tenant() string {
+	return s.general.Tenant
+}
+
+// SetTenant sets the saved tenant name.
+func (s *Settings) SetTenant(value string) {
+	s.general.Tenant = value
 }
 
 // Load populates the settings from the configuration file and the secret store.
