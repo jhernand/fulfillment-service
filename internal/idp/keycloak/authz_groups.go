@@ -40,10 +40,9 @@ import (
 // Organization groups are scoped per organization, so paths can be simple and readable.
 // This method creates the full hierarchy if parent groups don't exist.
 // See https://www.keycloak.org/2026/04/org-groups for details.
-func (c *Client) CreateAuthorizationGroup(ctx context.Context, organizationName, groupName, groupPath string) (string, error) {
+func (c *Client) CreateAuthorizationGroup(ctx context.Context, organizationName, groupPath string) (string, error) {
 	c.logger.DebugContext(ctx, "Creating organization authorization group",
 		slog.String("organizationName", organizationName),
-		slog.String("groupName", groupName),
 		slog.String("groupPath", groupPath),
 	)
 
@@ -71,7 +70,6 @@ func (c *Client) CreateAuthorizationGroup(ctx context.Context, organizationName,
 
 	c.logger.DebugContext(ctx, "Created organization authorization group",
 		slog.String("organizationName", organizationName),
-		slog.String("groupName", groupName),
 		slog.String("groupPath", groupPath),
 		slog.String("groupID", groupID),
 	)
@@ -142,12 +140,16 @@ func (c *Client) ensureGroupHierarchyWithCache(ctx context.Context, orgID, group
 			// Check if it's a "already exists" error (409 conflict)
 			var apiErr *apiclient.APIError
 			if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
-				// Group already exists, look up its ID using orgID directly
-				groupID, lookupErr := c.getGroupIDByPathWithOrgID(ctx, orgID, currentPath)
+				// Group already exists, look up its ID by listing its siblings and matching by name. We
+				// list the children of the parent group (or the top-level organization groups when
+				// there is no parent) because the top-level list endpoint does not populate subGroups.
+				groupID, lookupErr := c.getGroupIDByName(ctx, orgID, parentID, segment)
 				if lookupErr != nil {
-					return fmt.Errorf("group %s already exists but failed to look up ID: %w", currentPath, lookupErr)
+					return fmt.Errorf(
+						"group %s already exists but failed to look up ID: %w",
+						currentPath, lookupErr,
+					)
 				}
-				// Cache it for subsequent use
 				cache[currentPath] = groupID
 				parentID = groupID
 				continue
@@ -209,6 +211,43 @@ func (c *Client) createOrganizationGroupWithParent(ctx context.Context, orgID, n
 	return groupID, nil
 }
 
+// getGroupIDByName finds a group by name among the children of a parent group. If parentID is empty it searches the
+// top-level organization groups instead.
+func (c *Client) getGroupIDByName(ctx context.Context, orgID, parentID, name string) (string, error) {
+	var reqPath string
+	if parentID == "" {
+		reqPath = fmt.Sprintf("/admin/realms/%s/organizations/%s/groups",
+			url.PathEscape(c.realmName),
+			url.PathEscape(orgID),
+		)
+	} else {
+		reqPath = fmt.Sprintf("/admin/realms/%s/organizations/%s/groups/%s/children",
+			url.PathEscape(c.realmName),
+			url.PathEscape(orgID),
+			url.PathEscape(parentID),
+		)
+	}
+
+	response, err := c.httpClient.DoRequest(ctx, http.MethodGet, reqPath, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to list groups: %w", err)
+	}
+	defer response.Body.Close()
+
+	var groups []groupNode
+	if err := json.NewDecoder(response.Body).Decode(&groups); err != nil {
+		return "", fmt.Errorf("failed to decode groups: %w", err)
+	}
+
+	for _, g := range groups {
+		if g.Name == name {
+			return g.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("group %q not found among children of parent %q", name, parentID)
+}
+
 // groupNode represents a group in the hierarchy for recursive traversal
 type groupNode struct {
 	ID        string      `json:"id"`
@@ -219,35 +258,37 @@ type groupNode struct {
 
 // getGroupIDByPathWithOrgID returns the group ID for a path using orgID directly (not organization name).
 // This is used internally when we already have the orgID to avoid an extra lookup.
-func (c *Client) getGroupIDByPathWithOrgID(ctx context.Context, orgID, groupPath string) (string, error) {
-	path := fmt.Sprintf("/admin/realms/%s/organizations/%s/groups",
-		url.PathEscape(c.realmName),
-		url.PathEscape(orgID),
+func (c *Client) getGroupIDByPathWithOrgID(ctx context.Context, orgID, groupPath string) (result string, err error) {
+	// Send the request to list all groups in the organization:
+	path := fmt.Sprintf(
+		"/admin/realms/%s/organizations/%s/groups",
+		url.PathEscape(c.realmName), url.PathEscape(orgID),
 	)
-
-	response, err := c.httpClient.DoRequest(ctx, http.MethodGet, path, nil)
+	var response *http.Response
+	response, err = c.httpClient.DoRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to list organization groups: %w", err)
+		err = fmt.Errorf("failed to list organization groups: %w", err)
+		return
 	}
 	defer response.Body.Close()
-
 	var groups []groupNode
-	if err := json.NewDecoder(response.Body).Decode(&groups); err != nil {
-		return "", fmt.Errorf("failed to decode organization groups: %w", err)
+	err = json.NewDecoder(response.Body).Decode(&groups)
+	if err != nil {
+		err = fmt.Errorf("failed to decode organization groups: %w", err)
+		return
 	}
 
-	// Search recursively through the group hierarchy
+	// Search recursively through the group hierarchy:
 	for _, group := range groups {
-		if id := searchGroupRecursively(group, groupPath); id != "" {
-			return id, nil
+		result = searchGroupRecursively(group, groupPath)
+		if result != "" {
+			return
 		}
 	}
 
-	c.logger.WarnContext(ctx, "Group not found in listed groups",
-		slog.String("target_path", groupPath),
-		slog.Int("total_groups", len(groups)),
-	)
-	return "", fmt.Errorf("organization group not found: %s", groupPath)
+	// We didn't find the group:
+	err = fmt.Errorf("organization group not found: %s", groupPath)
+	return
 }
 
 // searchGroupRecursively searches for a group by path in the group hierarchy.

@@ -206,12 +206,12 @@ var _ = Describe("Validation and Activation", func() {
 
 			// Expect viewers group creation
 			mockIdpClient.EXPECT().
-				CreateAuthorizationGroup(gomock.Any(), "acme", "system:viewers", "/test-project/system:viewers").
+				CreateAuthorizationGroup(gomock.Any(), "acme", "/test-project/system:viewers").
 				Return("viewers-id", nil)
 
 			// Expect managers group creation
 			mockIdpClient.EXPECT().
-				CreateAuthorizationGroup(gomock.Any(), "acme", "system:managers", "/test-project/system:managers").
+				CreateAuthorizationGroup(gomock.Any(), "acme", "/test-project/system:managers").
 				Return("managers-id", nil)
 
 			task := &task{
@@ -242,12 +242,12 @@ var _ = Describe("Validation and Activation", func() {
 
 			// Expect viewers group creation
 			mockIdpClient.EXPECT().
-				CreateAuthorizationGroup(gomock.Any(), "acme", "system:viewers", "/test-project/system:viewers").
+				CreateAuthorizationGroup(gomock.Any(), "acme", "/test-project/system:viewers").
 				Return("viewers-id", nil)
 
 			// Expect managers group creation
 			mockIdpClient.EXPECT().
-				CreateAuthorizationGroup(gomock.Any(), "acme", "system:managers", "/test-project/system:managers").
+				CreateAuthorizationGroup(gomock.Any(), "acme", "/test-project/system:managers").
 				Return("managers-id", nil)
 
 			task := &task{
@@ -311,12 +311,12 @@ var _ = Describe("Validation and Activation", func() {
 
 			// Expect viewers group creation
 			mockIdpClient.EXPECT().
-				CreateAuthorizationGroup(gomock.Any(), "acme", "system:viewers", "/parent-project.child-project/system:viewers").
+				CreateAuthorizationGroup(gomock.Any(), "acme", "/parent-project/child-project/system:viewers").
 				Return("viewers-id", nil)
 
 			// Expect managers group creation
 			mockIdpClient.EXPECT().
-				CreateAuthorizationGroup(gomock.Any(), "acme", "system:managers", "/parent-project.child-project/system:managers").
+				CreateAuthorizationGroup(gomock.Any(), "acme", "/parent-project/child-project/system:managers").
 				Return("managers-id", nil)
 
 			task := &task{
@@ -330,19 +330,6 @@ var _ = Describe("Validation and Activation", func() {
 		})
 
 		It("should handle multi-level hierarchy", func() {
-			rootProject := privatev1.Project_builder{
-				Id: "root-id",
-				Metadata: privatev1.Metadata_builder{
-					Name: "root",
-				}.Build(),
-				Status: privatev1.ProjectStatus_builder{
-					State: privatev1.ProjectState_PROJECT_STATE_ACTIVE,
-				}.Build(),
-				Spec: privatev1.ProjectSpec_builder{
-					Title: "Root",
-				}.Build(),
-			}.Build()
-
 			parentProject := privatev1.Project_builder{
 				Id: "parent-id",
 				Metadata: privatev1.Metadata_builder{
@@ -360,8 +347,8 @@ var _ = Describe("Validation and Activation", func() {
 			project := privatev1.Project_builder{
 				Id: "child-id",
 				Metadata: privatev1.Metadata_builder{
-					Name:    "root.parent.child",
-					Project: "root.parent",
+					Name:    "parent.child",
+					Project: "parent",
 					Tenant:  "acme",
 				}.Build(),
 				Spec: privatev1.ProjectSpec_builder{
@@ -372,19 +359,11 @@ var _ = Describe("Validation and Activation", func() {
 				}.Build(),
 			}.Build()
 
-			// First List: find parent "root.parent"
+			// The parent project will be fetched in order to check if it is active:
 			mockClient.EXPECT().
 				List(gomock.Any(), gomock.Any()).
 				Return(&privatev1.ProjectsListResponse{
 					Items: []*privatev1.Project{parentProject},
-					Size:  1,
-				}, nil)
-
-			// Second List: circular check finds grandparent "root"
-			mockClient.EXPECT().
-				List(gomock.Any(), gomock.Any()).
-				Return(&privatev1.ProjectsListResponse{
-					Items: []*privatev1.Project{rootProject},
 					Size:  1,
 				}, nil)
 
@@ -393,8 +372,7 @@ var _ = Describe("Validation and Activation", func() {
 				CreateAuthorizationGroup(
 					gomock.Any(),
 					"acme",
-					"system:viewers",
-					"/root.parent.child/system:viewers",
+					"/parent/child/system:viewers",
 				).
 				Return("viewers-id", nil)
 
@@ -403,8 +381,7 @@ var _ = Describe("Validation and Activation", func() {
 				CreateAuthorizationGroup(
 					gomock.Any(),
 					"acme",
-					"system:managers",
-					"/root.parent.child/system:managers",
+					"/parent/child/system:managers",
 				).
 				Return("managers-id", nil)
 
@@ -416,34 +393,6 @@ var _ = Describe("Validation and Activation", func() {
 			err := task.validateAndActivate(ctx)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(project.GetStatus().GetState()).To(Equal(privatev1.ProjectState_PROJECT_STATE_ACTIVE))
-		})
-	})
-
-	Context("Self-reference validation", func() {
-		It("should fail when project references itself as parent", func() {
-			project := privatev1.Project_builder{
-				Id: "project-1",
-				Metadata: privatev1.Metadata_builder{
-					Name:    "my-project",
-					Project: "my-project",
-				}.Build(),
-				Spec: privatev1.ProjectSpec_builder{
-					Title: "Self-referencing",
-				}.Build(),
-				Status: privatev1.ProjectStatus_builder{
-					State: privatev1.ProjectState_PROJECT_STATE_PENDING,
-				}.Build(),
-			}.Build()
-
-			task := &task{
-				r:       functionObj,
-				project: project,
-			}
-
-			err := task.validateAndActivate(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(project.GetStatus().GetState()).To(Equal(privatev1.ProjectState_PROJECT_STATE_FAILED))
-			Expect(project.GetStatus().GetMessage()).To(Equal("Project cannot be its own parent"))
 		})
 	})
 
@@ -577,122 +526,6 @@ var _ = Describe("Validation and Activation", func() {
 			Expect(project.GetStatus().GetMessage()).To(ContainSubstring(
 				"Parent project 'my-parent' is not in ACTIVE state (current state: PROJECT_STATE_FAILED)",
 			))
-		})
-	})
-
-	Context("Circular dependency detection", func() {
-		It("should detect direct circular dependency", func() {
-			projectA := privatev1.Project_builder{
-				Id: "project-a-id",
-				Metadata: privatev1.Metadata_builder{
-					Name:    "project-a",
-					Project: "project-b",
-				}.Build(),
-				Status: privatev1.ProjectStatus_builder{
-					State: privatev1.ProjectState_PROJECT_STATE_ACTIVE,
-				}.Build(),
-				Spec: privatev1.ProjectSpec_builder{
-					Title: "Project A",
-				}.Build(),
-			}.Build()
-
-			// List to find parent "project-a"
-			mockClient.EXPECT().
-				List(gomock.Any(), gomock.Any()).
-				Return(&privatev1.ProjectsListResponse{
-					Items: []*privatev1.Project{projectA},
-					Size:  1,
-				}, nil)
-
-			task := &task{
-				r: functionObj,
-				project: privatev1.Project_builder{
-					Id: "project-b-id",
-					Metadata: privatev1.Metadata_builder{
-						Name:    "project-b",
-						Project: "project-a",
-					}.Build(),
-					Spec: privatev1.ProjectSpec_builder{
-						Title: "Project B",
-					}.Build(),
-					Status: privatev1.ProjectStatus_builder{
-						State: privatev1.ProjectState_PROJECT_STATE_PENDING,
-					}.Build(),
-				}.Build(),
-			}
-
-			err := task.validateAndActivate(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(task.project.GetStatus().GetState()).To(Equal(privatev1.ProjectState_PROJECT_STATE_FAILED))
-			Expect(task.project.GetStatus().GetMessage()).To(ContainSubstring("circular dependency detected"))
-		})
-
-		It("should detect indirect circular dependency", func() {
-			projectA := privatev1.Project_builder{
-				Id: "project-a-id",
-				Metadata: privatev1.Metadata_builder{
-					Name:    "project-a",
-					Project: "project-c",
-				}.Build(),
-				Status: privatev1.ProjectStatus_builder{
-					State: privatev1.ProjectState_PROJECT_STATE_ACTIVE,
-				}.Build(),
-				Spec: privatev1.ProjectSpec_builder{
-					Title: "Project A",
-				}.Build(),
-			}.Build()
-
-			projectB := privatev1.Project_builder{
-				Id: "project-b-id",
-				Metadata: privatev1.Metadata_builder{
-					Name:    "project-b",
-					Project: "project-a",
-				}.Build(),
-				Status: privatev1.ProjectStatus_builder{
-					State: privatev1.ProjectState_PROJECT_STATE_ACTIVE,
-				}.Build(),
-				Spec: privatev1.ProjectSpec_builder{
-					Title: "Project B",
-				}.Build(),
-			}.Build()
-
-			// First List: find parent "project-b"
-			mockClient.EXPECT().
-				List(gomock.Any(), gomock.Any()).
-				Return(&privatev1.ProjectsListResponse{
-					Items: []*privatev1.Project{projectB},
-					Size:  1,
-				}, nil)
-
-			// Second List: circular check finds "project-a"
-			mockClient.EXPECT().
-				List(gomock.Any(), gomock.Any()).
-				Return(&privatev1.ProjectsListResponse{
-					Items: []*privatev1.Project{projectA},
-					Size:  1,
-				}, nil)
-
-			task := &task{
-				r: functionObj,
-				project: privatev1.Project_builder{
-					Id: "project-c-id",
-					Metadata: privatev1.Metadata_builder{
-						Name:    "project-c",
-						Project: "project-b",
-					}.Build(),
-					Spec: privatev1.ProjectSpec_builder{
-						Title: "Project C",
-					}.Build(),
-					Status: privatev1.ProjectStatus_builder{
-						State: privatev1.ProjectState_PROJECT_STATE_PENDING,
-					}.Build(),
-				}.Build(),
-			}
-
-			err := task.validateAndActivate(ctx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(task.project.GetStatus().GetState()).To(Equal(privatev1.ProjectState_PROJECT_STATE_FAILED))
-			Expect(task.project.GetStatus().GetMessage()).To(ContainSubstring("circular dependency detected"))
 		})
 	})
 

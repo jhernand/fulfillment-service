@@ -22,6 +22,7 @@ import (
 type MockTenantsClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockTenantsClientMockRecorder
+	isgomock struct{}
 }
 
 // MockTenantsClientMockRecorder is the mock recorder for MockTenantsClient.
@@ -165,6 +166,7 @@ func (mr *MockTenantsClientMockRecorder) Update(ctx, in any, opts ...any) *gomoc
 type MockTenantsServer struct {
 	ctrl     *gomock.Controller
 	recorder *MockTenantsServerMockRecorder
+	isgomock struct{}
 }
 
 // MockTenantsServerMockRecorder is the mock recorder for MockTenantsServer.
@@ -290,6 +292,7 @@ func (mr *MockTenantsServerMockRecorder) mustEmbedUnimplementedTenantsServer() *
 type MockUnsafeTenantsServer struct {
 	ctrl     *gomock.Controller
 	recorder *MockUnsafeTenantsServerMockRecorder
+	isgomock struct{}
 }
 
 // MockUnsafeTenantsServerMockRecorder is the mock recorder for MockUnsafeTenantsServer.

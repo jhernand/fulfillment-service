@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -163,13 +164,6 @@ func (t *task) validateAndActivate(ctx context.Context) error {
 	// Validate parent project if specified via metadata.project
 	parentName := t.project.GetMetadata().GetProject()
 	if parentName != "" {
-		// Prevent self-reference
-		if parentName == t.project.GetMetadata().GetName() {
-			t.project.GetStatus().SetState(privatev1.ProjectState_PROJECT_STATE_FAILED)
-			t.project.GetStatus().SetMessage("Project cannot be its own parent")
-			return nil
-		}
-
 		// Find parent project by name
 		parentProject, err := t.findProjectByName(ctx, parentName)
 		if err != nil {
@@ -193,20 +187,18 @@ func (t *task) validateAndActivate(ctx context.Context) error {
 			))
 			return nil
 		}
-
-		// Check for circular dependencies by traversing up the hierarchy
-		if err := t.checkCircularDependency(ctx, parentProject); err != nil {
-			t.project.GetStatus().SetState(privatev1.ProjectState_PROJECT_STATE_FAILED)
-			t.project.GetStatus().SetMessage(err.Error())
-			return nil
-		}
 	}
+
+	// Project names are dot-separated label sequences (for example 'parent.child') where an empty string represents
+	// the tenant's default project. Keycloak expects a hierarchical path, so we convert dots to slashes to
+	// produce the group path. For example, 'parent.child' becomes 'parent/child').
+	projectTenant := t.project.GetMetadata().GetTenant()
+	projectName := t.project.GetMetadata().GetName()
+	projectPath := strings.ReplaceAll(projectName, ".", "/")
 
 	// Create Keycloak groups for project authorization
 	// Returns the system:managers group ID to avoid timing issues with group lookup
-	managersGroupID, err := t.r.resourceManager.CreateProjectGroups(ctx,
-		t.project.GetMetadata().GetTenant(),
-		t.project.GetMetadata().GetName())
+	managersGroupID, err := t.r.resourceManager.CreateProjectGroups(ctx, projectTenant, projectPath)
 	if err != nil {
 		t.updateCondition(
 			privatev1.ProjectConditionType_PROJECT_CONDITION_TYPE_KEYCLOAK_SYNC,
@@ -274,45 +266,6 @@ func (t *task) validateAndActivate(ctx context.Context) error {
 	)
 
 	return nil
-}
-
-// checkCircularDependency traverses the parent hierarchy via metadata.project to detect circular
-// dependencies. Accepts the already-fetched immediate parent to avoid redundant RPC calls.
-func (t *task) checkCircularDependency(ctx context.Context, parent *privatev1.Project) error {
-	visited := make(map[string]bool)
-	visited[t.project.GetMetadata().GetName()] = true
-	visited[parent.GetMetadata().GetName()] = true
-
-	currentParent := parent
-	maxDepth := 100
-
-	for depth := 0; depth < maxDepth; depth++ {
-		nextParentName := currentParent.GetMetadata().GetProject()
-		if nextParentName == "" {
-			return nil
-		}
-
-		nextParentID := currentParent.GetMetadata().GetProject()
-
-		// Check if we've seen this parent before (circular dependency)
-		if visited[nextParentID] {
-			return fmt.Errorf("circular dependency detected in project hierarchy")
-		}
-		visited[nextParentName] = true
-
-		nextParent, err := t.findProjectByName(ctx, nextParentName)
-		if err != nil {
-			return fmt.Errorf("failed to fetch parent project during circular dependency check: %w", err)
-		}
-		if nextParent == nil {
-			return fmt.Errorf("parent project disappeared during validation: %s", nextParentName)
-		}
-
-		currentParent = nextParent
-	}
-
-	// If we hit max depth, treat it as a circular dependency
-	return fmt.Errorf("project hierarchy exceeds maximum depth of %d", maxDepth)
 }
 
 // findProjectByName looks up a project by its metadata.name. Returns nil if not found.

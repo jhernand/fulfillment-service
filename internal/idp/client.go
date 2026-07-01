@@ -85,7 +85,7 @@ type Client interface {
 	// Organization groups are scoped to a specific organization and support hierarchical paths.
 	// Recommended path format: "/{project-name}/{system:viewers|system:managers}" for top-level projects.
 	// Returns the created group ID.
-	CreateAuthorizationGroup(ctx context.Context, organizationName, groupName, groupPath string) (string, error)
+	CreateAuthorizationGroup(ctx context.Context, organizationName, groupPath string) (string, error)
 	// DeleteAuthorizationGroup deletes a Keycloak organization group by ID.
 	DeleteAuthorizationGroup(ctx context.Context, organizationName, groupID string) error
 	// GetGroupIDByPath gets a Keycloak organization group ID by its path.

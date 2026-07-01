@@ -2499,7 +2499,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				client = createTestClient(server.URL)
 
-				groupID, err := client.CreateAuthorizationGroup(ctx, "acme-corp", "system:viewers", "/web-app/system:viewers")
+				groupID, err := client.CreateAuthorizationGroup(ctx, "acme-corp", "/web-app/system:viewers")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(groupID).To(Equal(createdGroups["system:viewers"]))
 				Expect(createdGroups).To(HaveKey("web-app"))
@@ -2522,7 +2522,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				client = createTestClient(server.URL)
 
-				groupID, err := client.CreateAuthorizationGroup(ctx, "nonexistent-org", "system:viewers", "/web-app/system:viewers")
+				groupID, err := client.CreateAuthorizationGroup(ctx, "nonexistent-org", "/web-app/system:viewers")
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get organization"))
 				Expect(groupID).To(BeEmpty())
@@ -2549,9 +2549,10 @@ var _ = Describe("Keycloak Client", func() {
 						// Return the existing group for both search and list operations
 						groups := []struct {
 							ID   string `json:"id"`
+							Name string `json:"name"`
 							Path string `json:"path"`
 						}{
-							{ID: "existing-group-id", Path: "/web-app"},
+							{ID: "existing-group-id", Name: "web-app", Path: "/web-app"},
 						}
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusOK)
@@ -2587,7 +2588,7 @@ var _ = Describe("Keycloak Client", func() {
 
 				client = createTestClient(server.URL)
 
-				groupID, err := client.CreateAuthorizationGroup(ctx, "acme-corp", "system:viewers", "/web-app/system:viewers")
+				groupID, err := client.CreateAuthorizationGroup(ctx, "acme-corp", "/web-app/system:viewers")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(groupID).To(Equal(createdGroups["system:viewers"]))
 				Expect(createdGroups).To(HaveKey("system:viewers"))
