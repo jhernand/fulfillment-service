@@ -72,6 +72,8 @@ var _ = Describe("External IP attachments server", func() {
 			externalIPAttachmentsServer *ExternalIPAttachmentsServer
 			externalIPDao               *dao.GenericDAO[*privatev1.ExternalIP]
 			computeInstanceDao          *dao.GenericDAO[*privatev1.ComputeInstance]
+			clusterDao                  *dao.GenericDAO[*privatev1.Cluster]
+			bareMetalInstanceDao        *dao.GenericDAO[*privatev1.BareMetalInstance]
 			sharedPoolID                string
 		)
 
@@ -85,6 +87,18 @@ var _ = Describe("External IP attachments server", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			computeInstanceDao, err = dao.NewGenericDAO[*privatev1.ComputeInstance]().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			clusterDao, err = dao.NewGenericDAO[*privatev1.Cluster]().
+				SetLogger(logger).
+				SetTenancyLogic(tenancy).
+				Build()
+			Expect(err).ToNot(HaveOccurred())
+
+			bareMetalInstanceDao, err = dao.NewGenericDAO[*privatev1.BareMetalInstance]().
 				SetLogger(logger).
 				SetTenancyLogic(tenancy).
 				Build()
@@ -143,12 +157,67 @@ var _ = Describe("External IP attachments server", func() {
 			return response.GetObject()
 		}
 
-		It("Creates object", func() {
+		It("Creates object with ComputeInstance target", func() {
 			object := createAttachment()
 			Expect(object).ToNot(BeNil())
 			Expect(object.GetId()).ToNot(BeEmpty())
 			Expect(object.GetSpec().GetExternalIp()).ToNot(BeEmpty())
 			Expect(object.GetSpec().GetComputeInstance()).ToNot(BeEmpty())
+		})
+
+		It("Creates and gets object with Cluster target", func() {
+			eip := createExternalIPInState(ctx, externalIPDao, sharedPoolID,
+				privatev1.ExternalIPState_EXTERNAL_IP_STATE_ALLOCATED, false)
+			cluster := createClusterInState(ctx, clusterDao)
+
+			createResponse, err := externalIPAttachmentsServer.Create(ctx,
+				publicv1.ExternalIPAttachmentsCreateRequest_builder{
+					Object: publicv1.ExternalIPAttachment_builder{
+						Spec: publicv1.ExternalIPAttachmentSpec_builder{
+							ExternalIp:     eip.GetId(),
+							Cluster:        new(cluster.GetId()),
+							TargetEndpoint: publicv1.ExternalIPAttachmentEndpoint_EXTERNAL_IP_ATTACHMENT_ENDPOINT_API,
+						}.Build(),
+					}.Build(),
+				}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createResponse.GetObject().GetSpec().GetCluster()).To(Equal(cluster.GetId()))
+			Expect(createResponse.GetObject().GetSpec().GetTargetEndpoint()).To(
+				Equal(publicv1.ExternalIPAttachmentEndpoint_EXTERNAL_IP_ATTACHMENT_ENDPOINT_API))
+
+			getResponse, err := externalIPAttachmentsServer.Get(ctx,
+				publicv1.ExternalIPAttachmentsGetRequest_builder{
+					Id: createResponse.GetObject().GetId(),
+				}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject().GetSpec().GetCluster()).To(Equal(cluster.GetId()))
+			Expect(getResponse.GetObject().GetSpec().GetTargetEndpoint()).To(
+				Equal(publicv1.ExternalIPAttachmentEndpoint_EXTERNAL_IP_ATTACHMENT_ENDPOINT_API))
+		})
+
+		It("Creates and gets object with BareMetalInstance target", func() {
+			eip := createExternalIPInState(ctx, externalIPDao, sharedPoolID,
+				privatev1.ExternalIPState_EXTERNAL_IP_STATE_ALLOCATED, false)
+			bmi := createBareMetalInstanceInState(ctx, bareMetalInstanceDao)
+
+			createResponse, err := externalIPAttachmentsServer.Create(ctx,
+				publicv1.ExternalIPAttachmentsCreateRequest_builder{
+					Object: publicv1.ExternalIPAttachment_builder{
+						Spec: publicv1.ExternalIPAttachmentSpec_builder{
+							ExternalIp:        eip.GetId(),
+							BaremetalInstance: new(bmi.GetId()),
+						}.Build(),
+					}.Build(),
+				}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createResponse.GetObject().GetSpec().GetBaremetalInstance()).To(Equal(bmi.GetId()))
+
+			getResponse, err := externalIPAttachmentsServer.Get(ctx,
+				publicv1.ExternalIPAttachmentsGetRequest_builder{
+					Id: createResponse.GetObject().GetId(),
+				}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getResponse.GetObject().GetSpec().GetBaremetalInstance()).To(Equal(bmi.GetId()))
 		})
 
 		It("List objects", func() {

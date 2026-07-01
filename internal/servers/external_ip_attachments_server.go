@@ -141,9 +141,15 @@ func (s *ExternalIPAttachmentsServer) List(ctx context.Context,
 	privateItems := privateResponse.GetItems()
 	publicItems := make([]*publicv1.ExternalIPAttachment, len(privateItems))
 	for i, privateItem := range privateItems {
-		publicItem, err := s.attachmentFromPrivate(ctx, privateItem)
+		publicItem := &publicv1.ExternalIPAttachment{}
+		err = s.outMapper.Copy(ctx, privateItem, publicItem)
 		if err != nil {
-			return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process external IP attachment")
+			s.logger.ErrorContext(
+				ctx,
+				"Failed to map private external IP attachment to public",
+				slog.Any("error", err),
+			)
+			return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process external IP attachments")
 		}
 		publicItems[i] = publicItem
 	}
@@ -165,59 +171,83 @@ func (s *ExternalIPAttachmentsServer) Get(ctx context.Context,
 		return nil, err
 	}
 
-	privateObject := privateResponse.GetObject()
-	publicObject, err := s.attachmentFromPrivate(ctx, privateObject)
+	privateAttachment := privateResponse.GetObject()
+	publicAttachment := &publicv1.ExternalIPAttachment{}
+	err = s.outMapper.Copy(ctx, privateAttachment, publicAttachment)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map private external IP attachment to public",
+			slog.Any("error", err),
+		)
 		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process external IP attachment")
 	}
 
 	response := &publicv1.ExternalIPAttachmentsGetResponse{}
-	response.SetObject(publicObject)
+	response.SetObject(publicAttachment)
 	return response, nil
 }
 
 func (s *ExternalIPAttachmentsServer) Create(ctx context.Context,
 	request *publicv1.ExternalIPAttachmentsCreateRequest) (*publicv1.ExternalIPAttachmentsCreateResponse, error) {
-	publicObject := request.GetObject()
-	if publicObject == nil {
+	publicAttachment := request.GetObject()
+	if publicAttachment == nil {
 		return nil, grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	privateObject, err := s.attachmentToPrivate(ctx, publicObject)
+	privateAttachment := &privatev1.ExternalIPAttachment{}
+	err := s.inMapper.Copy(ctx, publicAttachment, privateAttachment)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map public external IP attachment to private",
+			slog.Any("error", err),
+		)
 		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process external IP attachment")
 	}
 
 	privateRequest := &privatev1.ExternalIPAttachmentsCreateRequest{}
-	privateRequest.SetObject(privateObject)
+	privateRequest.SetObject(privateAttachment)
 	privateResponse, err := s.delegate.Create(ctx, privateRequest)
 	if err != nil {
 		return nil, err
 	}
 
-	createdPrivateObject := privateResponse.GetObject()
-	createdPublicObject, err := s.attachmentFromPrivate(ctx, createdPrivateObject)
+	createdPrivateAttachment := privateResponse.GetObject()
+	createdPublicAttachment := &publicv1.ExternalIPAttachment{}
+	err = s.outMapper.Copy(ctx, createdPrivateAttachment, createdPublicAttachment)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map private external IP attachment to public",
+			slog.Any("error", err),
+		)
 		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process external IP attachment")
 	}
 
 	response := &publicv1.ExternalIPAttachmentsCreateResponse{}
-	response.SetObject(createdPublicObject)
+	response.SetObject(createdPublicAttachment)
 	return response, nil
 }
 
 func (s *ExternalIPAttachmentsServer) Update(ctx context.Context,
 	request *publicv1.ExternalIPAttachmentsUpdateRequest) (*publicv1.ExternalIPAttachmentsUpdateResponse, error) {
-	publicObject := request.GetObject()
-	if publicObject == nil {
+	publicAttachment := request.GetObject()
+	if publicAttachment == nil {
 		return nil, grpcstatus.Errorf(grpccodes.InvalidArgument, "object is mandatory")
 	}
-	privateObject, err := s.attachmentToPrivate(ctx, publicObject)
+	privateAttachment := &privatev1.ExternalIPAttachment{}
+	err := s.inMapper.Copy(ctx, publicAttachment, privateAttachment)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map public external IP attachment to private",
+			slog.Any("error", err),
+		)
 		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process external IP attachment")
 	}
 
 	privateRequest := &privatev1.ExternalIPAttachmentsUpdateRequest{}
-	privateRequest.SetObject(privateObject)
+	privateRequest.SetObject(privateAttachment)
 	privateRequest.SetUpdateMask(request.GetUpdateMask())
 	privateRequest.SetLock(request.GetLock())
 	privateResponse, err := s.delegate.Update(ctx, privateRequest)
@@ -225,14 +255,20 @@ func (s *ExternalIPAttachmentsServer) Update(ctx context.Context,
 		return nil, err
 	}
 
-	updatedPrivateObject := privateResponse.GetObject()
-	updatedPublicObject, err := s.attachmentFromPrivate(ctx, updatedPrivateObject)
+	updatedPrivateAttachment := privateResponse.GetObject()
+	updatedPublicAttachment := &publicv1.ExternalIPAttachment{}
+	err = s.outMapper.Copy(ctx, updatedPrivateAttachment, updatedPublicAttachment)
 	if err != nil {
+		s.logger.ErrorContext(
+			ctx,
+			"Failed to map private external IP attachment to public",
+			slog.Any("error", err),
+		)
 		return nil, grpcstatus.Errorf(grpccodes.Internal, "failed to process external IP attachment")
 	}
 
 	response := &publicv1.ExternalIPAttachmentsUpdateResponse{}
-	response.SetObject(updatedPublicObject)
+	response.SetObject(updatedPublicAttachment)
 	return response, nil
 }
 
@@ -248,32 +284,4 @@ func (s *ExternalIPAttachmentsServer) Delete(ctx context.Context,
 
 	response := &publicv1.ExternalIPAttachmentsDeleteResponse{}
 	return response, nil
-}
-
-func (s *ExternalIPAttachmentsServer) attachmentFromPrivate(ctx context.Context, privateObj *privatev1.ExternalIPAttachment) (*publicv1.ExternalIPAttachment, error) {
-	publicObj := &publicv1.ExternalIPAttachment{}
-	err := s.outMapper.Copy(ctx, privateObj, publicObj)
-	if err != nil {
-		s.logger.ErrorContext(
-			ctx,
-			"Failed to map private external IP attachment to public",
-			slog.Any("error", err),
-		)
-		return nil, err
-	}
-	return publicObj, nil
-}
-
-func (s *ExternalIPAttachmentsServer) attachmentToPrivate(ctx context.Context, publicObj *publicv1.ExternalIPAttachment) (*privatev1.ExternalIPAttachment, error) {
-	privateObj := &privatev1.ExternalIPAttachment{}
-	err := s.inMapper.Copy(ctx, publicObj, privateObj)
-	if err != nil {
-		s.logger.ErrorContext(
-			ctx,
-			"Failed to map external IP attachment to private",
-			slog.Any("error", err),
-		)
-		return nil, err
-	}
-	return privateObj, nil
 }

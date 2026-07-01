@@ -16,8 +16,8 @@ package servers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
-	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 	grpccodes "google.golang.org/grpc/codes"
@@ -377,6 +377,7 @@ func (s *PrivateExternalIPAttachmentsServer) validateExternalIPReference(
 	ctx context.Context, externalIPID string) error {
 	getResponse, err := s.externalIPDao.Get().
 		SetId(externalIPID).
+		SetLock(true).
 		Do(ctx)
 	if err != nil {
 		var notFoundErr *dao.ErrNotFound
@@ -425,6 +426,7 @@ func (s *PrivateExternalIPAttachmentsServer) validateComputeInstanceReference(
 	ctx context.Context, computeInstanceID string) error {
 	_, err := s.computeInstanceDao.Get().
 		SetId(computeInstanceID).
+		SetLock(true).
 		Do(ctx)
 	if err != nil {
 		var notFoundErr *dao.ErrNotFound
@@ -444,6 +446,7 @@ func (s *PrivateExternalIPAttachmentsServer) validateClusterReference(
 	ctx context.Context, clusterID string) error {
 	_, err := s.clusterDao.Get().
 		SetId(clusterID).
+		SetLock(true).
 		Do(ctx)
 	if err != nil {
 		var notFoundErr *dao.ErrNotFound
@@ -463,6 +466,7 @@ func (s *PrivateExternalIPAttachmentsServer) validateBareMetalInstanceReference(
 	ctx context.Context, bareMetalInstanceID string) error {
 	_, err := s.bareMetalInstanceDao.Get().
 		SetId(bareMetalInstanceID).
+		SetLock(true).
 		Do(ctx)
 	if err != nil {
 		var notFoundErr *dao.ErrNotFound
@@ -494,7 +498,7 @@ func (s *PrivateExternalIPAttachmentsServer) getTargetID(
 
 func (s *PrivateExternalIPAttachmentsServer) validateUniqueness(
 	ctx context.Context, externalIPID string, targetID string) error {
-	eipFilter := "this.spec.external_ip == " + strconv.Quote(externalIPID)
+	eipFilter := fmt.Sprintf("this.spec.external_ip == %q", externalIPID)
 	eipResp, err := s.externalIPAttachmentDao.List().
 		SetFilter(eipFilter).
 		SetLimit(1).
@@ -505,7 +509,7 @@ func (s *PrivateExternalIPAttachmentsServer) validateUniqueness(
 			slog.Any("error", err))
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to validate uniqueness")
 	}
-	if eipResp.GetSize() > 0 {
+	if eipResp.GetTotal() > 0 {
 		return grpcstatus.Errorf(grpccodes.AlreadyExists,
 			"an ExternalIPAttachment already exists for ExternalIP '%s'", externalIPID)
 	}
@@ -517,6 +521,7 @@ func (s *PrivateExternalIPAttachmentsServer) updateExternalIPAttachedFlag(
 	ctx context.Context, externalIPID string, attached bool) error {
 	getResponse, err := s.externalIPDao.Get().
 		SetId(externalIPID).
+		SetLock(true).
 		Do(ctx)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "Failed to get ExternalIP for attached flag update",

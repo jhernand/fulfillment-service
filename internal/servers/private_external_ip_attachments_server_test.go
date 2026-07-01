@@ -645,7 +645,7 @@ var _ = Describe("Private external IP attachments server", func() {
 	})
 
 	Describe("Uniqueness constraints", func() {
-		It("Rejects Create when ExternalIP already has an attachment", func() {
+		It("Rejects Create when ExternalIP is already attached (attached flag)", func() {
 			eip := createExternalIPInState(ctx, externalIPDao, sharedPool.GetId(),
 				privatev1.ExternalIPState_EXTERNAL_IP_STATE_ALLOCATED, false)
 			ci1 := createComputeInstanceInState(ctx, computeInstanceDao,
@@ -676,6 +676,46 @@ var _ = Describe("Private external IP attachments server", func() {
 			Expect(ok).To(BeTrue())
 			Expect(status.Code()).To(Equal(grpccodes.FailedPrecondition))
 			Expect(err.Error()).To(ContainSubstring("already attached"))
+		})
+
+		It("Rejects Create when ExternalIP already has an attachment (uniqueness check)", func() {
+			eip := createExternalIPInState(ctx, externalIPDao, sharedPool.GetId(),
+				privatev1.ExternalIPState_EXTERNAL_IP_STATE_ALLOCATED, false)
+			ci1 := createComputeInstanceInState(ctx, computeInstanceDao,
+				privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_RUNNING)
+			ci2 := createComputeInstanceInState(ctx, computeInstanceDao,
+				privatev1.ComputeInstanceState_COMPUTE_INSTANCE_STATE_RUNNING)
+
+			_, err := server.Create(ctx, privatev1.ExternalIPAttachmentsCreateRequest_builder{
+				Object: privatev1.ExternalIPAttachment_builder{
+					Spec: privatev1.ExternalIPAttachmentSpec_builder{
+						ExternalIp:      eip.GetId(),
+						ComputeInstance: new(ci1.GetId()),
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+
+			// Reset the attached flag so the uniqueness check path is exercised
+			ipResp, err := externalIPDao.Get().SetId(eip.GetId()).Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			ipResp.GetObject().GetStatus().SetAttached(false)
+			_, err = externalIPDao.Update().SetObject(ipResp.GetObject()).Do(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = server.Create(ctx, privatev1.ExternalIPAttachmentsCreateRequest_builder{
+				Object: privatev1.ExternalIPAttachment_builder{
+					Spec: privatev1.ExternalIPAttachmentSpec_builder{
+						ExternalIp:      eip.GetId(),
+						ComputeInstance: new(ci2.GetId()),
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.AlreadyExists))
+			Expect(err.Error()).To(ContainSubstring("ExternalIP"))
 		})
 	})
 
