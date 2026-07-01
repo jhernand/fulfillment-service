@@ -1148,6 +1148,34 @@ func (c *runnerContext) run(cmd *cobra.Command, argv []string) error { //nolint:
 	}
 	privatev1.RegisterExternalIPsServer(grpcServer, privateExternalIPsServer)
 
+	// Create the external IP attachments server:
+	c.logger.InfoContext(ctx, "Creating external IP attachments server")
+	externalIPAttachmentsServer, err := servers.NewExternalIPAttachmentsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(publicAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create external IP attachments server: %w", err)
+	}
+	publicv1.RegisterExternalIPAttachmentsServer(grpcServer, externalIPAttachmentsServer)
+
+	// Create the private external IP attachments server:
+	c.logger.InfoContext(ctx, "Creating private external IP attachments server")
+	privateExternalIPAttachmentsServer, err := servers.NewPrivateExternalIPAttachmentsServer().
+		SetLogger(c.logger).
+		SetNotifier(notifier).
+		SetAttributionLogic(privateAttributionLogic).
+		SetTenancyLogic(tenancyLogic).
+		SetMetricsRegisterer(metricsRegisterer).
+		Build()
+	if err != nil {
+		return fmt.Errorf("failed to create private external IP attachments server: %w", err)
+	}
+	privatev1.RegisterExternalIPAttachmentsServer(grpcServer, privateExternalIPAttachmentsServer)
+
 	// Create the public tenants server:
 	c.logger.InfoContext(ctx, "Creating public tenants server")
 	publicTenantsServer, err := servers.NewTenantsServer().
