@@ -38,6 +38,7 @@ import (
 
 	"github.com/osac-project/fulfillment-service/internal/config"
 	"github.com/osac-project/fulfillment-service/internal/reflection"
+	"github.com/osac-project/fulfillment-service/internal/util"
 )
 
 //go:embed tables
@@ -107,7 +108,7 @@ func (b *TableRendererBuilder) SetLogger(value *slog.Logger) *TableRendererBuild
 
 // SetHelper sets the reflection helper that will be used to introspect objects. This is mandatory.
 func (b *TableRendererBuilder) SetHelper(value reflection.Helper) *TableRendererBuilder {
-	b.helper = reflection.NormalizeNil(value)
+	b.helper = util.NormalizeNil(value)
 	return b
 }
 
@@ -177,12 +178,18 @@ func (r *TableRenderer) Render(ctx context.Context, objects any) error {
 		return fmt.Errorf("failed to find object helper for type %q", descriptor.FullName())
 	}
 
-	// Try to load the table definition for this object type:
+	// Try to load the table definition for this object type.
+	// If loading fails for any reason (file not found, parse error, etc.),
+	// fall back to the default table so the CLI remains functional.
 	table, err := r.loadTable(helper)
 	if err != nil {
-		return err
-	}
-	if table == nil {
+		r.logger.Warn(
+			"Failed to load table definition, using default",
+			slog.String("type", string(helper.FullName())),
+			slog.Any("error", err),
+		)
+		table = r.defaultTable()
+	} else if table == nil {
 		table = r.defaultTable()
 	}
 
@@ -266,7 +273,13 @@ func (r *TableRenderer) loadTable(helper reflection.ObjectHelper) (result *table
 	data, err := fs.ReadFile(tablesFS, path.Join("tables", file))
 	if err != nil {
 		// If the file doesn't exist, that's okay - we'll use the default table.
-		return
+		// This handles both fs.ErrNotExist and any path-related errors.
+		r.logger.Debug(
+			"Table definition not found, will use default",
+			slog.String("type", string(helper.FullName())),
+			slog.String("file", file),
+		)
+		return nil, nil
 	}
 
 	// Unmarshal the table definition:
