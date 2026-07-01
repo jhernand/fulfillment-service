@@ -38,6 +38,7 @@ import (
 
 	"github.com/osac-project/fulfillment-service/internal/config"
 	"github.com/osac-project/fulfillment-service/internal/reflection"
+	"github.com/osac-project/fulfillment-service/internal/util"
 )
 
 //go:embed tables
@@ -107,7 +108,7 @@ func (b *TableRendererBuilder) SetLogger(value *slog.Logger) *TableRendererBuild
 
 // SetHelper sets the reflection helper that will be used to introspect objects. This is mandatory.
 func (b *TableRendererBuilder) SetHelper(value reflection.Helper) *TableRendererBuilder {
-	b.helper = reflection.NormalizeNil(value)
+	b.helper = util.NormalizeNil(value)
 	return b
 }
 

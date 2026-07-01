@@ -11,14 +11,16 @@ Unless required by applicable law or agreed to in writing, software distributed 
 language governing permissions and limitations under the License.
 */
 
-package reflection
+package util
 
-import "github.com/osac-project/fulfillment-service/internal/util"
+import (
+	"testing"
 
-// NormalizeNil returns a true nil when the interface holds a nil pointer, preventing typed-nil values from bypassing
-// nil checks and causing panics on method calls.
-//
-// Deprecated: Use util.NormalizeNil instead. This wrapper is provided for backward compatibility.
-func NormalizeNil[T any](value T) T {
-	return util.NormalizeNil(value)
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func TestUtil(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Util Suite")
 }

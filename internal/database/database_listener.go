@@ -29,7 +29,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/osac-project/fulfillment-service/internal/events"
-	"github.com/osac-project/fulfillment-service/internal/reflection"
+	"github.com/osac-project/fulfillment-service/internal/util"
 )
 
 // ListenerBuilder contains the data and logic needed to build a listener.
@@ -144,7 +144,7 @@ func (l *Listener) Ready() bool {
 // process it. This is a blocking operation that returns only when the context is canceled.
 func (l *Listener) Listen(ctx context.Context, callback events.Callback) error {
 	// Check that the callback is not nil:
-	callback = reflection.NormalizeNil(callback)
+	callback = util.NormalizeNil(callback)
 	if callback == nil {
 		return errors.New("callback is mandatory")
 	}
