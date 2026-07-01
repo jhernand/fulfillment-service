@@ -111,18 +111,18 @@ func (mr *MockClientMockRecorder) AssignOrganizationRolesToUser(ctx, organizatio
 }
 
 // CreateAuthorizationGroup mocks base method.
-func (m *MockClient) CreateAuthorizationGroup(ctx context.Context, organizationName, groupName, groupPath string) (string, error) {
+func (m *MockClient) CreateAuthorizationGroup(ctx context.Context, organizationName, groupPath string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateAuthorizationGroup", ctx, organizationName, groupName, groupPath)
+	ret := m.ctrl.Call(m, "CreateAuthorizationGroup", ctx, organizationName, groupPath)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateAuthorizationGroup indicates an expected call of CreateAuthorizationGroup.
-func (mr *MockClientMockRecorder) CreateAuthorizationGroup(ctx, organizationName, groupName, groupPath any) *gomock.Call {
+func (mr *MockClientMockRecorder) CreateAuthorizationGroup(ctx, organizationName, groupPath any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAuthorizationGroup", reflect.TypeOf((*MockClient)(nil).CreateAuthorizationGroup), ctx, organizationName, groupName, groupPath)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAuthorizationGroup", reflect.TypeOf((*MockClient)(nil).CreateAuthorizationGroup), ctx, organizationName, groupPath)
 }
 
 // CreateAuthorizationResource mocks base method.

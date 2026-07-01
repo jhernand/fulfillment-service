@@ -277,6 +277,26 @@ var _ = Describe("Private projects server", func() {
 		Expect(project.GetMetadata().GetProject()).To(BeEmpty())
 	})
 
+	It("Rejects a project that references itself as the parent", func() {
+		_, err := privateServer.Create(ctx, privatev1.ProjectsCreateRequest_builder{
+			Object: privatev1.Project_builder{
+				Metadata: privatev1.Metadata_builder{
+					Name:    "my-project",
+					Tenant:  "my-tenant",
+					Project: "my-project",
+				}.Build(),
+				Spec: privatev1.ProjectSpec_builder{
+					Title: "My Project",
+				}.Build(),
+			}.Build(),
+		}.Build())
+		Expect(err).To(HaveOccurred())
+		status, ok := grpcstatus.FromError(err)
+		Expect(ok).To(BeTrue())
+		Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+		Expect(status.Message()).To(ContainSubstring("metadata.project"))
+	})
+
 	It("Updates a project", func() {
 		// Create a project:
 		createReq := privatev1.ProjectsCreateRequest_builder{

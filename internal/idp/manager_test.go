@@ -277,7 +277,7 @@ func (m *mockClient) DeleteIdentityProvider(ctx context.Context, organizationNam
 	return nil
 }
 
-func (m *mockClient) CreateAuthorizationGroup(ctx context.Context, organizationName, groupName, groupPath string) (string, error) {
+func (m *mockClient) CreateAuthorizationGroup(ctx context.Context, organizationName, groupPath string) (string, error) {
 	// Return a fake group ID
 	return "test-group-id", nil
 }

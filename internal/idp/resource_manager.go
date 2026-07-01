@@ -144,45 +144,49 @@ func (m *ResourceManager) getGroupIDByPath(ctx context.Context, organizationName
 // Creates hierarchical groups: /{project-name}/system:viewers and /{project-name}/system:managers
 // These groups are used by Authorino OPA policies for authorization.
 // Returns the managers group ID for immediate use (avoids timing issues with group lookup).
-func (m *ResourceManager) CreateProjectGroups(ctx context.Context, tenant, projectName string) (string, error) {
+func (m *ResourceManager) CreateProjectGroups(ctx context.Context, tenant, projectPath string) (string, error) {
 	if tenant == "" {
 		return "", fmt.Errorf("tenant is required")
 	}
-	if projectName == "" {
-		return "", fmt.Errorf("project name is required")
-	}
 	// Validate inputs to prevent path traversal attacks
-	if strings.Contains(projectName, "..") {
-		return "", fmt.Errorf("project name cannot contain '..' sequence")
-	}
-	if strings.Contains(projectName, "/") {
-		return "", fmt.Errorf("project name cannot contain '/' character")
+	if strings.Contains(projectPath, "..") {
+		return "", fmt.Errorf("project path cannot contain '..' sequence")
 	}
 
 	m.logger.DebugContext(ctx, "Creating project groups",
 		slog.String("tenant", tenant),
-		slog.String("project_name", projectName),
+		slog.String("project_path", projectPath),
 	)
 
-	viewersGroupPath := fmt.Sprintf("/%s/%s", projectName, GroupNameViewers)
-	viewersGroupID, err := m.client.CreateAuthorizationGroup(ctx, tenant, GroupNameViewers, viewersGroupPath)
+	// Make sure the project path starts with a slash:
+	if !strings.HasPrefix(projectPath, "/") {
+		projectPath = fmt.Sprintf("/%s", projectPath)
+	}
+
+	// Create the viewers group:
+	viewersGroupPath := fmt.Sprintf("%s/%s", projectPath, GroupNameViewers)
+	viewersGroupID, err := m.client.CreateAuthorizationGroup(ctx, tenant, viewersGroupPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create viewers group: %w", err)
 	}
-
-	m.logger.InfoContext(ctx, "Created project viewers group",
+	m.logger.InfoContext(
+		ctx,
+		"Created project viewers group",
 		slog.String("group_path", viewersGroupPath),
 		slog.String("group_id", viewersGroupID),
-		slog.String("project_name", projectName),
+		slog.String("project_path", projectPath),
 		slog.String("tenant", tenant),
 	)
 
-	managersGroupPath := fmt.Sprintf("/%s/%s", projectName, GroupNameManagers)
-	managersGroupID, err := m.client.CreateAuthorizationGroup(ctx, tenant, GroupNameManagers, managersGroupPath)
+	// Create the managers group:
+	managersGroupPath := fmt.Sprintf("%s/%s", projectPath, GroupNameManagers)
+	managersGroupID, err := m.client.CreateAuthorizationGroup(ctx, tenant, managersGroupPath)
 	if err != nil {
 		// Clean up viewers group on failure
 		if cleanupErr := m.client.DeleteAuthorizationGroup(ctx, tenant, viewersGroupID); cleanupErr != nil {
-			m.logger.ErrorContext(ctx, "Failed to cleanup viewers group during rollback",
+			m.logger.ErrorContext(
+				ctx,
+				"Failed to cleanup viewers group during rollback",
 				slog.String("group_id", viewersGroupID),
 				slog.Any("cleanup_error", cleanupErr),
 			)
@@ -190,11 +194,12 @@ func (m *ResourceManager) CreateProjectGroups(ctx context.Context, tenant, proje
 		}
 		return "", fmt.Errorf("failed to create managers group: %w", err)
 	}
-
-	m.logger.InfoContext(ctx, "Created project managers group",
+	m.logger.InfoContext(
+		ctx,
+		"Created project managers group",
 		slog.String("group_path", managersGroupPath),
 		slog.String("group_id", managersGroupID),
-		slog.String("project_name", projectName),
+		slog.String("project_path", projectPath),
 		slog.String("tenant", tenant),
 	)
 
@@ -202,11 +207,11 @@ func (m *ResourceManager) CreateProjectGroups(ctx context.Context, tenant, proje
 }
 
 // AddUserToProjectGroup adds a user to a project group (system:viewers or system:managers).
-func (m *ResourceManager) AddUserToProjectGroup(ctx context.Context, tenant, projectName, username, groupType string) error {
+func (m *ResourceManager) AddUserToProjectGroup(ctx context.Context, tenant, projectPath, username, groupType string) error {
 	if tenant == "" {
 		return fmt.Errorf("tenant is required")
 	}
-	if projectName == "" {
+	if projectPath == "" {
 		return fmt.Errorf("project name is required")
 	}
 	if username == "" {
@@ -216,14 +221,11 @@ func (m *ResourceManager) AddUserToProjectGroup(ctx context.Context, tenant, pro
 		return fmt.Errorf("invalid group type %q, must be %q or %q", groupType, GroupNameViewers, GroupNameManagers)
 	}
 	// Validate inputs to prevent path traversal attacks
-	if strings.Contains(projectName, "..") {
+	if strings.Contains(projectPath, "..") {
 		return fmt.Errorf("project name cannot contain '..' sequence")
 	}
-	if strings.Contains(projectName, "/") {
-		return fmt.Errorf("project name cannot contain '/' character")
-	}
 
-	groupPath := fmt.Sprintf("/%s/%s", projectName, groupType)
+	groupPath := fmt.Sprintf("/%s/%s", projectPath, groupType)
 	groupID, err := m.getGroupIDByPath(ctx, tenant, groupPath)
 	if err != nil {
 		return fmt.Errorf("failed to get group ID for %s: %w", groupPath, err)
@@ -237,7 +239,7 @@ func (m *ResourceManager) AddUserToProjectGroup(ctx context.Context, tenant, pro
 		slog.String("group_path", groupPath),
 		slog.String("group_type", groupType),
 		slog.String("!username", username),
-		slog.String("project_name", projectName),
+		slog.String("project_path", projectPath),
 		slog.String("tenant", tenant),
 	)
 
@@ -271,11 +273,11 @@ func (m *ResourceManager) AddUserToGroupByID(ctx context.Context, tenant, userna
 }
 
 // RemoveUserFromProjectGroup removes a user from a project group (system:viewers or system:managers).
-func (m *ResourceManager) RemoveUserFromProjectGroup(ctx context.Context, tenant, projectName, username, groupType string) error {
+func (m *ResourceManager) RemoveUserFromProjectGroup(ctx context.Context, tenant, projectPath, username, groupType string) error {
 	if tenant == "" {
 		return fmt.Errorf("tenant is required")
 	}
-	if projectName == "" {
+	if projectPath == "" {
 		return fmt.Errorf("project name is required")
 	}
 	if username == "" {
@@ -285,14 +287,11 @@ func (m *ResourceManager) RemoveUserFromProjectGroup(ctx context.Context, tenant
 		return fmt.Errorf("invalid group type %q, must be %q or %q", groupType, GroupNameViewers, GroupNameManagers)
 	}
 	// Validate inputs to prevent path traversal attacks
-	if strings.Contains(projectName, "..") {
+	if strings.Contains(projectPath, "..") {
 		return fmt.Errorf("project name cannot contain '..' sequence")
 	}
-	if strings.Contains(projectName, "/") {
-		return fmt.Errorf("project name cannot contain '/' character")
-	}
 
-	groupPath := fmt.Sprintf("/%s/%s", projectName, groupType)
+	groupPath := fmt.Sprintf("/%s/%s", projectPath, groupType)
 	groupID, err := m.getGroupIDByPath(ctx, tenant, groupPath)
 	if err != nil {
 		return fmt.Errorf("failed to get group ID for %s: %w", groupPath, err)
@@ -306,7 +305,7 @@ func (m *ResourceManager) RemoveUserFromProjectGroup(ctx context.Context, tenant
 		slog.String("group_path", groupPath),
 		slog.String("group_type", groupType),
 		slog.String("!username", username),
-		slog.String("project_name", projectName),
+		slog.String("project_path", projectPath),
 		slog.String("tenant", tenant),
 	)
 
