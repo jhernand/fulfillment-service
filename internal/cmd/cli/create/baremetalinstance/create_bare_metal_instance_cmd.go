@@ -24,7 +24,6 @@ import (
 	publicv1 "github.com/osac-project/fulfillment-service/internal/api/osac/public/v1"
 	"github.com/osac-project/fulfillment-service/internal/config"
 	"github.com/osac-project/fulfillment-service/internal/logging"
-	"github.com/osac-project/fulfillment-service/internal/reflection"
 	"github.com/osac-project/fulfillment-service/internal/terminal"
 )
 
@@ -104,16 +103,6 @@ func (c *runnerContext) run(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create gRPC connection: %w", err)
 	}
 	defer conn.Close()
-
-	helper, err := reflection.NewHelper().
-		SetLogger(c.logger).
-		SetConnection(conn).
-		AddPackages(cfg.Packages()).
-		Build()
-	if err != nil {
-		return fmt.Errorf("failed to create reflection tool: %w", err)
-	}
-	console.SetHelper(helper)
 
 	spec := publicv1.BareMetalInstanceSpec_builder{
 		CatalogItem: c.args.catalogItem,

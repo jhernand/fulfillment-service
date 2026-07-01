@@ -154,6 +154,7 @@ type runnerContext struct {
 	}
 	logger          *slog.Logger
 	console         *terminal.Console
+	settings        *config.Settings
 	templatesClient publicv1.ClusterTemplatesClient
 	clustersClient  publicv1.ClustersClient
 }
@@ -189,13 +190,13 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get the configuration:
-	cfg := config.SettingsFromContext(ctx)
-	if !cfg.Armed() {
+	c.settings = config.SettingsFromContext(ctx)
+	if !c.settings.Armed() {
 		return fmt.Errorf("there is no configuration, run the 'login' command")
 	}
 
 	// Create the gRPC connection from the configuration:
-	conn, err := cfg.Connect(ctx, cmd.Flags())
+	conn, err := c.settings.Connect(ctx, cmd.Flags())
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC connection: %w", err)
 	}
@@ -205,7 +206,8 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	helper, err := reflection.NewHelper().
 		SetLogger(c.logger).
 		SetConnection(conn).
-		AddPackages(cfg.Packages()).
+		AddPackages(c.settings.Packages()).
+		SetTenantFunc(config.TenantFromContext).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create reflection tool: %w", err)
@@ -317,7 +319,7 @@ func (c *runnerContext) createCluster(ctx context.Context, spec *publicv1.Cluste
 	cluster := publicv1.Cluster_builder{
 		Metadata: publicv1.Metadata_builder{
 			Name:   c.args.name,
-			Tenant: config.TenantFromContext(ctx),
+			Tenant: c.settings.Tenant(),
 		}.Build(),
 		Spec: spec,
 	}.Build()

@@ -128,6 +128,7 @@ var _ = Describe("Reflection helper", func() {
 				SetLogger(logger).
 				SetConnection(connection).
 				AddPackage(packages.PublicV1, 1).
+				SetTenantFunc(config.TenantFromContext).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})

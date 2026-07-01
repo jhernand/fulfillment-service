@@ -84,9 +84,10 @@ type runnerContext struct {
 	args struct {
 		file string
 	}
-	logger  *slog.Logger
-	console *terminal.Console
-	conn    *grpc.ClientConn
+	logger   *slog.Logger
+	console  *terminal.Console
+	settings *config.Settings
+	conn     *grpc.ClientConn
 }
 
 func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
@@ -98,14 +99,14 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	c.console = terminal.ConsoleFromContext(ctx)
 
 	// Get the configuration:
-	cfg := config.SettingsFromContext(ctx)
-	if !cfg.Armed() {
+	c.settings = config.SettingsFromContext(ctx)
+	if !c.settings.Armed() {
 		return fmt.Errorf("there is no configuration, run the 'login' command")
 	}
 
 	// Create the gRPC connection from the configuration:
 	var err error
-	c.conn, err = cfg.Connect(ctx, cmd.Flags())
+	c.conn, err = c.settings.Connect(ctx, cmd.Flags())
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC connection: %w", err)
 	}
@@ -115,7 +116,8 @@ func (c *runnerContext) run(cmd *cobra.Command, args []string) error {
 	helper, err := reflection.NewHelper().
 		SetLogger(c.logger).
 		SetConnection(c.conn).
-		AddPackages(cfg.Packages()).
+		AddPackages(c.settings.Packages()).
+		SetTenantFunc(config.TenantFromContext).
 		Build()
 	if err != nil {
 		return fmt.Errorf("failed to create reflection tool: %w", err)
