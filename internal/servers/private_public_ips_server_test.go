@@ -52,16 +52,25 @@ var _ = Describe("Private public IPs server", func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	// createReadyPool creates a PublicIPPool in READY state with the given capacity.
+	// createReadyPool creates a PublicIPPool in READY state with the given capacity and IP family.
 	// Returns the pool ID for use in PublicIP creation.
-	createReadyPool := func(ctx context.Context, total int64, allocated int64) string {
+	createReadyPool := func(ctx context.Context, total int64, allocated int64, ipFamily ...privatev1.IPFamily) string {
+		family := privatev1.IPFamily_IP_FAMILY_IPV4
+		if len(ipFamily) > 0 {
+			family = ipFamily[0]
+		}
+		cidrs := []string{"10.0.0.0/24"}
+		if family == privatev1.IPFamily_IP_FAMILY_IPV6 {
+			cidrs = []string{"fd00::/120"}
+		}
 		resp, err := publicIPPoolDao.Create().SetObject(
 			privatev1.PublicIPPool_builder{
 				Metadata: privatev1.Metadata_builder{
 					Tenant: auth.SharedTenant,
 				}.Build(),
 				Spec: privatev1.PublicIPPoolSpec_builder{
-					Cidrs: []string{"10.0.0.0/24"},
+					Cidrs:    cidrs,
+					IpFamily: family,
 				}.Build(),
 				Status: privatev1.PublicIPPoolStatus_builder{
 					State:     privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_READY,
@@ -158,7 +167,7 @@ var _ = Describe("Private public IPs server", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		Context("Pool required validation", func() {
+		Context("Input validation", func() {
 			It("rejects nil object on Create", func() {
 				_, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{}.Build())
 				Expect(err).To(HaveOccurred())
@@ -183,20 +192,42 @@ var _ = Describe("Private public IPs server", func() {
 				Expect(err.Error()).To(ContainSubstring("public IP spec is mandatory"))
 			})
 
-			It("rejects empty pool on Create", func() {
+			It("rejects Create with unsupported ip_family value", func() {
 				_, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
 					Object: privatev1.PublicIP_builder{
 						Metadata: privatev1.Metadata_builder{
 							Tenant: auth.SharedTenant,
 						}.Build(),
-						Spec: privatev1.PublicIPSpec_builder{}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{
+							IpFamily: privatev1.IPFamily(999),
+						}.Build(),
 					}.Build(),
 				}.Build())
 				Expect(err).To(HaveOccurred())
 				status, ok := grpcstatus.FromError(err)
 				Expect(ok).To(BeTrue())
 				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
-				Expect(err.Error()).To(ContainSubstring("spec.pool"))
+				Expect(err.Error()).To(ContainSubstring("unsupported 'spec.ip_family' value"))
+			})
+
+			It("rejects Create when both pool and ip_family are specified", func() {
+				poolID := createReadyPool(ctx, 10, 0)
+				_, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+					Object: privatev1.PublicIP_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{
+							Pool:     poolID,
+							IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+				Expect(err.Error()).To(ContainSubstring("mutually exclusive"))
 			})
 
 			It("accepts valid pool on Create", func() {
@@ -214,6 +245,138 @@ var _ = Describe("Private public IPs server", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response).ToNot(BeNil())
 				Expect(response.GetObject().GetId()).ToNot(BeEmpty())
+			})
+		})
+
+		Context("Pool auto-selection", func() {
+			It("auto-selects IPv4 pool when neither pool nor ip_family specified", func() {
+				createReadyPool(ctx, 10, 0, privatev1.IPFamily_IP_FAMILY_IPV4)
+				response, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+					Object: privatev1.PublicIP_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.GetObject().GetSpec().GetPool()).ToNot(BeEmpty())
+				Expect(response.GetObject().GetSpec().GetIpFamily()).To(
+					Equal(privatev1.IPFamily_IP_FAMILY_IPV4))
+			})
+
+			It("auto-selects pool matching requested IPv4 family", func() {
+				ipv4PoolID := createReadyPool(ctx, 10, 0, privatev1.IPFamily_IP_FAMILY_IPV4)
+				response, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+					Object: privatev1.PublicIP_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{
+							IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.GetObject().GetSpec().GetPool()).To(Equal(ipv4PoolID))
+				Expect(response.GetObject().GetSpec().GetIpFamily()).To(
+					Equal(privatev1.IPFamily_IP_FAMILY_IPV4))
+			})
+
+			It("auto-selects pool matching requested IPv6 family", func() {
+				createReadyPool(ctx, 10, 0, privatev1.IPFamily_IP_FAMILY_IPV4)
+				ipv6PoolID := createReadyPool(ctx, 10, 0, privatev1.IPFamily_IP_FAMILY_IPV6)
+				response, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+					Object: privatev1.PublicIP_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{
+							IpFamily: privatev1.IPFamily_IP_FAMILY_IPV6,
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.GetObject().GetSpec().GetPool()).To(Equal(ipv6PoolID))
+				Expect(response.GetObject().GetSpec().GetIpFamily()).To(
+					Equal(privatev1.IPFamily_IP_FAMILY_IPV6))
+			})
+
+			It("fails auto-selection when no matching pool exists", func() {
+				createReadyPool(ctx, 10, 0, privatev1.IPFamily_IP_FAMILY_IPV4)
+				_, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+					Object: privatev1.PublicIP_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{
+							IpFamily: privatev1.IPFamily_IP_FAMILY_IPV6,
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.FailedPrecondition))
+				Expect(err.Error()).To(ContainSubstring("no IPv6 addresses available"))
+			})
+
+			It("fails auto-selection when no pool exists at all", func() {
+				_, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+					Object: privatev1.PublicIP_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).To(HaveOccurred())
+				status, ok := grpcstatus.FromError(err)
+				Expect(ok).To(BeTrue())
+				Expect(status.Code()).To(Equal(grpccodes.FailedPrecondition))
+				Expect(err.Error()).To(ContainSubstring("no IPv4 addresses available"))
+			})
+
+			It("auto-selects pool with highest available capacity", func() {
+				createReadyPool(ctx, 20, 15, privatev1.IPFamily_IP_FAMILY_IPV4)               // available=5
+				bestPoolID := createReadyPool(ctx, 50, 10, privatev1.IPFamily_IP_FAMILY_IPV4) // available=40
+				createReadyPool(ctx, 100, 80, privatev1.IPFamily_IP_FAMILY_IPV4)              // available=20
+
+				response, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+					Object: privatev1.PublicIP_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{
+							IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.GetObject().GetSpec().GetPool()).To(Equal(bestPoolID))
+			})
+
+			It("persists both ip_family and pool after auto-selection", func() {
+				ipv4PoolID := createReadyPool(ctx, 10, 0, privatev1.IPFamily_IP_FAMILY_IPV4)
+				createResp, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+					Object: privatev1.PublicIP_builder{
+						Metadata: privatev1.Metadata_builder{
+							Tenant: auth.SharedTenant,
+						}.Build(),
+						Spec: privatev1.PublicIPSpec_builder{
+							IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
+						}.Build(),
+					}.Build(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+
+				getResp, err := publicIPsServer.Get(ctx, privatev1.PublicIPsGetRequest_builder{
+					Id: createResp.GetObject().GetId(),
+				}.Build())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(getResp.GetObject().GetSpec().GetPool()).To(Equal(ipv4PoolID))
+				Expect(getResp.GetObject().GetSpec().GetIpFamily()).To(
+					Equal(privatev1.IPFamily_IP_FAMILY_IPV4))
 			})
 		})
 	})
@@ -789,7 +952,7 @@ var _ = Describe("Private public IPs server", func() {
 		})
 	})
 
-	Describe("Pool immutability on Update", func() {
+	Describe("Immutable fields on Update", func() {
 		var publicIPsServer *PrivatePublicIPsServer
 
 		BeforeEach(func() {
@@ -806,7 +969,6 @@ var _ = Describe("Private public IPs server", func() {
 			poolA := createReadyPool(ctx, 100, 0)
 			poolB := createReadyPool(ctx, 100, 0)
 
-			// Create PublicIP with pool A:
 			createResp, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
 				Object: privatev1.PublicIP_builder{
 					Metadata: privatev1.Metadata_builder{
@@ -820,7 +982,6 @@ var _ = Describe("Private public IPs server", func() {
 			Expect(err).ToNot(HaveOccurred())
 			object := createResp.GetObject()
 
-			// Try to change pool to B:
 			object.GetSpec().SetPool(poolB)
 			_, err = publicIPsServer.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
 				Object: object,
@@ -832,10 +993,92 @@ var _ = Describe("Private public IPs server", func() {
 			Expect(err.Error()).To(ContainSubstring("spec.pool' is immutable"))
 		})
 
+		It("rejects Update that changes ip_family", func() {
+			createReadyPool(ctx, 100, 0, privatev1.IPFamily_IP_FAMILY_IPV4)
+
+			createResp, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+				Object: privatev1.PublicIP_builder{
+					Metadata: privatev1.Metadata_builder{
+						Tenant: auth.SharedTenant,
+					}.Build(),
+					Spec: privatev1.PublicIPSpec_builder{
+						IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResp.GetObject()
+
+			object.GetSpec().SetIpFamily(privatev1.IPFamily_IP_FAMILY_IPV6)
+			_, err = publicIPsServer.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
+				Object: object,
+			}.Build())
+			Expect(err).To(HaveOccurred())
+			status, ok := grpcstatus.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(status.Code()).To(Equal(grpccodes.InvalidArgument))
+			Expect(err.Error()).To(ContainSubstring("spec.ip_family' is immutable"))
+		})
+
+		It("allows masked Update of spec.pool without rejecting unchanged ip_family", func() {
+			createReadyPool(ctx, 100, 0, privatev1.IPFamily_IP_FAMILY_IPV4)
+
+			createResp, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+				Object: privatev1.PublicIP_builder{
+					Metadata: privatev1.Metadata_builder{
+						Tenant: auth.SharedTenant,
+					}.Build(),
+					Spec: privatev1.PublicIPSpec_builder{
+						IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResp.GetObject()
+			Expect(object.GetSpec().GetPool()).ToNot(BeEmpty())
+			Expect(object.GetSpec().GetIpFamily()).To(Equal(privatev1.IPFamily_IP_FAMILY_IPV4))
+
+			updateObj := proto.Clone(object).(*privatev1.PublicIP)
+			updateObj.GetSpec().SetIpFamily(0)
+			_, err = publicIPsServer.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
+				Object: updateObj,
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.pool"},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("allows masked Update of spec.ip_family without rejecting unchanged pool", func() {
+			createReadyPool(ctx, 100, 0, privatev1.IPFamily_IP_FAMILY_IPV4)
+
+			createResp, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
+				Object: privatev1.PublicIP_builder{
+					Metadata: privatev1.Metadata_builder{
+						Tenant: auth.SharedTenant,
+					}.Build(),
+					Spec: privatev1.PublicIPSpec_builder{
+						IpFamily: privatev1.IPFamily_IP_FAMILY_IPV4,
+					}.Build(),
+				}.Build(),
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+			object := createResp.GetObject()
+
+			updateObj := proto.Clone(object).(*privatev1.PublicIP)
+			updateObj.GetSpec().SetPool("")
+			_, err = publicIPsServer.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
+				Object: updateObj,
+				UpdateMask: &fieldmaskpb.FieldMask{
+					Paths: []string{"spec.ip_family"},
+				},
+			}.Build())
+			Expect(err).ToNot(HaveOccurred())
+		})
+
 		It("allows Update that keeps same pool", func() {
 			poolID := createReadyPool(ctx, 100, 0)
 
-			// Create PublicIP:
 			createResp, err := publicIPsServer.Create(ctx, privatev1.PublicIPsCreateRequest_builder{
 				Object: privatev1.PublicIP_builder{
 					Metadata: privatev1.Metadata_builder{
@@ -849,7 +1092,6 @@ var _ = Describe("Private public IPs server", func() {
 			Expect(err).ToNot(HaveOccurred())
 			object := createResp.GetObject()
 
-			// Update with same pool (change name instead):
 			object.GetMetadata().Name = "updated-name"
 			updateResp, err := publicIPsServer.Update(ctx, privatev1.PublicIPsUpdateRequest_builder{
 				Object: object,

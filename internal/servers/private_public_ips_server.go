@@ -16,6 +16,7 @@ package servers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 
@@ -168,6 +169,14 @@ func (s *PrivatePublicIPsServer) Create(ctx context.Context,
 		return
 	}
 
+	// Auto-select pool when not explicitly provided:
+	if publicIP.GetSpec().GetPool() == "" {
+		err = s.selectPool(ctx, publicIP)
+		if err != nil {
+			return
+		}
+	}
+
 	// Validate pool reference (existence, READY state, capacity):
 	poolID := publicIP.GetSpec().GetPool()
 	err = s.validatePoolReference(ctx, poolID)
@@ -225,7 +234,23 @@ func (s *PrivatePublicIPsServer) Update(ctx context.Context,
 	mask := request.GetUpdateMask()
 
 	if updateIncludesField(mask, "spec.pool") {
-		if err = validateImmutableFieldsPublicIP(request.GetObject(), existingPublicIP); err != nil {
+		newPool := request.GetObject().GetSpec().GetPool()
+		existingPool := existingPublicIP.GetSpec().GetPool()
+		if newPool != existingPool {
+			err = grpcstatus.Errorf(grpccodes.InvalidArgument,
+				"field 'spec.pool' is immutable and cannot be changed from '%s' to '%s'",
+				existingPool, newPool)
+			return
+		}
+	}
+
+	if updateIncludesField(mask, "spec.ip_family") {
+		newIPFamily := request.GetObject().GetSpec().GetIpFamily()
+		existingIPFamily := existingPublicIP.GetSpec().GetIpFamily()
+		if newIPFamily != existingIPFamily {
+			err = grpcstatus.Errorf(grpccodes.InvalidArgument,
+				"field 'spec.ip_family' is immutable and cannot be changed from '%s' to '%s'",
+				existingIPFamily.String(), newIPFamily.String())
 			return
 		}
 	}
@@ -306,10 +331,63 @@ func (s *PrivatePublicIPsServer) validatePublicIP(ctx context.Context,
 	if spec == nil {
 		return grpcstatus.Errorf(grpccodes.InvalidArgument, "public IP spec is mandatory")
 	}
-	if spec.GetPool() == "" {
+	family := spec.GetIpFamily()
+	switch family {
+	case privatev1.IPFamily_IP_FAMILY_UNSPECIFIED,
+		privatev1.IPFamily_IP_FAMILY_IPV4,
+		privatev1.IPFamily_IP_FAMILY_IPV6:
+	default:
 		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'spec.pool' is required")
+			"unsupported 'spec.ip_family' value: must be IPv4 or IPv6")
 	}
+	if spec.GetPool() != "" && family != privatev1.IPFamily_IP_FAMILY_UNSPECIFIED {
+		return grpcstatus.Errorf(grpccodes.InvalidArgument,
+			"'spec.pool' and 'spec.ip_family' are mutually exclusive")
+	}
+	return nil
+}
+
+// selectPool auto-selects a READY PublicIPPool matching the requested IP family with available
+// capacity. If ip_family is unspecified, defaults to IPv4. Sets spec.pool on the PublicIP.
+func (s *PrivatePublicIPsServer) selectPool(ctx context.Context, publicIP *privatev1.PublicIP) error {
+	ipFamily := publicIP.GetSpec().GetIpFamily()
+	if ipFamily == privatev1.IPFamily_IP_FAMILY_UNSPECIFIED {
+		ipFamily = privatev1.IPFamily_IP_FAMILY_IPV4
+		publicIP.GetSpec().SetIpFamily(ipFamily)
+	}
+
+	filter := fmt.Sprintf(
+		"this.status.state == %d && this.spec.ip_family == %d && this.status.available > 0",
+		int32(privatev1.PublicIPPoolState_PUBLIC_IP_POOL_STATE_READY),
+		int32(ipFamily),
+	)
+	listResponse, err := s.publicIPPoolDao.List().
+		SetFilter(filter).
+		Do(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "Failed to query PublicIPPools for auto-selection",
+			slog.String("ip_family", ipFamily.String()),
+			slog.Any("error", err))
+		return grpcstatus.Errorf(grpccodes.Internal, "failed to allocate public IP")
+	}
+	if len(listResponse.GetItems()) == 0 {
+		familyName := "IPv4"
+		if ipFamily == privatev1.IPFamily_IP_FAMILY_IPV6 {
+			familyName = "IPv6"
+		}
+		return grpcstatus.Errorf(grpccodes.FailedPrecondition,
+			"no %s addresses available", familyName)
+	}
+
+	// Select the pool with the most available capacity.
+	bestPool := listResponse.GetItems()[0]
+	for _, pool := range listResponse.GetItems()[1:] {
+		if pool.GetStatus().GetAvailable() > bestPool.GetStatus().GetAvailable() {
+			bestPool = pool
+		}
+	}
+
+	publicIP.GetSpec().SetPool(bestPool.GetId())
 	return nil
 }
 
@@ -393,24 +471,6 @@ func (s *PrivatePublicIPsServer) updatePoolCapacity(ctx context.Context, poolID 
 			return grpcstatus.Errorf(grpccodes.Aborted, "%s", conflictErr.Error())
 		}
 		return grpcstatus.Errorf(grpccodes.Internal, "failed to update pool capacity")
-	}
-
-	return nil
-}
-
-// validateImmutableFieldsPublicIP validates that immutable fields have not been changed on Update.
-func validateImmutableFieldsPublicIP(newPublicIP, existingPublicIP *privatev1.PublicIP) error {
-	if existingPublicIP == nil {
-		return nil // Create operation, no immutability checks
-	}
-
-	newPool := newPublicIP.GetSpec().GetPool()
-	existingPool := existingPublicIP.GetSpec().GetPool()
-
-	if newPool != existingPool {
-		return grpcstatus.Errorf(grpccodes.InvalidArgument,
-			"field 'spec.pool' is immutable and cannot be changed from '%s' to '%s'",
-			existingPool, newPool)
 	}
 
 	return nil

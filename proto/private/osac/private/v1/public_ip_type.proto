@@ -16,11 +16,14 @@ syntax = "proto3";
 package osac.private.v1;
 
 import "google/api/field_behavior.proto";
+import "osac/private/v1/ip_family_type.proto";
 import "osac/private/v1/metadata_type.proto";
+import "osac/private/v1/public_ip_pool_type.proto";
 
 // Represents a public IP address allocated from a PublicIPPool.
 //
 // A PublicIP is a floating public IP address allocated from a parent PublicIPPool's CIDR ranges.
+// The pool can be specified directly or auto-selected based on IP family preference.
 // The pool assignment is immutable after creation.
 //
 // Attachment to a target resource (e.g., ComputeInstance) is managed by a separate
@@ -45,17 +48,26 @@ message PublicIP {
 
 // Defines the desired configuration for a PublicIP.
 //
-// The pool field is required and immutable: once a PublicIP is allocated from a pool, it cannot
-// be moved to a different pool.
+// At most one of pool or ip_family may be provided on creation. If neither is specified, the
+// system defaults to IPv4. Both fields are immutable after creation.
 message PublicIPSpec {
-  // Parent PublicIPPool ID. Required and immutable after creation.
+  // Parent PublicIPPool ID. Mutually exclusive with ip_family.
   //
-  // Must reference the ID of an existing PublicIPPool in READY state. The system allocates an
-  // available IP address from this pool's CIDR ranges during provisioning.
+  // When provided, must reference the ID of an existing PublicIPPool in READY state. The system
+  // allocates an available IP address from this pool's CIDR ranges during provisioning.
+  // When ip_family is provided instead, the system auto-selects a pool and populates this field.
+  // Immutable after creation.
   //
   // Example: "pool-abc123"
   string pool = 1 [
-    (google.api.field_behavior) = REQUIRED,
+    (google.api.field_behavior) = IMMUTABLE
+  ];
+
+  // Desired IP address family. Mutually exclusive with pool. Immutable after creation.
+  //
+  // When set, the system selects a READY pool matching this family with the most available
+  // capacity. If neither pool nor ip_family is specified, defaults to IPv4.
+  IPFamily ip_family = 2 [
     (google.api.field_behavior) = IMMUTABLE
   ];
 }
