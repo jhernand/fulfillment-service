@@ -132,6 +132,7 @@ func (b *NetworkClassesServerBuilder) Build() (result *NetworkClassesServer, err
 		SetAttributionLogic(b.attributionLogic).
 		SetTenancyLogic(b.tenancyLogic).
 		SetMetricsRegisterer(b.metricsRegisterer).
+		SetFilterDesc((*publicv1.NetworkClass)(nil).ProtoReflect().Descriptor()).
 		Build()
 	if err != nil {
 		return

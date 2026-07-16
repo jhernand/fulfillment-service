@@ -26,13 +26,15 @@ import (
 
 var _ = Describe("Filter translator", func() {
 	Describe("Object translation", func() {
-		var translator *FilterTranslator[*testsv1.Object]
+		var translator *FilterTranslator
 
 		BeforeEach(func() {
 			var err error
+			var object *testsv1.Object
 
-			translator, err = NewFilterTranslator[*testsv1.Object]().
+			translator, err = NewFilterTranslator().
 				SetLogger(logger).
+				SetDescriptor(object.ProtoReflect().Descriptor()).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -375,13 +377,15 @@ var _ = Describe("Filter translator", func() {
 	// Projects need special translation because the type of the 'name' column is 'ltree', and that can't be
 	// compared directly to strings using the 'like' operator.
 	Describe("Project translation", func() {
-		var translator *FilterTranslator[*privatev1.Project]
+		var translator *FilterTranslator
 
 		BeforeEach(func() {
 			var err error
+			var project *privatev1.Project
 
-			translator, err = NewFilterTranslator[*privatev1.Project]().
+			translator, err = NewFilterTranslator().
 				SetLogger(logger).
+				SetDescriptor(project.ProtoReflect().Descriptor()).
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 		})
